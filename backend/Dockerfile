@@ -1,5 +1,3 @@
-# FF3Analytics backend (FastAPI) — Phase 1 health endpoint only.
-
 FROM python:3.12-slim
 
 WORKDIR /app

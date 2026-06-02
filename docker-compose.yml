@@ -1,0 +1,14 @@
+services:
+  backend:
+    image: ff3analytics-backend
+    container_name: ff3analytics-backend
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "18001:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      FIREFLY_BASE_URL: ${FIREFLY_BASE_URL:-}
+      FIREFLY_API_TOKEN: ${FIREFLY_API_TOKEN:-}

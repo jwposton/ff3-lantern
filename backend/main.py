@@ -1,23 +1,11 @@
-"""FF3Analytics FastAPI application — Phase 1 health only (D-05, D-06)."""
-
+"""FF3Analytics API — Phase 1 foundation (health only)."""
 import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-
-class HealthResponse(BaseModel):
-    status: str
-    firefly_base_url_configured: bool
-    firefly_api_token_configured: bool
-
-
-app = FastAPI(
-    title="FF3Analytics API",
-    description="Backend for FF3Analytics (Firefly III analytics UI).",
-    version="0.1.0",
-)
+app = FastAPI(title="FF3Analytics API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,6 +14,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class HealthResponse(BaseModel):
+    status: str
+    firefly_base_url_configured: bool
+    firefly_api_token_configured: bool
 
 
 def _is_set(name: str) -> bool:

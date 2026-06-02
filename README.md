@@ -22,9 +22,20 @@ These differ from FireflyReports (`18000` / `5173`) so both stacks can run durin
 2. Set `FIREFLY_BASE_URL` and `FIREFLY_API_TOKEN` when the backend needs Firefly access (Phase 2+)
 3. Do not commit `.env`
 
+## Quick start (backend only, plan 01-01)
+
+From the repo root:
+
+```bash
+docker compose up -d --build backend
+curl -sf http://localhost:18001/health
+```
+
+Expect JSON with `"status":"ok"` and `firefly_*_configured` booleans (false when `.env` is unset).
+
 ## Verification
 
-From the repo root (after `docker-compose.yml` exists):
+From the repo root:
 
 ```bash
 bash scripts/verify-foundation.sh
@@ -32,4 +43,4 @@ bash scripts/verify-foundation.sh
 
 The script runs `docker compose up -d --build`, waits up to 90s for HTTP 200 on direct backend health (`http://localhost:18001/health`) and proxied frontend health (`http://localhost:5174/health`), asserts JSON `status` is `ok`, ensures responses do not leak `FIREFLY_API_TOKEN`, then runs `docker compose down` on exit.
 
-Until the Compose scaffold lands (plan 01-01), the script exits with a clear error if `docker-compose.yml` is missing.
+Until the frontend service lands (plan 01-02), the script passes backend health on `:18001` but fails on proxied `:5174/health` (expected).
