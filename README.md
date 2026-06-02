@@ -1,6 +1,6 @@
 # FF3Analytics
 
-Self-hosted analytics UI for a personal Firefly III instance. Planning and GSD artifacts live in the sibling [FireflyReports](https://github.com/) repo; application code lives here.
+Self-hosted analytics UI for a personal Firefly III instance. Planning and GSD artifacts live in the sibling FireflyReports repo; application code lives here.
 
 ## Prerequisites
 
@@ -22,20 +22,19 @@ These differ from FireflyReports (`18000` / `5173`) so both stacks can run durin
 2. Set `FIREFLY_BASE_URL` and `FIREFLY_API_TOKEN` when the backend needs Firefly access (Phase 2+)
 3. Do not commit `.env`
 
-## Quick start (backend only, plan 01-01)
+## Quick start
 
 From the repo root:
 
 ```bash
-docker compose up -d --build backend
+docker compose up -d --build
 curl -sf http://localhost:18001/health
+curl -sf http://localhost:5174/health
 ```
 
-Expect JSON with `"status":"ok"` and `firefly_*_configured` booleans (false when `.env` is unset).
+Open http://localhost:5174 in a browser — you should see the FF3Analytics smoke page with a green **Backend healthy** badge when the stack is up.
 
 ## Verification
-
-From the repo root:
 
 ```bash
 bash scripts/verify-foundation.sh
@@ -43,4 +42,9 @@ bash scripts/verify-foundation.sh
 
 The script runs `docker compose up -d --build`, waits up to 90s for HTTP 200 on direct backend health (`http://localhost:18001/health`) and proxied frontend health (`http://localhost:5174/health`), asserts JSON `status` is `ok`, ensures responses do not leak `FIREFLY_API_TOKEN`, then runs `docker compose down` on exit.
 
-Until the frontend service lands (plan 01-02), the script passes backend health on `:18001` but fails on proxied `:5174/health` (expected).
+## Backend only
+
+```bash
+docker compose up -d --build backend
+curl -sf http://localhost:18001/health
+```

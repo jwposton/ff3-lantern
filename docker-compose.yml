@@ -12,3 +12,15 @@ services:
     environment:
       FIREFLY_BASE_URL: ${FIREFLY_BASE_URL:-}
       FIREFLY_API_TOKEN: ${FIREFLY_API_TOKEN:-}
+
+  frontend:
+    image: ff3analytics-frontend
+    container_name: ff3analytics-frontend
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "5174:5173"
+    depends_on:
+      - backend
+    environment:
+      VITE_BACKEND_URL: http://backend:8000
