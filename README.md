@@ -34,6 +34,14 @@ curl -sf http://localhost:5174/health
 
 Open http://localhost:5174 in a browser — you should see the FF3Analytics smoke page with a green **Backend healthy** badge when the stack is up.
 
+## Backend tests
+
+```bash
+cd backend
+pip install -r requirements.txt -r requirements-dev.txt
+pytest tests/ -q
+```
+
 ## Verification
 
 ```bash

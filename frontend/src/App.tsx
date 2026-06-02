@@ -47,7 +47,7 @@ function App() {
     <main className="flex min-h-svh items-center justify-center bg-background p-6">
       <div className="w-full max-w-[480px] space-y-6 text-center">
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">FF3Analytics</h1>
+          <h1 className="text-[32px] font-bold leading-[1.2] tracking-tight">FF3Analytics</h1>
           <p className="text-base text-muted-foreground">
             Foundation stack smoke test
           </p>
@@ -62,7 +62,9 @@ function App() {
               <p className="text-sm text-muted-foreground">Checking backend…</p>
             )}
             {loadState === "ok" && (
-              <Badge variant="success">Backend healthy</Badge>
+              <Badge className="border-transparent bg-green-600 text-white hover:bg-green-600/90">
+                Backend healthy
+              </Badge>
             )}
             {loadState === "error" && (
               <Badge variant="destructive">
