@@ -1,11 +1,13 @@
 """FF3Analytics API — Phase 1 foundation (health only)."""
 import os
 
+from api_normalized_transactions import router as api_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 app = FastAPI(title="FF3Analytics API", version="0.1.0")
+app.include_router(api_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

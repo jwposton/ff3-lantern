@@ -1,0 +1,45 @@
+{
+  "data": [
+    {
+      "type": "transactions",
+      "id": "200",
+      "attributes": {
+        "category_name": "Shared Parent Category",
+        "budget_name": "Shared Parent Budget",
+        "transactions": [
+          {
+            "type": "withdrawal",
+            "amount": "30.00",
+            "source_id": "1",
+            "destination_id": "2",
+            "source_name": "Main Checking",
+            "destination_name": "Grocery Store",
+            "date": "2024-01-10T08:00:00+00:00",
+            "category_name": null,
+            "budget_name": null
+          },
+          {
+            "type": "withdrawal",
+            "amount": "20.00",
+            "source_id": "1",
+            "destination_id": "2",
+            "source_name": "Main Checking",
+            "destination_name": "Grocery Store",
+            "date": "2024-01-10T08:00:00+00:00",
+            "category_name": null,
+            "budget_name": null
+          }
+        ]
+      }
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "total": 1,
+      "count": 1,
+      "per_page": 1000,
+      "current_page": 1,
+      "total_pages": 1
+    }
+  }
+}
