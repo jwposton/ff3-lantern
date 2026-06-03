@@ -34,7 +34,7 @@ def assign_transfer_labels(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_transactions(flat_splits: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert flat Firefly splits to OMNI 11-field rows (D-01–D-06, D-11)."""
+    """Convert flat Firefly splits to OMNI rows plus journal_id (D-01–D-06, D-11)."""
     out: list[dict[str, Any]] = []
     for tx in flat_splits:
         amount = tx.get("amount")
@@ -42,7 +42,10 @@ def normalize_transactions(flat_splits: list[dict[str, Any]]) -> list[dict[str, 
             amount = str(abs(float(amount)))
         budget = tx.get("budget_name") or tx.get("budget")
         category = tx.get("category_name") or tx.get("category")
+        raw_journal_id = tx.get("journal_id")
+        journal_id = raw_journal_id if raw_journal_id else None
         record = {
+            "journal_id": journal_id,
             "amount": amount,
             "type": tx.get("type"),
             "source_account": tx.get("source_name") or tx.get("source_account"),

@@ -11,4 +11,6 @@ export type OmniRow = {
   budget: string | null
   category: string | null
   date: string
+  /** Firefly transaction group id for /transactions/show/{id} */
+  journal_id?: string | null
 }

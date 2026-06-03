@@ -77,6 +77,22 @@ def test_fetch_splits_passes_start_end():
     assert seen[0]["end"] == "2024-01-31"
 
 
+def test_flat_splits_include_journal_id_from_entry():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/accounts"):
+            return httpx.Response(200, json=load_fixture("accounts.json"))
+        return httpx.Response(200, json=load_fixture("transactions_withdrawal.json"))
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    flat = asyncio.run(client.fetch_splits("2024-01-01", "2024-01-31"))
+    assert len(flat) == 1
+    assert flat[0]["journal_id"] == "100"
+
+
 def test_split_journal_produces_two_rows():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/accounts"):

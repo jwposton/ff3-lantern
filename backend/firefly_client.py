@@ -131,6 +131,8 @@ class FireflyClient:
                 payload = response.json()
                 journals = payload.get("data", [])
                 for entry in journals:
+                    # journal_id is Firefly transaction group id for /transactions/show/{id}
+                    journal_id = str(entry.get("id") or "")
                     attrs = entry.get("attributes", {})
                     parent_category = attrs.get("category_name")
                     parent_budget = attrs.get("budget_name")
@@ -141,6 +143,7 @@ class FireflyClient:
                         dest_acct = accounts.get(dest_id, {})
                         flat.append(
                             {
+                                "journal_id": journal_id,
                                 "type": split.get("type"),
                                 "amount": split.get("amount"),
                                 "category_name": split.get("category_name")

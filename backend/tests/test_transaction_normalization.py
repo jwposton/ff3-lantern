@@ -8,6 +8,7 @@ from conftest import load_fixture
 
 OMNI_KEYS = frozenset(
     {
+        "journal_id",
         "amount",
         "type",
         "source_account",
@@ -136,6 +137,29 @@ def test_transfer_non_cc_category():
         ]
     )
     assert rows[0]["category"] == "Transfer to Savings"
+
+
+def test_journal_id_propagates_from_flat_input():
+    normalize_transactions, _, _ = _import_normalization()
+    rows = normalize_transactions(
+        [
+            {
+                "type": "withdrawal",
+                "amount": "10",
+                "journal_id": "42",
+                "date": "2024-01-01",
+            }
+        ]
+    )
+    assert rows[0]["journal_id"] == "42"
+
+
+def test_journal_id_null_when_missing():
+    normalize_transactions, _, _ = _import_normalization()
+    rows = normalize_transactions(
+        [{"type": "withdrawal", "amount": "1", "date": "2024-01-01"}]
+    )
+    assert rows[0]["journal_id"] is None
 
 
 def test_date_is_yyyy_mm_dd():

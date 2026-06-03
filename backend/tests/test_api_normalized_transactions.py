@@ -6,6 +6,7 @@ import pytest
 
 OMNI_KEYS = frozenset(
     {
+        "journal_id",
         "amount",
         "type",
         "source_account",
@@ -96,6 +97,7 @@ def test_happy_path_normalized_transactions_envelope_mock(
     assert "test-token-placeholder" not in json.dumps(body)
     if body["data"]:
         assert set(body["data"][0].keys()) == OMNI_KEYS
+        assert body["data"][0]["journal_id"] == "100"
 
 
 def test_empty_firefly_range_200(client_with_mock_firefly):
