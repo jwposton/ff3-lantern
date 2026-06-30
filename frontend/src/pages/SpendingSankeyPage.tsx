@@ -20,6 +20,7 @@ export function SpendingSankeyPage() {
       }
       enableDrilldown
       drilldownResetKey={topN}
+      topN={topN}
       controls={
         <div className="flex flex-wrap items-center gap-4 text-sm">
           <label className="flex items-center gap-2 font-medium">

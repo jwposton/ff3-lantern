@@ -29,6 +29,7 @@ export type SankeyReportPageProps = {
   controls?: ReactNode
   enableDrilldown?: boolean
   drilldownResetKey?: number | string
+  topN?: number
 }
 
 function parseNodeSelection(
@@ -94,6 +95,7 @@ export function SankeyReportPage({
   controls,
   enableDrilldown = false,
   drilldownResetKey,
+  topN,
 }: SankeyReportPageProps) {
   const { committedRange } = useDateRange()
   const { start: committedStart, end: committedEnd } = committedRange
@@ -145,9 +147,9 @@ export function SankeyReportPage({
     if (!enableDrilldown || !selectedNode) {
       return { nodes: [], links: [] }
     }
-    const filtered = filterRowsForDrilldown(sliceRows, selectedNode)
+    const filtered = filterRowsForDrilldown(sliceRows, selectedNode, topN)
     return buildSpendingSankeyData(filtered, drilldownFlowType(selectedNode))
-  }, [enableDrilldown, selectedNode, sliceRows])
+  }, [enableDrilldown, selectedNode, sliceRows, topN])
 
   const subchartNodeDisplay = useMemo(() => {
     const map: Record<string, string> = {}
@@ -233,6 +235,12 @@ export function SankeyReportPage({
               handleEdgeFirefly(source, target, mainNodeDisplay)
             }
           />
+
+          {!fireflyBaseUrl && (
+            <p className="text-sm text-muted-foreground">
+              Firefly URL not configured — deep links disabled
+            </p>
+          )}
 
           {enableDrilldown && selectedNode && (
             <SankeyChart
