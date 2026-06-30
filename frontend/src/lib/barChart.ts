@@ -1,7 +1,6 @@
 import type { OmniRow } from "@/types/NormalizedTransaction"
 
 import { enumerateMonths, monthKey } from "@/lib/trends"
-import { isSpendingExpense } from "@/lib/spending"
 
 const UNCategorized_LABEL = "Uncategorized"
 
@@ -49,7 +48,7 @@ export function buildBarChartData(
   const [, stackField] = groupBy
   const months = enumerateMonths(options.start, options.end)
 
-  let filtered = rows.filter(isSpendingExpense)
+  let filtered = rows
   if (options.filter?.budget) {
     const targetBudget = options.filter.budget
     filtered = filtered.filter(
