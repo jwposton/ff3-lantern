@@ -140,15 +140,13 @@ export function TransactionExplorerPage() {
             Retry
           </Button>
         </div>
-      ) : null}
-
-      {rangeEmpty ? (
+      ) : rangeEmpty ? (
         <p className="text-sm text-muted-foreground">
           No transactions in this date range.
         </p>
       ) : scopedEmpty ? (
         <p className="text-sm text-muted-foreground">
-          No transactions match your filters
+          No transactions in this date range.
         </p>
       ) : filteredEmpty ? (
         <div className="space-y-3 rounded-lg border p-6 text-center">
