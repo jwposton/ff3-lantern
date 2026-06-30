@@ -43,18 +43,40 @@ function hasNonZeroData(series: TrendLineSeries[]): boolean {
   return series.some((s) => s.data.some((v) => v > 0))
 }
 
+function tooltipValue(value: unknown): number {
+  if (typeof value === "number") return value
+  if (Array.isArray(value)) {
+    const last = value[value.length - 1]
+    return typeof last === "number" ? last : Number(last)
+  }
+  return Number(value)
+}
+
 function itemTooltipFormatter(params: unknown): string {
   const item = Array.isArray(params) ? params[0] : params
   if (!item || typeof item !== "object") return ""
   const record = item as {
     seriesName?: string
     name?: string
-    value?: number
+    value?: unknown
   }
   const period = String(record.name ?? "")
-  const value =
-    typeof record.value === "number" ? record.value : Number(record.value)
-  return `${period}\n${record.seriesName}: ${formatCurrency(value)}`
+  return `${period}\n${record.seriesName}: ${formatCurrency(tooltipValue(record.value))}`
+}
+
+function axisTooltipFormatter(params: unknown): string {
+  const items = Array.isArray(params) ? params : params ? [params] : []
+  if (items.length === 0) return ""
+  const first = items[0]
+  if (!first || typeof first !== "object") return ""
+  const period = String((first as { name?: string }).name ?? "")
+  const lines = items
+    .filter((item): item is object => item != null && typeof item === "object")
+    .map((item) => {
+      const record = item as { seriesName?: string; value?: unknown }
+      return `${record.seriesName}: ${formatCurrency(tooltipValue(record.value))}`
+    })
+  return `${period}\n${lines.join("\n")}`
 }
 
 export function SpendingTrendsChart({
@@ -138,7 +160,8 @@ export function SpendingTrendsChart({
       name: item.name,
       type: "line" as const,
       smooth: false,
-      showSymbol: false,
+      showSymbol: true,
+      symbolSize: 6,
       triggerLineEvent: true,
       data: item.data,
       lineStyle: {
@@ -148,13 +171,18 @@ export function SpendingTrendsChart({
       itemStyle: {
         color: CHART_COLORS[idx % CHART_COLORS.length],
       },
-      emphasis: { focus: "series" as const },
+      emphasis: {
+        focus: "series" as const,
+        scale: true,
+        itemStyle: { borderWidth: 2 },
+      },
     }))
 
     return {
       tooltip: {
-        trigger: "item",
-        formatter: itemTooltipFormatter,
+        trigger: "axis",
+        axisPointer: { type: "line" },
+        formatter: axisTooltipFormatter,
       },
       legend: {
         type: "scroll",
