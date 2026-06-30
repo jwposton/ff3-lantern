@@ -40,6 +40,37 @@ function payeeLabel(row: OmniRow): string {
   return name || "Unknown Payee"
 }
 
+export function computeTopCategoryNames(
+  rows: OmniRow[],
+  maxCategories: number,
+): Set<string> {
+  const catTotals: Record<string, number> = {}
+  for (const r of rows) {
+    const amount = parseAmount(r.amount)
+    if (!amount) continue
+    const cat = categoryLabel(r.category)
+    catTotals[cat] = (catTotals[cat] ?? 0) + amount
+  }
+  return new Set(
+    Object.entries(catTotals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, maxCategories)
+      .map(([name]) => name),
+  )
+}
+
+function mergeLinks(links: SankeyLink[]): SankeyLink[] {
+  const linkMap = new Map<string, number>()
+  for (const l of links) {
+    const key = `${l.source}→${l.target}`
+    linkMap.set(key, (linkMap.get(key) ?? 0) + l.value)
+  }
+  return Array.from(linkMap.entries()).map(([key, value]) => {
+    const [source, target] = key.split("→")
+    return { source, target, value }
+  })
+}
+
 export function isCashMovementRow(row: OmniRow): boolean {
   const sourceIsBank = isBankAccount(row.source_type, row.source_role)
   const destIsBank = isBankAccount(row.destination_type, row.destination_role)
@@ -77,20 +108,8 @@ export function buildSpendingSankeyData(
     const amount = parseAmount(r.amount)
     if (!amount) continue
 
-    let accountTypeKey = ""
-    let accountTypeDisplay = ""
-    if (isBankAccount(r.source_type, r.source_role)) {
-      accountTypeKey = "Bank Account (T)"
-      accountTypeDisplay = "Bank Accounts"
-    } else if (isCreditCard(r.source_type, r.source_role)) {
-      accountTypeKey = "Credit Card (T)"
-      accountTypeDisplay = "Credit Cards"
-    }
-
-    if (accountTypeKey && r.source_account) {
-      addNode(accountTypeKey, accountTypeDisplay)
+    if (r.source_account) {
       addNode(`${r.source_account} (A)`, r.source_account)
-      addLink(accountTypeKey, `${r.source_account} (A)`, amount)
     }
 
     const budget = budgetLabel(r.budget)
@@ -146,17 +165,19 @@ export function buildSpendingSankeyData(
         }
       })
 
-      const topCats = [...catNodes]
-        .sort((a, b) => (catTotals[b.name] ?? 0) - (catTotals[a.name] ?? 0))
-        .slice(0, maxCategories)
-        .map((cat) => cat.name)
+      const topCatKeys = new Set(
+        [...catNodes]
+          .sort((a, b) => (catTotals[b.name] ?? 0) - (catTotals[a.name] ?? 0))
+          .slice(0, maxCategories)
+          .map((cat) => cat.name),
+      )
 
       const OTHER_CAT = "Other (C)"
       const OTHER_CAT_DISPLAY = "Other"
 
       const filteredNodes = [
         ...nodes.filter(
-          (n) => !n.name.endsWith("(C)") || topCats.includes(n.name),
+          (n) => !n.name.endsWith("(C)") || topCatKeys.has(n.name),
         ),
         { name: OTHER_CAT, displayName: OTHER_CAT_DISPLAY },
       ]
@@ -164,28 +185,28 @@ export function buildSpendingSankeyData(
       const filteredLinks: SankeyLink[] = []
 
       links.forEach((l) => {
-        if (l.target.endsWith("(C)") && !topCats.includes(l.target)) {
+        if (l.target.endsWith("(C)") && !topCatKeys.has(l.target)) {
           filteredLinks.push({
             source: l.source,
             target: OTHER_CAT,
             value: l.value,
           })
-        } else if (l.source.endsWith("(C)") && !topCats.includes(l.source)) {
+        } else if (l.source.endsWith("(C)") && !topCatKeys.has(l.source)) {
           filteredLinks.push({
             source: OTHER_CAT,
             target: l.target,
             value: l.value,
           })
         } else if (
-          (l.source.endsWith("(C)") && topCats.includes(l.source)) ||
-          (l.target.endsWith("(C)") && topCats.includes(l.target)) ||
+          (l.source.endsWith("(C)") && topCatKeys.has(l.source)) ||
+          (l.target.endsWith("(C)") && topCatKeys.has(l.target)) ||
           (!l.source.endsWith("(C)") && !l.target.endsWith("(C)"))
         ) {
           filteredLinks.push(l)
         }
       })
 
-      return { nodes: filteredNodes, links: filteredLinks }
+      return { nodes: filteredNodes, links: mergeLinks(filteredLinks) }
     }
   }
 
@@ -285,6 +306,7 @@ export function buildCashFlowSankeyData(
 export function filterRowsForDrilldown(
   rows: OmniRow[],
   selected: SelectedSankeyNode,
+  maxCategories?: number,
 ): OmniRow[] {
   if (selected.type === "AccountType") {
     if (selected.displayName === "Bank Accounts") {
@@ -307,6 +329,14 @@ export function filterRowsForDrilldown(
   }
 
   if (selected.type === "Category") {
+    if (
+      selected.name === "Other (C)" &&
+      typeof maxCategories === "number" &&
+      maxCategories > 0
+    ) {
+      const topNames = computeTopCategoryNames(rows, maxCategories)
+      return rows.filter((r) => !topNames.has(categoryLabel(r.category)))
+    }
     return rows.filter(
       (r) => categoryLabel(r.category) === selected.displayName,
     )
