@@ -35,6 +35,24 @@ function categoryLabel(category: string | null): string {
   return category
 }
 
+function cashFlowBudgetOut(tx: OmniRow, destVal: string): string {
+  const budget = tx.budget
+  if (budget != null && budget !== "") return budget
+  if (isCreditCard(tx.destination_type, tx.destination_role)) {
+    return "Credit Card Payment"
+  }
+  return destVal || UNCategorized_LABEL
+}
+
+function cashFlowCategoryOut(tx: OmniRow, destVal: string): string {
+  const category = tx.category
+  if (category != null && category !== "") return category
+  if (isCreditCard(tx.destination_type, tx.destination_role)) {
+    return destVal ? `${destVal} Payment` : UNCategorized_LABEL
+  }
+  return destVal || UNCategorized_LABEL
+}
+
 function payeeLabel(row: OmniRow): string {
   const name = (row.destination_account ?? "").trim()
   return name || "Unknown Payee"
@@ -253,8 +271,8 @@ export function buildCashFlowSankeyData(
 
     const sourceVal = (tx.source_account ?? "").trim()
     const destVal = (tx.destination_account ?? "").trim()
-    const budgetOut = budgetLabel(tx.budget)
-    const categoryOut = categoryLabel(tx.category)
+    const budgetOut = cashFlowBudgetOut(tx, destVal)
+    const categoryOut = cashFlowCategoryOut(tx, destVal)
 
     const nodes: { key: string; label: string }[] = []
 
@@ -285,7 +303,11 @@ export function buildCashFlowSankeyData(
       })
     } else if (tx.type === "transfer" && !sourceIsBank && destIsBank) {
       if (sourceVal) nodes.push({ key: `${sourceVal}_SRC`, label: sourceVal })
-      if (destVal) nodes.push({ key: `${destVal}_BANK`, label: destVal })
+      if (aggregateBanks) {
+        nodes.push({ key: "BankAccounts_BANK", label: "Bank Accounts" })
+      } else if (destVal) {
+        nodes.push({ key: `${destVal}_BANK`, label: destVal })
+      }
     }
 
     for (const n of nodes) addNode(n.key, n.label)

@@ -188,15 +188,17 @@ describe("cashFlow:", () => {
       source_account: "Main Checking",
       source_type: "Asset account",
       source_role: "Default account",
-      destination_account: "Brokerage",
-      destination_type: "Asset account",
-      destination_role: "Brokerage",
+      destination_account: "Grocery Store",
+      destination_type: "Expense account",
+      destination_role: null,
       budget: null,
       category: null,
       date: "2024-01-22",
     }
     const data = buildCashFlowSankeyData([transferToExpense], true)
-    expect(data.nodes.some((n) => n.displayName === "Brokerage")).toBe(true)
+    expect(data.nodes.some((n) => n.displayName === "Grocery Store")).toBe(
+      true,
+    )
     expect(data.nodes.some((n) => n.displayName === "Uncategorized")).toBe(
       false,
     )
@@ -206,9 +208,9 @@ describe("cashFlow:", () => {
     const transferIn: OmniRow = {
       amount: "100.00",
       type: "transfer",
-      source_account: "Brokerage",
-      source_type: "Asset account",
-      source_role: "Brokerage",
+      source_account: "Employer",
+      source_type: "Revenue account",
+      source_role: null,
       destination_account: "Main Checking",
       destination_type: "Asset account",
       destination_role: "Default account",
@@ -222,7 +224,7 @@ describe("cashFlow:", () => {
     expect(
       data.links.some(
         (l) =>
-          l.source === "Brokerage_SRC" && l.target === "BankAccounts_BANK",
+          l.source === "Employer_SRC" && l.target === "BankAccounts_BANK",
       ),
     ).toBe(true)
   })
@@ -231,9 +233,9 @@ describe("cashFlow:", () => {
     const transferIn: OmniRow = {
       amount: "100.00",
       type: "transfer",
-      source_account: "Brokerage",
-      source_type: "Asset account",
-      source_role: "Brokerage",
+      source_account: "Employer",
+      source_type: "Revenue account",
+      source_role: null,
       destination_account: "Main Checking",
       destination_type: "Asset account",
       destination_role: "Default account",
