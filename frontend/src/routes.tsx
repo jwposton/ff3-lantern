@@ -3,6 +3,7 @@ import { createBrowserRouter } from "react-router-dom"
 import { AppShell } from "@/layouts/AppShell"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { ReportStubPage } from "@/pages/ReportStubPage"
+import { SpendingTrendsPage } from "@/pages/SpendingTrendsPage"
 import { TransactionExplorerPage } from "@/pages/TransactionExplorerPage"
 
 export const router = createBrowserRouter([
@@ -17,9 +18,7 @@ export const router = createBrowserRouter([
       },
       {
         path: "reports/trends",
-        element: (
-          <ReportStubPage reportName="Spending Trends" deliveryPhase={5} />
-        ),
+        element: <SpendingTrendsPage />,
       },
       {
         path: "reports/bar",
