@@ -73,6 +73,21 @@ export const creditCardPaymentTransfer: OmniRow = {
   date: "2024-01-20",
 }
 
+/** CC payment transfer without server pseudo-labels (budget/category null). */
+export const creditCardPaymentTransferNoBudget: OmniRow = {
+  amount: "200.00",
+  type: "transfer",
+  source_account: "Main Checking",
+  source_type: "Asset account",
+  source_role: "Default account",
+  destination_account: "Chase VISA",
+  destination_type: "Asset account",
+  destination_role: "Credit card",
+  budget: null,
+  category: null,
+  date: "2024-01-20",
+}
+
 /** Non-CC internal transfer — excluded from trends cash outflow. */
 export const savingsTransfer: OmniRow = {
   amount: "50.00",

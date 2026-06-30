@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { OmniRow } from "@/types/NormalizedTransaction"
 import {
   creditCardPaymentTransfer,
+  creditCardPaymentTransferNoBudget,
   creditCardWithdrawal,
   mainCheckingWithdrawal,
 } from "@/test/fixtures/omniRows"
@@ -157,6 +158,92 @@ describe("cashFlow:", () => {
     expect(
       data.nodes.some((n) => n.displayName === "Credit Card Payment"),
     ).toBe(true)
+  })
+
+  it("falls back to Credit Card Payment budget when CC transfer has null budget", () => {
+    const data = buildCashFlowSankeyData(
+      [creditCardPaymentTransferNoBudget],
+      true,
+    )
+    expect(
+      data.nodes.some((n) => n.displayName === "Credit Card Payment"),
+    ).toBe(true)
+    expect(
+      data.nodes.some((n) => n.displayName === "Chase VISA Payment"),
+    ).toBe(true)
+    const budgetNode = data.nodes.find(
+      (n) => n.displayName === "Credit Card Payment",
+    )
+    const catNode = data.nodes.find(
+      (n) => n.displayName === "Chase VISA Payment",
+    )
+    expect(budgetNode?.name).toBe("Credit Card Payment_BUDGET")
+    expect(catNode?.name).toBe("Chase VISA Payment_CAT")
+  })
+
+  it("uses destVal as budgetOut for bank→non-bank transfer with empty budget when not CC", () => {
+    const transferToExpense: OmniRow = {
+      amount: "50.00",
+      type: "transfer",
+      source_account: "Main Checking",
+      source_type: "Asset account",
+      source_role: "Default account",
+      destination_account: "Brokerage",
+      destination_type: "Asset account",
+      destination_role: "Brokerage",
+      budget: null,
+      category: null,
+      date: "2024-01-22",
+    }
+    const data = buildCashFlowSankeyData([transferToExpense], true)
+    expect(data.nodes.some((n) => n.displayName === "Brokerage")).toBe(true)
+    expect(data.nodes.some((n) => n.displayName === "Uncategorized")).toBe(
+      false,
+    )
+  })
+
+  it("transfer-in uses BankAccounts_BANK when aggregateBanks is true", () => {
+    const transferIn: OmniRow = {
+      amount: "100.00",
+      type: "transfer",
+      source_account: "Brokerage",
+      source_type: "Asset account",
+      source_role: "Brokerage",
+      destination_account: "Main Checking",
+      destination_type: "Asset account",
+      destination_role: "Default account",
+      budget: null,
+      category: null,
+      date: "2024-01-23",
+    }
+    const data = buildCashFlowSankeyData([transferIn], true)
+    expect(data.nodes.some((n) => n.name === "BankAccounts_BANK")).toBe(true)
+    expect(data.nodes.some((n) => n.name === "Main Checking_BANK")).toBe(false)
+    expect(
+      data.links.some(
+        (l) =>
+          l.source === "Brokerage_SRC" && l.target === "BankAccounts_BANK",
+      ),
+    ).toBe(true)
+  })
+
+  it("transfer-in uses per-account _BANK when aggregateBanks is false", () => {
+    const transferIn: OmniRow = {
+      amount: "100.00",
+      type: "transfer",
+      source_account: "Brokerage",
+      source_type: "Asset account",
+      source_role: "Brokerage",
+      destination_account: "Main Checking",
+      destination_type: "Asset account",
+      destination_role: "Default account",
+      budget: null,
+      category: null,
+      date: "2024-01-23",
+    }
+    const data = buildCashFlowSankeyData([transferIn], false)
+    expect(data.nodes.some((n) => n.name === "Main Checking_BANK")).toBe(true)
+    expect(data.nodes.some((n) => n.name === "BankAccounts_BANK")).toBe(false)
   })
 })
 
