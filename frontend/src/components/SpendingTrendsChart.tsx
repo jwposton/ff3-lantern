@@ -64,21 +64,6 @@ function itemTooltipFormatter(params: unknown): string {
   return `${period}\n${record.seriesName}: ${formatCurrency(tooltipValue(record.value))}`
 }
 
-function axisTooltipFormatter(params: unknown): string {
-  const items = Array.isArray(params) ? params : params ? [params] : []
-  if (items.length === 0) return ""
-  const first = items[0]
-  if (!first || typeof first !== "object") return ""
-  const period = String((first as { name?: string }).name ?? "")
-  const lines = items
-    .filter((item): item is object => item != null && typeof item === "object")
-    .map((item) => {
-      const record = item as { seriesName?: string; value?: unknown }
-      return `${record.seriesName}: ${formatCurrency(tooltipValue(record.value))}`
-    })
-  return `${period}\n${lines.join("\n")}`
-}
-
 export function SpendingTrendsChart({
   months,
   series,
@@ -180,9 +165,8 @@ export function SpendingTrendsChart({
 
     return {
       tooltip: {
-        trigger: "axis",
-        axisPointer: { type: "line" },
-        formatter: axisTooltipFormatter,
+        trigger: "item",
+        formatter: itemTooltipFormatter,
       },
       legend: {
         type: "scroll",
