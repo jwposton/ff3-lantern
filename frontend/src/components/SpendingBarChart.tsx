@@ -13,6 +13,8 @@ type SpendingBarChartProps = {
   loading: boolean
   emptyMessage: string
   onSelect: (budget: string) => void
+  chartTitle?: string
+  yAxisName?: string
 }
 
 function tooltipValue(value: unknown): number {
@@ -48,6 +50,8 @@ export function SpendingBarChart({
   loading,
   emptyMessage,
   onSelect,
+  chartTitle = "Spending by month",
+  yAxisName = "Spending",
 }: SpendingBarChartProps) {
   const { months, stacks, data } = chartData
   const isEmpty = !loading && !hasNonZeroStacks(chartData)
@@ -96,6 +100,8 @@ export function SpendingBarChart({
         right: 0,
         top: "middle",
         data: stacks,
+        selectedMode: false,
+        triggerEvent: true,
       },
       grid: { left: 48, right: 120, bottom: 40, top: 24 },
       xAxis: {
@@ -105,7 +111,7 @@ export function SpendingBarChart({
       },
       yAxis: {
         type: "value",
-        name: "Spending",
+        name: yAxisName,
         min: 0,
         axisLabel: {
           formatter: (value: number) => formatCurrency(value),
@@ -116,9 +122,17 @@ export function SpendingBarChart({
       },
       series: echartsSeries,
     }
-  }, [months, stacks, data])
+  }, [months, stacks, data, yAxisName])
 
-  function handleClick(params: { seriesName?: string }) {
+  function handleClick(params: {
+    componentType?: string
+    seriesName?: string
+    name?: string
+  }) {
+    if (params.componentType === "legend" && params.name) {
+      onSelect(params.name)
+      return
+    }
     if (params?.seriesName) {
       onSelect(params.seriesName)
     }
@@ -140,7 +154,7 @@ export function SpendingBarChart({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Spending by month</CardTitle>
+        <CardTitle className="text-base">{chartTitle}</CardTitle>
       </CardHeader>
       <CardContent>
         {isEmpty ? (
