@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react"
+import { cleanup, render, screen } from "@testing-library/react"
+import { afterEach } from "vitest"
 import { describe, expect, it, vi } from "vitest"
 
 import type { SankeyData } from "@/lib/sankey"
@@ -24,6 +25,8 @@ const sampleData: SankeyData = {
 }
 
 describe("SankeyChart", () => {
+  afterEach(() => cleanup())
+
   it("renders sankey-chart testid when data is present", () => {
     render(
       <SankeyChart
