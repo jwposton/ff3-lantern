@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { isCashMovementRow } from "@/lib/sankey"
@@ -7,6 +7,7 @@ import type { OmniRow } from "@/types/NormalizedTransaction"
 
 const mockUseDateRange = vi.fn()
 const mockUseNormalizedTransactions = vi.fn()
+const mockSankeyReportPageProps = vi.fn()
 
 vi.mock("@/context/DateRangeContext", () => ({
   useDateRange: () => mockUseDateRange(),
@@ -17,26 +18,55 @@ vi.mock("@/hooks/useNormalizedTransactions", () => ({
     mockUseNormalizedTransactions(...args),
 }))
 
+vi.mock("@/components/SankeyReportPage", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/components/SankeyReportPage")>()
+  return {
+    ...actual,
+    SankeyReportPage: (props: Parameters<typeof actual.SankeyReportPage>[0]) => {
+      mockSankeyReportPageProps(props)
+      return actual.SankeyReportPage(props)
+    },
+  }
+})
+
 vi.mock("@/components/SankeyChart", () => ({
   SankeyChart: ({
     emptyMessage,
     loading,
     data,
+    chartTitle,
+    interactionHint,
     onNodeClick,
+    headerActions,
   }: {
     emptyMessage: string
     loading?: boolean
     data: { nodes: unknown[] }
+    chartTitle?: string
+    interactionHint?: string
     onNodeClick?: (nodeName: string) => void
+    headerActions?: React.ReactNode
   }) => {
     if (loading) {
       return <div data-testid="chart-loading" />
     }
     const hasData = data.nodes.length > 0
+    if (chartTitle?.includes("breakdown")) {
+      return (
+        <div data-testid="drilldown-chart">
+          {headerActions}
+          <span data-testid="drilldown-title">{chartTitle}</span>
+          {!hasData && <div data-testid="drilldown-empty">{emptyMessage}</div>}
+        </div>
+      )
+    }
     return hasData ? (
       <div
         data-testid="sankey-chart"
         data-has-node-click={onNodeClick ? "true" : "false"}
+        data-interaction-hint={interactionHint}
+        onClick={() => onNodeClick?.("Essentials_BUDGET")}
       />
     ) : (
       <div data-testid="empty-message">{emptyMessage}</div>
@@ -52,6 +82,7 @@ describe("CashFlowSankeyPage", () => {
   })
 
   beforeEach(() => {
+    mockSankeyReportPageProps.mockClear()
     mockUseDateRange.mockReturnValue({
       committedRange: { start: "2024-01-01", end: "2024-01-31" },
     })
@@ -99,7 +130,7 @@ describe("CashFlowSankeyPage", () => {
     expect(screen.queryByTestId("empty-message")).toBeNull()
   })
 
-  it("does not wire node click handler (no drilldown)", () => {
+  it("wires node click handler for drilldown", () => {
     const rows = [mainCheckingWithdrawal]
     mockUseNormalizedTransactions.mockReturnValue({
       isPending: false,
@@ -113,7 +144,60 @@ describe("CashFlowSankeyPage", () => {
 
     expect(
       screen.getByTestId("sankey-chart").getAttribute("data-has-node-click"),
-    ).toBe("false")
+    ).toBe("true")
+  })
+
+  it("shows drilldown card when a budget node is clicked", async () => {
+    const rows = [mainCheckingWithdrawal]
+    mockUseNormalizedTransactions.mockReturnValue({
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+      data: { data: rows },
+      refetch: vi.fn(),
+    })
+
+    render(<CashFlowSankeyPage />)
+
+    fireEvent.click(screen.getByTestId("sankey-chart"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("drilldown-chart")).toBeTruthy()
+    })
+    expect(screen.getByTestId("drilldown-title").textContent).toBe(
+      "Essentials breakdown",
+    )
+    expect(
+      screen.getByRole("button", { name: "Clear sankey drilldown" }),
+    ).toBeTruthy()
+  })
+
+  it("interaction hint mentions node drilldown", () => {
+    const rows = [mainCheckingWithdrawal]
+    mockUseNormalizedTransactions.mockReturnValue({
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+      data: { data: rows },
+      refetch: vi.fn(),
+    })
+
+    render(<CashFlowSankeyPage />)
+
+    const hint = screen
+      .getByTestId("sankey-chart")
+      .getAttribute("data-interaction-hint")
+    expect(hint?.toLowerCase()).toMatch(/drill|node/)
+  })
+
+  it("passes drilldownMode cashflow and aggregateBanks to SankeyReportPage", () => {
+    render(<CashFlowSankeyPage />)
+
+    expect(mockSankeyReportPageProps).toHaveBeenCalled()
+    const props = mockSankeyReportPageProps.mock.calls[0][0]
+    expect(props.enableDrilldown).toBe(true)
+    expect(props.drilldownMode).toBe("cashflow")
+    expect(typeof props.aggregateBanks).toBe("boolean")
   })
 
   it("shows bank bucketing helper when many banks and aggregate unchecked", () => {
