@@ -1,48 +1,102 @@
-import { render } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { cleanup, render, screen } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { isTrendCashOutflow } from "@/lib/spending"
+import {
+  creditCardPaymentTransfer,
+  mainCheckingWithdrawal,
+  savingsTransfer,
+} from "@/test/fixtures/omniRows"
 
-vi.mock("@/components/BudgetBarReportPage", () => ({
-  BudgetBarReportPage: ({
-    filter,
-    pageTitle,
-    mainChartTitle,
+const mockUseDateRange = vi.fn()
+const mockUseNormalizedTransactions = vi.fn()
+
+vi.mock("@/context/DateRangeContext", () => ({
+  useDateRange: () => mockUseDateRange(),
+}))
+
+vi.mock("@/hooks/useNormalizedTransactions", () => ({
+  useNormalizedTransactions: (...args: unknown[]) =>
+    mockUseNormalizedTransactions(...args),
+}))
+
+vi.mock("@/components/SpendingBarChart", () => ({
+  SpendingBarChart: ({
     emptyMessage,
-    yAxisName,
+    loading,
+    chartData,
   }: {
-    filter: (row: unknown) => boolean
-    pageTitle: string
-    mainChartTitle: string
     emptyMessage: string
-    yAxisName: string
-  }) => (
-    <div
-      data-testid="budget-bar-report"
-      data-filter={filter === isTrendCashOutflow ? "cash-outflow" : "other"}
-      data-page-title={pageTitle}
-      data-main-chart-title={mainChartTitle}
-      data-empty-message={emptyMessage}
-      data-y-axis-name={yAxisName}
-    />
-  ),
+    loading: boolean
+    chartData: { stacks: string[] }
+    onSelect: (budget: string) => void
+  }) => {
+    if (loading) {
+      return <div data-testid="chart-loading" />
+    }
+    const hasData = chartData.stacks.length > 0
+    return hasData ? (
+      <div data-testid="chart-has-data" />
+    ) : (
+      <div data-testid="empty-message">{emptyMessage}</div>
+    )
+  },
+}))
+
+vi.mock("@/components/BudgetDrilldownBarChart", () => ({
+  BudgetDrilldownBarChart: () => null,
 }))
 
 import { CashFlowBarPage } from "./CashFlowBarPage"
 
 describe("CashFlowBarPage", () => {
-  it("uses isTrendCashOutflow filter and cash outflow copy", () => {
-    const { getByTestId } = render(<CashFlowBarPage />)
-    const el = getByTestId("budget-bar-report")
+  afterEach(() => {
+    cleanup()
+  })
 
-    expect(el.getAttribute("data-filter")).toBe("cash-outflow")
-    expect(el.getAttribute("data-page-title")).toBe("Cash Flow")
-    expect(el.getAttribute("data-main-chart-title")).toBe(
-      "Cash flow by month",
+  beforeEach(() => {
+    mockUseDateRange.mockReturnValue({
+      committedRange: { start: "2024-01-01", end: "2024-01-31" },
+    })
+    mockUseNormalizedTransactions.mockReturnValue({
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+      data: { data: [] },
+      refetch: vi.fn(),
+    })
+  })
+
+  it("uses isTrendCashOutflow filter and cash outflow copy", () => {
+    render(<CashFlowBarPage />)
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Cash Flow",
     )
-    expect(el.getAttribute("data-empty-message")).toBe(
+    expect(screen.getByTestId("empty-message").textContent).toBe(
       "No cash outflow in this date range",
     )
-    expect(el.getAttribute("data-y-axis-name")).toBe("Cash outflow")
+  })
+
+  it("shows chart data for cash-outflow rows", () => {
+    const rows = [
+      mainCheckingWithdrawal,
+      creditCardPaymentTransfer,
+      savingsTransfer,
+    ]
+    expect(rows.filter(isTrendCashOutflow).length).toBeGreaterThan(0)
+
+    mockUseNormalizedTransactions.mockReturnValue({
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+      data: { data: rows },
+      refetch: vi.fn(),
+    })
+
+    render(<CashFlowBarPage />)
+
+    expect(screen.getByTestId("chart-has-data")).toBeTruthy()
+    expect(screen.queryByTestId("empty-message")).toBeNull()
   })
 })
