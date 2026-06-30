@@ -63,6 +63,12 @@ const cashFlowNavItems = [
     icon: TrendingUp,
     end: false,
   },
+  {
+    to: "/reports/cash-flow/sankey",
+    label: "Sankey",
+    icon: GitBranch,
+    end: false,
+  },
 ] as const
 
 function NavItems({

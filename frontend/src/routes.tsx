@@ -7,6 +7,7 @@ import { SpendingLinePage } from "@/pages/SpendingLinePage"
 import { SpendingSankeyPage } from "@/pages/SpendingSankeyPage"
 import { CashFlowBarPage } from "@/pages/CashFlowBarPage"
 import { CashFlowLinePage } from "@/pages/CashFlowLinePage"
+import { CashFlowSankeyPage } from "@/pages/CashFlowSankeyPage"
 import { TransactionExplorerPage } from "@/pages/TransactionExplorerPage"
 
 export const router = createBrowserRouter([
@@ -38,6 +39,10 @@ export const router = createBrowserRouter([
       {
         path: "reports/cash-flow/trends",
         element: <CashFlowLinePage />,
+      },
+      {
+        path: "reports/cash-flow/sankey",
+        element: <CashFlowSankeyPage />,
       },
     ],
   },

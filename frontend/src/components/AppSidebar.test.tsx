@@ -77,6 +77,13 @@ describe("AppSidebar active nav state", () => {
     expectActive("/reports/cash-flow", false)
   })
 
+  it("highlights Cash Flow Sankey on /reports/cash-flow/sankey", () => {
+    renderSidebar("/reports/cash-flow/sankey")
+    expectActive("/reports/cash-flow/sankey", true)
+    expectActive("/reports/cash-flow", false)
+    expectActive("/reports/cash-flow/trends", false)
+  })
+
   it("highlights Spending Sankey on /reports/spending/sankey", () => {
     renderSidebar("/reports/spending/sankey")
     expectActive("/reports/spending/sankey", true)
