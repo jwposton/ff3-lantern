@@ -43,15 +43,18 @@ function hasNonZeroData(series: TrendLineSeries[]): boolean {
   return series.some((s) => s.data.some((v) => v > 0))
 }
 
-function axisTooltipFormatter(params: unknown): string {
-  if (!Array.isArray(params) || params.length === 0) return ""
-  const axisValue = String(params[0].axisValue ?? "")
-  const lines = params.map((item) => {
-    const value =
-      typeof item.value === "number" ? item.value : Number(item.value)
-    return `${item.seriesName}: ${formatCurrency(value)}`
-  })
-  return [axisValue, ...lines].join("\n")
+function itemTooltipFormatter(params: unknown): string {
+  const item = Array.isArray(params) ? params[0] : params
+  if (!item || typeof item !== "object") return ""
+  const record = item as {
+    seriesName?: string
+    name?: string
+    value?: number
+  }
+  const period = String(record.name ?? "")
+  const value =
+    typeof record.value === "number" ? record.value : Number(record.value)
+  return `${period}\n${record.seriesName}: ${formatCurrency(value)}`
 }
 
 export function SpendingTrendsChart({
@@ -101,9 +104,8 @@ export function SpendingTrendsChart({
 
       return {
         tooltip: {
-          trigger: "axis",
-          axisPointer: { type: "shadow" },
-          formatter: axisTooltipFormatter,
+          trigger: "item",
+          formatter: itemTooltipFormatter,
         },
         legend: {
           type: "scroll",
@@ -137,6 +139,7 @@ export function SpendingTrendsChart({
       type: "line" as const,
       smooth: false,
       showSymbol: false,
+      triggerLineEvent: true,
       data: item.data,
       lineStyle: {
         width: 2,
@@ -150,8 +153,8 @@ export function SpendingTrendsChart({
 
     return {
       tooltip: {
-        trigger: "axis",
-        formatter: axisTooltipFormatter,
+        trigger: "item",
+        formatter: itemTooltipFormatter,
       },
       legend: {
         type: "scroll",
