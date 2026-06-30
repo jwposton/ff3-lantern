@@ -24,19 +24,31 @@ const spendingRows = [
 ].filter(isSpendingExpense)
 
 describe("spending:", () => {
-  it("builds Account Type → Account → Budget → Category layers", () => {
+  it("does NOT emit Bank Account (T) or Credit Card (T) nodes; leftmost are account (A)", () => {
     const data = buildSpendingSankeyData(
       spendingRows,
       "source-budget-category",
     )
+    expect(data.nodes.some((n) => n.name.endsWith("(T)"))).toBe(false)
+    expect(data.nodes.some((n) => n.name.endsWith("(A)"))).toBe(true)
     const displayNames = data.nodes.map((n) => n.displayName)
-    expect(displayNames).toContain("Bank Accounts")
     expect(displayNames).toContain("Main Checking")
     expect(displayNames).toContain("Essentials")
     expect(displayNames).toContain("Food")
-    expect(data.nodes.some((n) => n.name.endsWith("(A)"))).toBe(true)
-    expect(data.nodes.some((n) => n.name.endsWith("(B)"))).toBe(true)
-    expect(data.nodes.some((n) => n.name.endsWith("(C)"))).toBe(true)
+    expect(displayNames).not.toContain("Bank Accounts")
+    expect(displayNames).not.toContain("Credit Cards")
+  })
+
+  it("links account (A) directly to budget (B) without type intermediary", () => {
+    const data = buildSpendingSankeyData(
+      spendingRows,
+      "source-budget-category",
+    )
+    const accountToBudget = data.links.filter(
+      (l) => l.source.endsWith("(A)") && l.target.endsWith("(B)"),
+    )
+    expect(accountToBudget.length).toBeGreaterThan(0)
+    expect(data.links.some((l) => l.source.endsWith("(T)"))).toBe(false)
   })
 
   it("maps null budget to Uncategorized, not Undefined", () => {
@@ -46,14 +58,6 @@ describe("spending:", () => {
     )
     expect(data.nodes.some((n) => n.displayName === "Uncategorized")).toBe(true)
     expect(data.nodes.some((n) => n.displayName === "Undefined")).toBe(false)
-  })
-
-  it("includes Credit Cards type node for CC withdrawals", () => {
-    const data = buildSpendingSankeyData(
-      [creditCardWithdrawal],
-      "source-budget-category",
-    )
-    expect(data.nodes.some((n) => n.displayName === "Credit Cards")).toBe(true)
   })
 })
 
@@ -73,6 +77,25 @@ describe("topN:", () => {
       .filter((l) => l.target === "Other (C)")
       .map((l) => l.source)
     expect(otherTargets.length).toBeGreaterThan(0)
+  })
+
+  it("merges duplicate source→Other (C) links after bucketing", () => {
+    const rows = [
+      makeRow({ date: "2024-01-01", category: "SmallA", amount: "5", budget: "B1" }),
+      makeRow({ date: "2024-01-02", category: "SmallB", amount: "5", budget: "B1" }),
+      makeRow({ date: "2024-01-03", category: "TopCat", amount: "100", budget: "B1" }),
+      makeRow({ date: "2024-01-04", category: "SmallC", amount: "5", budget: "B2" }),
+      makeRow({ date: "2024-01-05", category: "SmallD", amount: "5", budget: "B2" }),
+    ]
+    const data = buildSpendingSankeyData(rows, "source-budget-category", 1)
+    const toOther = data.links.filter((l) => l.target === "Other (C)")
+    const bySource = new Map<string, number>()
+    for (const l of toOther) {
+      bySource.set(l.source, (bySource.get(l.source) ?? 0) + 1)
+    }
+    for (const count of bySource.values()) {
+      expect(count).toBe(1)
+    }
   })
 })
 
@@ -158,6 +181,50 @@ describe("drilldown:", () => {
     })
     expect(filtered).toHaveLength(1)
     expect(filtered[0].source_account).toBe("Main Checking")
+  })
+
+  it("selecting Other (C) returns rows whose category is NOT in top-N set", () => {
+    const categories = ["CatA", "CatB", "CatC", "CatD"]
+    const rows = categories.map((cat, i) =>
+      makeRow({
+        date: `2024-01-${String(i + 1).padStart(2, "0")}`,
+        category: cat,
+        amount: String((categories.length - i) * 10),
+      }),
+    )
+    const filtered = filterRowsForDrilldown(
+      rows,
+      { name: "Other (C)", type: "Category", displayName: "Other" },
+      2,
+    )
+    expect(filtered.every((r) => !["CatA", "CatB"].includes(r.category!))).toBe(
+      true,
+    )
+    expect(filtered.some((r) => r.category === "CatC")).toBe(true)
+    expect(filtered.some((r) => r.category === "CatD")).toBe(true)
+  })
+
+  it("Budget and Account drilldown filters unchanged when maxCategories provided", () => {
+    const rows = [mainCheckingWithdrawal, creditCardWithdrawal]
+    const budgetFiltered = filterRowsForDrilldown(
+      rows,
+      { name: "Essentials (B)", type: "Budget", displayName: "Essentials" },
+      15,
+    )
+    expect(budgetFiltered).toHaveLength(1)
+    expect(budgetFiltered[0].budget).toBe("Essentials")
+
+    const accountFiltered = filterRowsForDrilldown(
+      rows,
+      {
+        name: "Main Checking (A)",
+        type: "Account",
+        displayName: "Main Checking",
+      },
+      15,
+    )
+    expect(accountFiltered).toHaveLength(1)
+    expect(accountFiltered[0].source_account).toBe("Main Checking")
   })
 })
 
