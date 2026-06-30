@@ -53,9 +53,9 @@ const spendingNavItems = [
 const cashFlowNavItems = [
   {
     to: "/reports/cash-flow",
-    label: "Cash Flow",
-    icon: TrendingUp,
-    end: false,
+    label: "Bar",
+    icon: BarChart3,
+    end: true,
   },
 ] as const
 
