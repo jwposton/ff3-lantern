@@ -56,14 +56,17 @@ describe("BudgetLineChart", () => {
     expect(legend?.triggerEvent).toBe(true)
   })
 
-  it("calls onSelect when legend item is clicked", () => {
+  it("registers legendselectchanged handler for legend drill", () => {
+    render(<BudgetLineChart {...sampleProps} onSelect={() => {}} />)
+
+    expect(capturedOnEvents?.legendselectchanged).toBeTypeOf("function")
+  })
+
+  it("calls onSelect when legend item is selected via legendselectchanged", () => {
     const onSelect = vi.fn()
     render(<BudgetLineChart {...sampleProps} onSelect={onSelect} />)
 
-    capturedOnEvents?.click?.({
-      componentType: "legend",
-      name: "Groceries",
-    })
+    capturedOnEvents?.legendselectchanged?.({ name: "Groceries" })
 
     expect(onSelect).toHaveBeenCalledWith("Groceries")
   })
@@ -77,17 +80,35 @@ describe("BudgetLineChart", () => {
     expect(onSelect).toHaveBeenCalledWith("Transport")
   })
 
-  it("does not call onSelect when Total series is clicked", () => {
+  it("does not call onSelect when Total legend item is selected", () => {
+    const onSelect = vi.fn()
+    render(<BudgetLineChart {...sampleProps} onSelect={onSelect} />)
+
+    capturedOnEvents?.legendselectchanged?.({ name: TOTAL_LABEL })
+
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it("does not call onSelect when Total series point is clicked", () => {
     const onSelect = vi.fn()
     render(<BudgetLineChart {...sampleProps} onSelect={onSelect} />)
 
     capturedOnEvents?.click?.({ seriesName: TOTAL_LABEL })
-    capturedOnEvents?.click?.({
-      componentType: "legend",
-      name: TOTAL_LABEL,
-    })
 
     expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it("keeps the same onEvents object reference on rerender with same props", () => {
+    const onSelect = vi.fn()
+    const { rerender } = render(
+      <BudgetLineChart {...sampleProps} onSelect={onSelect} />,
+    )
+
+    const firstOnEvents = capturedOnEvents
+
+    rerender(<BudgetLineChart {...sampleProps} onSelect={onSelect} />)
+
+    expect(capturedOnEvents).toBe(firstOnEvents)
   })
 
   it("renders chartTitle and yAxisName props", () => {

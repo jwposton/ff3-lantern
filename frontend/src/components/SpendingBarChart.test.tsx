@@ -51,7 +51,20 @@ describe("SpendingBarChart", () => {
     expect(legend?.triggerEvent).toBe(true)
   })
 
-  it("calls onSelect when legend item is clicked", () => {
+  it("registers legendselectchanged handler for legend drill", () => {
+    render(
+      <SpendingBarChart
+        chartData={sampleChartData}
+        loading={false}
+        emptyMessage="No data"
+        onSelect={() => {}}
+      />,
+    )
+
+    expect(capturedOnEvents?.legendselectchanged).toBeTypeOf("function")
+  })
+
+  it("calls onSelect when legend item is selected via legendselectchanged", () => {
     const onSelect = vi.fn()
     render(
       <SpendingBarChart
@@ -62,10 +75,7 @@ describe("SpendingBarChart", () => {
       />,
     )
 
-    capturedOnEvents?.click?.({
-      componentType: "legend",
-      name: "Groceries",
-    })
+    capturedOnEvents?.legendselectchanged?.({ name: "Groceries" })
 
     expect(onSelect).toHaveBeenCalledWith("Groceries")
   })
@@ -84,6 +94,31 @@ describe("SpendingBarChart", () => {
     capturedOnEvents?.click?.({ seriesName: "Groceries" })
 
     expect(onSelect).toHaveBeenCalledWith("Groceries")
+  })
+
+  it("keeps the same onEvents object reference on rerender with same props", () => {
+    const onSelect = vi.fn()
+    const { rerender } = render(
+      <SpendingBarChart
+        chartData={sampleChartData}
+        loading={false}
+        emptyMessage="No data"
+        onSelect={onSelect}
+      />,
+    )
+
+    const firstOnEvents = capturedOnEvents
+
+    rerender(
+      <SpendingBarChart
+        chartData={sampleChartData}
+        loading={false}
+        emptyMessage="No data"
+        onSelect={onSelect}
+      />,
+    )
+
+    expect(capturedOnEvents).toBe(firstOnEvents)
   })
 
   it("renders chartTitle and yAxisName props", () => {
