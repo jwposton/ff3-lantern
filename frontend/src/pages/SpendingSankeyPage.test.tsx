@@ -129,4 +129,12 @@ describe("SpendingSankeyPage", () => {
       screen.getByRole("button", { name: "Clear sankey drilldown" }),
     ).toBeTruthy()
   })
+
+  it("renders Top-N categories shown control", () => {
+    render(<SpendingSankeyPage />)
+
+    expect(screen.getByText("Categories shown:")).toBeTruthy()
+    expect(screen.getByRole("slider").getAttribute("min")).toBe("5")
+    expect(screen.getByRole("slider").getAttribute("max")).toBe("25")
+  })
 })
