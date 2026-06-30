@@ -9,11 +9,34 @@ import {
   spendingRowsForTotal,
 } from "@/test/fixtures/omniRows"
 import {
+  isSpendingExpense,
   isSpendingWithdrawal,
   isTrendCashOutflow,
   spendingWithdrawalTotal,
   topCategoryBySpend,
 } from "@/lib/spending"
+
+describe("isSpendingExpense", () => {
+  it("expense: includes bank asset withdrawals", () => {
+    expect(isSpendingExpense(mainCheckingWithdrawal)).toBe(true)
+  })
+
+  it("expense: includes credit card purchase withdrawals", () => {
+    expect(isSpendingExpense(creditCardWithdrawal)).toBe(true)
+  })
+
+  it("expense: excludes CC payment transfers", () => {
+    expect(isSpendingExpense(creditCardPaymentTransfer)).toBe(false)
+  })
+
+  it("expense: excludes non-withdrawal transfers", () => {
+    expect(isSpendingExpense(savingsTransfer)).toBe(false)
+  })
+
+  it("expense: isSpendingWithdrawal remains false for CC purchases (D-12)", () => {
+    expect(isSpendingWithdrawal(creditCardWithdrawal)).toBe(false)
+  })
+})
 
 describe("isTrendCashOutflow", () => {
   it("trend: includes bank asset withdrawals", () => {
