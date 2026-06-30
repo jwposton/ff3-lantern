@@ -26,10 +26,18 @@ export type LineSeriesOptions = {
   includeTotal?: boolean
 }
 
+export type DrilldownFilter = {
+  budget?: string
+  category?: string
+  payee?: string
+}
+
+export type StackDimension = "budget" | "category" | "payee"
+
 export type BuildBarChartOptions = {
   start: string
   end: string
-  filter?: { budget?: string }
+  filter?: DrilldownFilter
   /** Use cash-flow budget/category labels (CC Payment, payee fallback) for stacks and drilldown filter. */
   useCashFlowLabels?: boolean
 }
@@ -49,24 +57,57 @@ function categoryLabel(category: string | null): string {
   return category
 }
 
+function payeeLabel(row: OmniRow): string {
+  const dest = (row.destination_account ?? "").trim()
+  return dest || UNCategorized_LABEL
+}
+
 function stackLabel(
   row: OmniRow,
-  stackField: "budget" | "category",
+  stackField: StackDimension,
   useCashFlowLabels: boolean,
 ): string {
   if (useCashFlowLabels) {
-    return stackField === "budget"
-      ? cashFlowBudgetLabel(row)
-      : cashFlowCategoryLabel(row)
+    if (stackField === "budget") return cashFlowBudgetLabel(row)
+    if (stackField === "category") return cashFlowCategoryLabel(row)
+    return payeeLabel(row)
   }
-  return stackField === "budget"
-    ? budgetLabel(row.budget)
-    : categoryLabel(row.category)
+  if (stackField === "budget") return budgetLabel(row.budget)
+  if (stackField === "category") return categoryLabel(row.category)
+  return payeeLabel(row)
+}
+
+export function filterRowsForDrilldown(
+  rows: OmniRow[],
+  filter: DrilldownFilter,
+  useCashFlowLabels: boolean,
+): OmniRow[] {
+  return rows.filter((row) => {
+    if (
+      filter.budget != null &&
+      stackLabel(row, "budget", useCashFlowLabels) !== filter.budget
+    ) {
+      return false
+    }
+    if (
+      filter.category != null &&
+      stackLabel(row, "category", useCashFlowLabels) !== filter.category
+    ) {
+      return false
+    }
+    if (
+      filter.payee != null &&
+      stackLabel(row, "payee", useCashFlowLabels) !== filter.payee
+    ) {
+      return false
+    }
+    return true
+  })
 }
 
 export function buildBarChartData(
   rows: OmniRow[],
-  groupBy: ["month", "budget"] | ["month", "category"],
+  groupBy: ["month", StackDimension],
   options: BuildBarChartOptions,
 ): BarChartData {
   const [, stackField] = groupBy
@@ -74,11 +115,8 @@ export function buildBarChartData(
 
   const useCashFlowLabels = options.useCashFlowLabels === true
   let filtered = rows
-  if (options.filter?.budget) {
-    const targetBudget = options.filter.budget
-    filtered = filtered.filter(
-      (tx) => stackLabel(tx, "budget", useCashFlowLabels) === targetBudget,
-    )
+  if (options.filter) {
+    filtered = filterRowsForDrilldown(filtered, options.filter, useCashFlowLabels)
   }
 
   const stackTotals = new Map<string, number>()

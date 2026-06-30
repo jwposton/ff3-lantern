@@ -56,8 +56,8 @@ vi.mock("@/components/BudgetLineChart", () => ({
   },
 }))
 
-vi.mock("@/components/BudgetDrilldownBarChart", () => ({
-  BudgetDrilldownBarChart: ({ budget }: { budget: string }) => (
+vi.mock("@/components/BudgetReportDrilldown", () => ({
+  BudgetReportDrilldown: ({ budget }: { budget: string }) => (
     <div data-testid="drilldown">{budget}</div>
   ),
 }))

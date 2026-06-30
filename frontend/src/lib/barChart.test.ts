@@ -8,7 +8,7 @@ import {
   creditCardWithdrawal,
   mainCheckingWithdrawal,
 } from "@/test/fixtures/omniRows"
-import { buildBarChartData, barChartDataToLineSeries, TOTAL_LABEL } from "@/lib/barChart"
+import { buildBarChartData, barChartDataToLineSeries, filterRowsForDrilldown, TOTAL_LABEL } from "@/lib/barChart"
 import { CC_PAYMENT_BUDGET_LABEL } from "@/lib/cashFlowLabels"
 import { isCashFlowOutflow, isSpendingExpense } from "@/lib/spending"
 
@@ -164,6 +164,67 @@ describe("buildBarChartData", () => {
     })
     expect(result.stacks).toEqual(["Uncategorized"])
     expect(result.data["2026-01"]?.["Uncategorized"]).toBeCloseTo(25, 2)
+  })
+
+  it("drill: filters payee stacks to selected budget and category", () => {
+    const rows = [
+      makeRow({
+        date: "2026-01-10",
+        budget: "Essentials",
+        category: "Food",
+        destination_account: "Store A",
+        amount: "40.00",
+      }),
+      makeRow({
+        date: "2026-01-11",
+        budget: "Essentials",
+        category: "Food",
+        destination_account: "Store B",
+        amount: "35.00",
+      }),
+      makeRow({
+        date: "2026-01-12",
+        budget: "Essentials",
+        category: "Transport",
+        destination_account: "Gas Station",
+        amount: "20.00",
+      }),
+    ]
+    const result = buildBarChartData(rows, ["month", "payee"], {
+      start: "2026-01-01",
+      end: "2026-01-31",
+      filter: { budget: "Essentials", category: "Food" },
+    })
+    expect(result.stacks).toContain("Store A")
+    expect(result.stacks).toContain("Store B")
+    expect(result.stacks).not.toContain("Gas Station")
+    expect(result.data["2026-01"]?.["Store A"]).toBeCloseTo(40, 2)
+  })
+})
+
+describe("filterRowsForDrilldown", () => {
+  it("filters by budget, category, and payee labels", () => {
+    const rows = [
+      makeRow({
+        date: "2026-01-10",
+        budget: "Essentials",
+        category: "Food",
+        destination_account: "Store A",
+      }),
+      makeRow({
+        date: "2026-01-11",
+        budget: "Essentials",
+        category: "Food",
+        destination_account: "Store B",
+      }),
+    ]
+    const filtered = filterRowsForDrilldown(
+      rows,
+      { budget: "Essentials", category: "Food", payee: "Store A" },
+      false,
+    )
+    expect(filtered).toHaveLength(1)
+    expect(filtered[0]?.destination_account).toBe("Store A")
   })
 })
 

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   buildDateRangeFilters,
+  buildDrilldownFireflySearch,
   buildFireflyFilters,
+  CC_PAYMENT_BUDGET_LABEL,
   getCashFlowNodeQueryString,
   getSpendingNodeQueryString,
   openFireflySearch,
@@ -134,5 +136,47 @@ describe("firefly:", () => {
       "_blank",
       "noopener,noreferrer",
     )
+  })
+})
+
+describe("buildDrilldownFireflySearch", () => {
+  it("spending: budget-only scope includes date range and budget filter", () => {
+    const result = buildDrilldownFireflySearch("2024-01-01", "2024-01-31", {
+      budget: "Essentials",
+      useCashFlowLabels: false,
+    })
+    expect(result).toContain("date_after:2024-01-01")
+    expect(result).toContain("date_before:2024-01-31")
+    expect(result).toContain('budget_is:"Essentials"')
+  })
+
+  it("spending: full drilldown stacks budget, category, and payee filters", () => {
+    const result = buildDrilldownFireflySearch("2024-01-01", "2024-01-31", {
+      budget: "Essentials",
+      category: "Food",
+      payee: "Grocery Store",
+      useCashFlowLabels: false,
+    })
+    expect(result).toContain('budget_is:"Essentials"')
+    expect(result).toContain('category_is:"Food"')
+    expect(result).toContain('destination_account_is:"Grocery Store"')
+  })
+
+  it("cash flow: CC Payment budget maps to server budget name", () => {
+    const result = buildDrilldownFireflySearch("2024-01-01", "2024-01-31", {
+      budget: CC_PAYMENT_BUDGET_LABEL,
+      useCashFlowLabels: true,
+    })
+    expect(result).toContain('budget_is:"Credit Card Payment"')
+  })
+
+  it("cash flow: CC Payment category uses account_is for card name", () => {
+    const result = buildDrilldownFireflySearch("2024-01-01", "2024-01-31", {
+      budget: CC_PAYMENT_BUDGET_LABEL,
+      category: "Chase VISA",
+      useCashFlowLabels: true,
+    })
+    expect(result).toContain('budget_is:"Credit Card Payment"')
+    expect(result).toContain('account_is:"Chase VISA"')
   })
 })

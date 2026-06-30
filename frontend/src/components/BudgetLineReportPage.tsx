@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 
-import { BudgetDrilldownBarChart } from "@/components/BudgetDrilldownBarChart"
+import { BudgetReportDrilldown } from "@/components/BudgetReportDrilldown"
 import { BudgetLineChart } from "@/components/BudgetLineChart"
 import { Button } from "@/components/ui/button"
 import { useDateRange } from "@/context/DateRangeContext"
@@ -120,13 +120,16 @@ export function BudgetLineReportPage({
             yAxisName={yAxisName}
           />
           {selectedBudget != null && (
-            <BudgetDrilldownBarChart
+            <BudgetReportDrilldown
               rows={sliceRows}
               budget={selectedBudget}
               start={committedStart}
               end={committedEnd}
+              chartType="line"
               useCashFlowLabels={useCashFlowLabels}
-              onClear={() => setSelectedBudget(null)}
+              yAxisName={yAxisName}
+              fireflyBaseUrl={data?.firefly_base_url}
+              onClearBudget={() => setSelectedBudget(null)}
             />
           )}
         </div>

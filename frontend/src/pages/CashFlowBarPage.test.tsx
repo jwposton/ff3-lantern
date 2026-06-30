@@ -43,8 +43,8 @@ vi.mock("@/components/SpendingBarChart", () => ({
   },
 }))
 
-vi.mock("@/components/BudgetDrilldownBarChart", () => ({
-  BudgetDrilldownBarChart: () => null,
+vi.mock("@/components/BudgetReportDrilldown", () => ({
+  BudgetReportDrilldown: () => null,
 }))
 
 import { CashFlowBarPage } from "./CashFlowBarPage"

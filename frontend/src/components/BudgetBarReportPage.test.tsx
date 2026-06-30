@@ -44,8 +44,8 @@ vi.mock("@/components/SpendingBarChart", () => ({
     ),
 }))
 
-vi.mock("@/components/BudgetDrilldownBarChart", () => ({
-  BudgetDrilldownBarChart: ({ budget }: { budget: string }) => (
+vi.mock("@/components/BudgetReportDrilldown", () => ({
+  BudgetReportDrilldown: ({ budget }: { budget: string }) => (
     <div data-testid="drilldown">{budget}</div>
   ),
 }))
@@ -121,7 +121,7 @@ describe("BudgetBarReportPage", () => {
     expect(screen.queryByTestId("drilldown")).toBeNull()
   })
 
-  it("shows BudgetDrilldownBarChart when onSelect sets budget", () => {
+  it("shows BudgetReportDrilldown when onSelect sets budget", () => {
     render(<BudgetBarReportPage filter={alwaysTrue} {...pageProps} />)
 
     fireEvent.click(screen.getByTestId("select-budget"))

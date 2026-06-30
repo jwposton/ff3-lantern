@@ -3,6 +3,87 @@ export function openFireflySearch(baseUrl: string, filters: string): void {
   window.open(url, "_blank", "noopener,noreferrer")
 }
 
+/** Display label for CC Payment budget in cash-flow charts. */
+export const CC_PAYMENT_BUDGET_LABEL = "CC Payment"
+
+const SERVER_CC_PAYMENT_BUDGET = "Credit Card Payment"
+
+export type DrilldownSearchContext = {
+  budget?: string
+  category?: string
+  payee?: string
+  useCashFlowLabels: boolean
+}
+
+function getDrilldownBudgetFilter(
+  displayName: string,
+  useCashFlowLabels: boolean,
+): string {
+  if (displayName === "Uncategorized") return "has_any_budget:false"
+  if (useCashFlowLabels && displayName === CC_PAYMENT_BUDGET_LABEL) {
+    return `budget_is:"${quoteFilterValue(SERVER_CC_PAYMENT_BUDGET)}"`
+  }
+  if (useCashFlowLabels) {
+    return getCashFlowNodeQueryString(`${displayName}_BUDGET`, displayName)
+  }
+  return getSpendingNodeQueryString(`${displayName} (B)`, displayName)
+}
+
+function getDrilldownCategoryFilter(
+  displayName: string,
+  useCashFlowLabels: boolean,
+  budget?: string,
+): string {
+  if (displayName === "Uncategorized") return "has_any_category:false"
+  if (useCashFlowLabels && budget === CC_PAYMENT_BUDGET_LABEL) {
+    return `account_is:"${quoteFilterValue(displayName)}"`
+  }
+  if (useCashFlowLabels) {
+    return getCashFlowNodeQueryString(`${displayName}_CAT`, displayName)
+  }
+  return getSpendingNodeQueryString(`${displayName} (C)`, displayName)
+}
+
+function getDrilldownPayeeFilter(
+  displayName: string,
+  useCashFlowLabels: boolean,
+): string {
+  if (displayName === "Uncategorized") return "has_any_destination_account:false"
+  if (useCashFlowLabels) {
+    return `destination_account_is:"${quoteFilterValue(displayName)}"`
+  }
+  return getSpendingNodeQueryString(`${displayName} (P)`, displayName)
+}
+
+/** Build a Firefly search query for bar/line drilldown scope (budget → category → payee). */
+export function buildDrilldownFireflySearch(
+  start: string,
+  end: string,
+  context: DrilldownSearchContext,
+): string {
+  const filters = buildDateRangeFilters(start, end)
+  if (context.budget) {
+    filters.push(
+      getDrilldownBudgetFilter(context.budget, context.useCashFlowLabels),
+    )
+  }
+  if (context.category) {
+    filters.push(
+      getDrilldownCategoryFilter(
+        context.category,
+        context.useCashFlowLabels,
+        context.budget,
+      ),
+    )
+  }
+  if (context.payee) {
+    filters.push(
+      getDrilldownPayeeFilter(context.payee, context.useCashFlowLabels),
+    )
+  }
+  return filters.filter(Boolean).join(" ")
+}
+
 export function quoteFilterValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
 }
