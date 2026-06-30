@@ -35,10 +35,12 @@ export function CashFlowSankeyPage() {
       filter={isCashMovementRow}
       pageTitle="Cash Flow"
       mainChartTitle="Cash flow"
-      interactionHint="Click a flow to open matching transactions in Firefly."
+      interactionHint="Click a node to drill down; click a flow to open matching transactions in Firefly."
       emptyMessage="No cash movement in this date range"
       buildMain={(rows) => buildCashFlowSankeyData(rows, aggregateBanks)}
-      enableDrilldown={false}
+      enableDrilldown={true}
+      drilldownMode="cashflow"
+      aggregateBanks={aggregateBanks}
       controls={
         <div className="flex flex-wrap items-center gap-4 text-sm">
           <label className="flex items-center gap-2 font-medium">
