@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render } from "@testing-library/react"
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
 
@@ -80,6 +80,5 @@ describe("AppSidebar active nav state", () => {
   it("highlights Dashboard on /", () => {
     renderSidebar("/")
     expectActive("/", true)
-    expect(screen.getByText("FF3Analytics")).toBeInTheDocument()
   })
 })

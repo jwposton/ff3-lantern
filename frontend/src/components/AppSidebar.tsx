@@ -79,18 +79,14 @@ function NavItems({
     <>
       {items.map(({ to, label, icon: Icon, end }) => (
         <SidebarMenuItem key={to}>
-          <SidebarMenuButton asChild tooltip={label}>
-            <NavLink
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                isActive ? "bg-sidebar-accent font-medium" : undefined
-              }
-            >
-              <Icon />
-              <span>{label}</span>
-            </NavLink>
-          </SidebarMenuButton>
+          <NavLink to={to} end={end} className="contents">
+            {({ isActive }) => (
+              <SidebarMenuButton isActive={isActive} tooltip={label}>
+                <Icon />
+                <span>{label}</span>
+              </SidebarMenuButton>
+            )}
+          </NavLink>
         </SidebarMenuItem>
       ))}
     </>
