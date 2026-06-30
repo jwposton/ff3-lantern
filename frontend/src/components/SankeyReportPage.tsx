@@ -8,13 +8,21 @@ import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
 import {
   buildDateRangeFilters,
   buildFireflyFilters,
+  getCashFlowNodeQueryString,
   getSpendingNodeQueryString,
   openFireflySearch,
 } from "@/lib/fireflySearch"
-import type { FlowType, SankeyData, SelectedSankeyNode } from "@/lib/sankey"
+import type {
+  FlowType,
+  SankeyData,
+  SelectedCashFlowNode,
+  SelectedSankeyNode,
+} from "@/lib/sankey"
 import {
+  buildCashFlowDrilldownData,
   buildSpendingSankeyData,
   filterRowsForDrilldown,
+  parseCashFlowNodeSelection,
   sankeyChartHeight,
 } from "@/lib/sankey"
 import type { OmniRow } from "@/types/NormalizedTransaction"
@@ -28,6 +36,8 @@ export type SankeyReportPageProps = {
   buildMain: (rows: OmniRow[]) => SankeyData
   controls?: ReactNode
   enableDrilldown?: boolean
+  drilldownMode?: "spending" | "cashflow"
+  aggregateBanks?: boolean
   drilldownResetKey?: number | string
   topN?: number
 }
@@ -94,6 +104,8 @@ export function SankeyReportPage({
   buildMain,
   controls,
   enableDrilldown = false,
+  drilldownMode = "spending",
+  aggregateBanks,
   drilldownResetKey,
   topN,
 }: SankeyReportPageProps) {
@@ -102,9 +114,9 @@ export function SankeyReportPage({
   const { isPending, isError, isSuccess, data, refetch } =
     useNormalizedTransactions(committedStart, committedEnd)
 
-  const [selectedNode, setSelectedNode] = useState<SelectedSankeyNode | null>(
-    null,
-  )
+  const [selectedNode, setSelectedNode] = useState<
+    SelectedSankeyNode | SelectedCashFlowNode | null
+  >(null)
 
   useEffect(() => {
     setSelectedNode(null)
@@ -147,9 +159,24 @@ export function SankeyReportPage({
     if (!enableDrilldown || !selectedNode) {
       return { nodes: [], links: [] }
     }
-    const filtered = filterRowsForDrilldown(sliceRows, selectedNode, topN)
-    return buildSpendingSankeyData(filtered, drilldownFlowType(selectedNode))
-  }, [enableDrilldown, selectedNode, sliceRows, topN])
+    if (drilldownMode === "cashflow") {
+      return buildCashFlowDrilldownData(
+        sliceRows,
+        selectedNode as SelectedCashFlowNode,
+        aggregateBanks,
+      )
+    }
+    const spendingSelected = selectedNode as SelectedSankeyNode
+    const filtered = filterRowsForDrilldown(sliceRows, spendingSelected, topN)
+    return buildSpendingSankeyData(filtered, drilldownFlowType(spendingSelected))
+  }, [
+    enableDrilldown,
+    selectedNode,
+    sliceRows,
+    topN,
+    drilldownMode,
+    aggregateBanks,
+  ])
 
   const subchartNodeDisplay = useMemo(() => {
     const map: Record<string, string> = {}
@@ -177,18 +204,26 @@ export function SankeyReportPage({
     (nodeName: string) => {
       if (!fireflyBaseUrl) return
       const displayName = subchartNodeDisplay[nodeName] ?? nodeName
-      const nodeFilter = getSpendingNodeQueryString(nodeName, displayName)
+      const nodeFilter =
+        drilldownMode === "cashflow"
+          ? getCashFlowNodeQueryString(nodeName, displayName)
+          : getSpendingNodeQueryString(nodeName, displayName)
       if (!nodeFilter) return
       const filters = [...dateFilters, nodeFilter].filter(Boolean).join(" ")
       openFireflySearch(fireflyBaseUrl, filters)
     },
-    [fireflyBaseUrl, dateFilters, subchartNodeDisplay],
+    [fireflyBaseUrl, dateFilters, subchartNodeDisplay, drilldownMode],
   )
 
   const handleMainNodeClick = (nodeName: string) => {
     if (!enableDrilldown) return
-    const parsed = parseNodeSelection(nodeName, mainNodeDisplay)
-    if (parsed) setSelectedNode(parsed)
+    if (drilldownMode === "cashflow") {
+      const parsed = parseCashFlowNodeSelection(nodeName, mainData.nodes)
+      if (parsed) setSelectedNode(parsed)
+    } else {
+      const parsed = parseNodeSelection(nodeName, mainNodeDisplay)
+      if (parsed) setSelectedNode(parsed)
+    }
   }
 
   return (

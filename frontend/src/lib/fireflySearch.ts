@@ -43,6 +43,13 @@ function getCashFlowNodeFilterForKey(
   return ""
 }
 
+export function getCashFlowNodeQueryString(
+  nodeName: string,
+  displayName: string,
+): string {
+  return getCashFlowNodeFilterForKey(nodeName, displayName)
+}
+
 function getNodeFilterForKey(
   key: string,
   displayName: string,
