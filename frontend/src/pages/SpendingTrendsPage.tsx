@@ -8,6 +8,11 @@ import { useDateRange } from "@/context/DateRangeContext"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
 import { buildTrendSeries } from "@/lib/trends"
 import {
+  readTrendChartType,
+  writeTrendChartType,
+  type TrendChartType,
+} from "@/lib/trendsChartType"
+import {
   readTrendViewMode,
   writeTrendViewMode,
   type TrendViewMode,
@@ -20,6 +25,7 @@ export function SpendingTrendsPage() {
     useNormalizedTransactions(committedStart, committedEnd)
 
   const [viewMode, setViewMode] = useState<TrendViewMode>(readTrendViewMode)
+  const [chartType, setChartType] = useState<TrendChartType>(readTrendChartType)
   const [topN, setTopN] = useState(8)
 
   const allRows = isSuccess ? (data?.data ?? []) : []
@@ -38,13 +44,21 @@ export function SpendingTrendsPage() {
 
   const chartSeries = useMemo((): TrendLineSeries[] => {
     const { series, totalOverlay } = trendResult
+    if (chartType === "stacked-bar") {
+      return series
+    }
     if (viewMode === "category" && totalOverlay != null) {
       return [...series, { ...totalOverlay, dashed: true }]
     }
     return series
-  }, [trendResult, viewMode])
+  }, [trendResult, viewMode, chartType])
 
   const controlsDisabled = isPending || isError
+
+  function handleChartTypeChange(type: TrendChartType) {
+    setChartType(type)
+    writeTrendChartType(type)
+  }
 
   function handleViewModeChange(mode: TrendViewMode) {
     setViewMode(mode)
@@ -57,8 +71,10 @@ export function SpendingTrendsPage() {
 
       <TrendsControls
         viewMode={viewMode}
+        chartType={chartType}
         topN={topN}
         onViewModeChange={handleViewModeChange}
+        onChartTypeChange={handleChartTypeChange}
         onTopNChange={setTopN}
         disabled={controlsDisabled}
       />
@@ -91,6 +107,7 @@ export function SpendingTrendsPage() {
         <SpendingTrendsChart
           months={trendResult.months}
           series={chartSeries}
+          chartType={chartType}
           loading={isPending}
           emptyMessage="No cash outflow in this date range"
         />

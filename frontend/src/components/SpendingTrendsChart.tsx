@@ -4,6 +4,7 @@ import type { EChartsOption } from "echarts"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import type { TrendChartType } from "@/lib/trendsChartType"
 import { formatCurrency } from "@/lib/spending"
 
 export type TrendLineSeries = {
@@ -15,6 +16,7 @@ export type TrendLineSeries = {
 type SpendingTrendsChartProps = {
   months: string[]
   series: TrendLineSeries[]
+  chartType: TrendChartType
   loading: boolean
   emptyMessage: string
 }
@@ -41,15 +43,95 @@ function hasNonZeroData(series: TrendLineSeries[]): boolean {
   return series.some((s) => s.data.some((v) => v > 0))
 }
 
+function axisTooltipFormatter(params: unknown): string {
+  if (!Array.isArray(params) || params.length === 0) return ""
+  const axisValue = String(params[0].axisValue ?? "")
+  const lines = params.map((item) => {
+    const value =
+      typeof item.value === "number" ? item.value : Number(item.value)
+    return `${item.seriesName}: ${formatCurrency(value)}`
+  })
+  return [axisValue, ...lines].join("\n")
+}
+
 export function SpendingTrendsChart({
   months,
   series,
+  chartType,
   loading,
   emptyMessage,
 }: SpendingTrendsChartProps) {
   const isEmpty = !loading && (!hasNonZeroData(series) || months.length === 0)
 
   const option = useMemo((): EChartsOption => {
+    const plotSeries = series.filter((s) => !s.dashed)
+
+    if (chartType === "stacked-bar") {
+      const monthlyTotals = months.map((_, monthIdx) =>
+        plotSeries.reduce((sum, s) => sum + (s.data[monthIdx] ?? 0), 0),
+      )
+
+      const echartsSeries = plotSeries.map((item, idx) => {
+        const isTopStack = idx === plotSeries.length - 1 && plotSeries.length > 1
+        return {
+          name: item.name,
+          type: "bar" as const,
+          stack: plotSeries.length > 1 ? "total" : undefined,
+          barMaxWidth: 38,
+          data: item.data,
+          itemStyle: {
+            color: CHART_COLORS[idx % CHART_COLORS.length],
+          },
+          emphasis: { focus: "series" as const },
+          ...(isTopStack
+            ? {
+                label: {
+                  show: true,
+                  position: "top" as const,
+                  fontSize: 12,
+                  color: "hsl(240 5% 65%)",
+                  formatter: (params: { dataIndex: number }) =>
+                    formatCurrency(monthlyTotals[params.dataIndex] ?? 0),
+                  offset: [0, -4],
+                },
+              }
+            : {}),
+        }
+      })
+
+      return {
+        tooltip: {
+          trigger: "axis",
+          axisPointer: { type: "shadow" },
+          formatter: axisTooltipFormatter,
+        },
+        legend: {
+          type: "scroll",
+          orient: "vertical",
+          right: 0,
+          top: "middle",
+          data: plotSeries.map((s) => s.name),
+        },
+        grid: { left: 48, right: 120, bottom: 40, top: 24 },
+        xAxis: {
+          type: "category",
+          data: months,
+          axisLabel: { rotate: 30 },
+        },
+        yAxis: {
+          type: "value",
+          min: 0,
+          axisLabel: {
+            formatter: (value: number) => formatCurrency(value),
+          },
+          splitLine: {
+            lineStyle: { type: "dashed", color: "hsl(240 5% 90%)" },
+          },
+        },
+        series: echartsSeries,
+      }
+    }
+
     const echartsSeries = series.map((item, idx) => ({
       name: item.name,
       type: "line" as const,
@@ -69,23 +151,16 @@ export function SpendingTrendsChart({
     return {
       tooltip: {
         trigger: "axis",
-        formatter: (params: unknown) => {
-          if (!Array.isArray(params) || params.length === 0) return ""
-          const axisValue = String(params[0].axisValue ?? "")
-          const lines = params.map((item) => {
-            const value =
-              typeof item.value === "number" ? item.value : Number(item.value)
-            return `${item.seriesName}: ${formatCurrency(value)}`
-          })
-          return [axisValue, ...lines].join("\n")
-        },
+        formatter: axisTooltipFormatter,
       },
       legend: {
         type: "scroll",
-        top: 0,
+        orient: "vertical",
+        right: 0,
+        top: "middle",
         data: series.map((s) => s.name),
       },
-      grid: { left: 48, right: 16, bottom: 40, top: 48 },
+      grid: { left: 48, right: 120, bottom: 40, top: 24 },
       xAxis: {
         type: "category",
         data: months,
@@ -103,7 +178,7 @@ export function SpendingTrendsChart({
       },
       series: echartsSeries,
     }
-  }, [months, series])
+  }, [months, series, chartType])
 
   if (loading) {
     return (

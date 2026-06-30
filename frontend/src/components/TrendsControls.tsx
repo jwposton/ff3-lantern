@@ -1,18 +1,23 @@
 import { Button } from "@/components/ui/button"
+import type { TrendChartType } from "@/lib/trendsChartType"
 import type { TrendViewMode } from "@/lib/trendsViewMode"
 
 type TrendsControlsProps = {
   viewMode: TrendViewMode
+  chartType: TrendChartType
   topN: number
   onViewModeChange: (mode: TrendViewMode) => void
+  onChartTypeChange: (type: TrendChartType) => void
   onTopNChange: (n: number) => void
   disabled?: boolean
 }
 
 export function TrendsControls({
   viewMode,
+  chartType,
   topN,
   onViewModeChange,
+  onChartTypeChange,
   onTopNChange,
   disabled = false,
 }: TrendsControlsProps) {
@@ -44,6 +49,33 @@ export function TrendsControls({
           onClick={() => onViewModeChange("category")}
         >
           By category
+        </Button>
+      </div>
+
+      <div
+        className="inline-flex rounded-md border shadow-xs"
+        role="group"
+        aria-label="Chart type"
+      >
+        <Button
+          type="button"
+          variant={chartType === "line" ? "default" : "outline"}
+          size="sm"
+          className="rounded-r-none border-0"
+          disabled={disabled}
+          onClick={() => onChartTypeChange("line")}
+        >
+          Line
+        </Button>
+        <Button
+          type="button"
+          variant={chartType === "stacked-bar" ? "default" : "outline"}
+          size="sm"
+          className="rounded-l-none border-0 border-l"
+          disabled={disabled}
+          onClick={() => onChartTypeChange("stacked-bar")}
+        >
+          Stacked bar
         </Button>
       </div>
 
