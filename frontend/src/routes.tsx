@@ -3,6 +3,7 @@ import { createBrowserRouter } from "react-router-dom"
 import { AppShell } from "@/layouts/AppShell"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { ReportStubPage } from "@/pages/ReportStubPage"
+import { SpendingBarPage } from "@/pages/SpendingBarPage"
 import { SpendingTrendsPage } from "@/pages/SpendingTrendsPage"
 import { TransactionExplorerPage } from "@/pages/TransactionExplorerPage"
 
@@ -17,14 +18,12 @@ export const router = createBrowserRouter([
         element: <TransactionExplorerPage />,
       },
       {
-        path: "reports/trends",
-        element: <SpendingTrendsPage />,
+        path: "reports/spending",
+        element: <SpendingBarPage />,
       },
       {
-        path: "reports/bar",
-        element: (
-          <ReportStubPage reportName="Bar & Drilldown" deliveryPhase={6} />
-        ),
+        path: "reports/cash-flow",
+        element: <SpendingTrendsPage />,
       },
       {
         path: "reports/sankey",

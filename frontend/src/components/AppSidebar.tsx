@@ -12,13 +12,14 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
-const navItems = [
+const generalNavItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   {
     to: "/reports/transactions",
@@ -26,15 +27,12 @@ const navItems = [
     icon: Table,
     end: false,
   },
+] as const
+
+const spendingNavItems = [
   {
-    to: "/reports/trends",
-    label: "Cash Flow",
-    icon: TrendingUp,
-    end: false,
-  },
-  {
-    to: "/reports/bar",
-    label: "Bar & Drilldown",
+    to: "/reports/spending",
+    label: "Spending",
     icon: BarChart3,
     end: false,
   },
@@ -45,6 +43,47 @@ const navItems = [
     end: false,
   },
 ] as const
+
+const cashFlowNavItems = [
+  {
+    to: "/reports/cash-flow",
+    label: "Cash Flow",
+    icon: TrendingUp,
+    end: false,
+  },
+] as const
+
+function NavItems({
+  items,
+}: {
+  items: readonly {
+    to: string
+    label: string
+    icon: typeof LayoutDashboard
+    end: boolean
+  }[]
+}) {
+  return (
+    <>
+      {items.map(({ to, label, icon: Icon, end }) => (
+        <SidebarMenuItem key={to}>
+          <SidebarMenuButton asChild tooltip={label}>
+            <NavLink
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                isActive ? "bg-sidebar-accent font-medium" : undefined
+              }
+            >
+              <Icon />
+              <span>{label}</span>
+            </NavLink>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      ))}
+    </>
+  )
+}
 
 export function AppSidebar() {
   return (
@@ -63,22 +102,23 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map(({ to, label, icon: Icon, end }) => (
-                <SidebarMenuItem key={to}>
-                  <SidebarMenuButton asChild tooltip={label}>
-                    <NavLink
-                      to={to}
-                      end={end}
-                      className={({ isActive }) =>
-                        isActive ? "bg-sidebar-accent font-medium" : undefined
-                      }
-                    >
-                      <Icon />
-                      <span>{label}</span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              <NavItems items={generalNavItems} />
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Spending</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <NavItems items={spendingNavItems} />
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Cash Flow</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <NavItems items={cashFlowNavItems} />
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
