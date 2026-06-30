@@ -1,9 +1,13 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 
 import { SankeyReportPage } from "@/components/SankeyReportPage"
+import { useDateRange } from "@/context/DateRangeContext"
+import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
 import {
   buildCashFlowSankeyData,
   isCashMovementRow,
+  MAX_VISIBLE_BANKS,
+  shouldBucketBanks,
 } from "@/lib/sankey"
 import {
   readAggregateBanks,
@@ -12,6 +16,19 @@ import {
 
 export function CashFlowSankeyPage() {
   const [aggregateBanks, setAggregateBanks] = useState(readAggregateBanks)
+  const { committedRange } = useDateRange()
+  const { start: committedStart, end: committedEnd } = committedRange
+  const { isSuccess, data } = useNormalizedTransactions(
+    committedStart,
+    committedEnd,
+  )
+
+  const sliceRows = useMemo(() => {
+    const allRows = isSuccess ? (data?.data ?? []) : []
+    return allRows.filter(isCashMovementRow)
+  }, [isSuccess, data])
+
+  const showBucketHint = !aggregateBanks && shouldBucketBanks(sliceRows)
 
   return (
     <SankeyReportPage
@@ -38,6 +55,12 @@ export function CashFlowSankeyPage() {
             />
             Aggregate bank accounts
           </label>
+          {showBucketHint && (
+            <p className="text-muted-foreground">
+              Showing top {MAX_VISIBLE_BANKS} bank accounts by flow; others
+              grouped as Other Banks
+            </p>
+          )}
         </div>
       }
     />

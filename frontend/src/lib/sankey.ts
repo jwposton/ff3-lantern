@@ -4,6 +4,10 @@ import { isBankAccount, isCreditCard } from "@/lib/accounts"
 
 const UNCategorized_LABEL = "Uncategorized"
 
+export const MAX_VISIBLE_BANKS = 8
+export const OTHER_BANKS_KEY = "Other Banks_BANK"
+export const OTHER_BANKS_LABEL = "Other Banks"
+
 export type SankeyNode = { name: string; displayName: string }
 export type SankeyLink = { source: string; target: string; value: number }
 export type SankeyData = { nodes: SankeyNode[]; links: SankeyLink[] }
@@ -17,6 +21,12 @@ export type FlowType =
 export type SelectedSankeyNode = {
   name: string
   type: "Budget" | "Category" | "Payee" | "Account" | "AccountType"
+  displayName: string
+}
+
+export type SelectedCashFlowNode = {
+  name: string
+  type: "Bank" | "Budget" | "Category" | "Source"
   displayName: string
 }
 
@@ -95,6 +105,73 @@ export function isCashMovementRow(row: OmniRow): boolean {
   if (sourceIsBank && destIsBank) return false
   if (!sourceIsBank && !destIsBank) return false
   return true
+}
+
+export function countDistinctBankAccounts(rows: OmniRow[]): number {
+  const banks = new Set<string>()
+  for (const tx of rows) {
+    if (!isCashMovementRow(tx)) continue
+    const sourceIsBank = isBankAccount(tx.source_type, tx.source_role)
+    const destIsBank = isBankAccount(tx.destination_type, tx.destination_role)
+    const sourceVal = (tx.source_account ?? "").trim()
+    const destVal = (tx.destination_account ?? "").trim()
+    if (sourceIsBank && sourceVal) banks.add(sourceVal)
+    if (destIsBank && destVal) banks.add(destVal)
+  }
+  return banks.size
+}
+
+export function shouldBucketBanks(rows: OmniRow[]): boolean {
+  return countDistinctBankAccounts(rows) > MAX_VISIBLE_BANKS
+}
+
+function collectBankVolumes(rows: OmniRow[]): Map<string, number> {
+  const volumes = new Map<string, number>()
+  for (const tx of rows) {
+    const amount = parseAmount(tx.amount)
+    if (!amount) continue
+    const sourceIsBank = isBankAccount(tx.source_type, tx.source_role)
+    const destIsBank = isBankAccount(tx.destination_type, tx.destination_role)
+    if ((sourceIsBank && destIsBank) || (!sourceIsBank && !destIsBank)) continue
+
+    const sourceVal = (tx.source_account ?? "").trim()
+    const destVal = (tx.destination_account ?? "").trim()
+    if (sourceIsBank && sourceVal) {
+      const key = `${sourceVal}_BANK`
+      volumes.set(key, (volumes.get(key) ?? 0) + amount)
+    }
+    if (destIsBank && destVal) {
+      const key = `${destVal}_BANK`
+      volumes.set(key, (volumes.get(key) ?? 0) + amount)
+    }
+  }
+  return volumes
+}
+
+function computeTopBankKeys(rows: OmniRow[]): Set<string> | null {
+  const volumes = collectBankVolumes(rows)
+  if (volumes.size <= MAX_VISIBLE_BANKS) return null
+  return new Set(
+    [...volumes.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_VISIBLE_BANKS)
+      .map(([key]) => key),
+  )
+}
+
+function resolveBankNode(
+  accountName: string,
+  aggregateBanks: boolean,
+  topBankKeys: Set<string> | null,
+): { key: string; label: string } {
+  if (aggregateBanks) {
+    return { key: "BankAccounts_BANK", label: "Bank Accounts" }
+  }
+  const individualKey = `${accountName}_BANK`
+  if (topBankKeys && !topBankKeys.has(individualKey)) {
+    return { key: OTHER_BANKS_KEY, label: OTHER_BANKS_LABEL }
+  }
+  return { key: individualKey, label: accountName }
 }
 
 export function sankeyChartHeight(nodeCount: number): number {
@@ -237,6 +314,7 @@ export function buildCashFlowSankeyData(
 ): SankeyData {
   const nodeMap = new Map<string, SankeyNode>()
   const linkMap = new Map<string, number>()
+  const topBankKeys = !aggregateBanks ? computeTopBankKeys(rows) : null
 
   function addNode(key: string, label?: string) {
     if (!key) return
@@ -278,19 +356,15 @@ export function buildCashFlowSankeyData(
 
     if (tx.type === "deposit" && !sourceIsBank && destIsBank) {
       if (sourceVal) nodes.push({ key: `${sourceVal}_SRC`, label: sourceVal })
-      if (aggregateBanks) {
-        nodes.push({ key: "BankAccounts_BANK", label: "Bank Accounts" })
-      } else if (destVal) {
-        nodes.push({ key: `${destVal}_BANK`, label: destVal })
+      if (destVal) {
+        nodes.push(resolveBankNode(destVal, aggregateBanks, topBankKeys))
       }
     } else if (
       (tx.type === "withdrawal" && sourceIsBank) ||
       (tx.type === "transfer" && sourceIsBank && !destIsBank)
     ) {
-      if (aggregateBanks) {
-        nodes.push({ key: "BankAccounts_BANK", label: "Bank Accounts" })
-      } else if (sourceVal) {
-        nodes.push({ key: `${sourceVal}_BANK`, label: sourceVal })
+      if (sourceVal) {
+        nodes.push(resolveBankNode(sourceVal, aggregateBanks, topBankKeys))
       }
 
       pushNodeIfNotDuplicate(nodes, {
@@ -303,10 +377,8 @@ export function buildCashFlowSankeyData(
       })
     } else if (tx.type === "transfer" && !sourceIsBank && destIsBank) {
       if (sourceVal) nodes.push({ key: `${sourceVal}_SRC`, label: sourceVal })
-      if (aggregateBanks) {
-        nodes.push({ key: "BankAccounts_BANK", label: "Bank Accounts" })
-      } else if (destVal) {
-        nodes.push({ key: `${destVal}_BANK`, label: destVal })
+      if (destVal) {
+        nodes.push(resolveBankNode(destVal, aggregateBanks, topBankKeys))
       }
     }
 
@@ -375,4 +447,95 @@ export function filterRowsForDrilldown(
   }
 
   return []
+}
+
+export function parseCashFlowNodeSelection(
+  nodeName: string,
+  nodes: SankeyNode[],
+): SelectedCashFlowNode | null {
+  const displayMap = new Map(nodes.map((n) => [n.name, n.displayName]))
+  const displayName = displayMap.get(nodeName) ?? nodeName
+
+  if (nodeName.endsWith("_BUDGET")) {
+    return { name: nodeName, type: "Budget", displayName }
+  }
+  if (nodeName.endsWith("_CAT")) {
+    return { name: nodeName, type: "Category", displayName }
+  }
+  if (nodeName.endsWith("_SRC")) {
+    return { name: nodeName, type: "Source", displayName }
+  }
+  if (nodeName.endsWith("_BANK")) {
+    return { name: nodeName, type: "Bank", displayName }
+  }
+  return null
+}
+
+export function filterRowsForCashFlowDrilldown(
+  rows: OmniRow[],
+  selected: SelectedCashFlowNode,
+): OmniRow[] {
+  if (selected.type === "Bank") {
+    if (selected.name === "BankAccounts_BANK") {
+      return rows.filter((r) => {
+        const sourceIsBank = isBankAccount(r.source_type, r.source_role)
+        const destIsBank = isBankAccount(r.destination_type, r.destination_role)
+        return sourceIsBank || destIsBank
+      })
+    }
+    if (selected.name === OTHER_BANKS_KEY) {
+      const topKeys = computeTopBankKeys(rows)
+      if (!topKeys) return []
+      const topNames = new Set(
+        [...topKeys].map((k) => k.replace(/_BANK$/, "")),
+      )
+      return rows.filter((r) => {
+        const sourceVal = (r.source_account ?? "").trim()
+        const destVal = (r.destination_account ?? "").trim()
+        const sourceIsBank = isBankAccount(r.source_type, r.source_role)
+        const destIsBank = isBankAccount(r.destination_type, r.destination_role)
+        if (sourceIsBank && sourceVal && !topNames.has(sourceVal)) return true
+        if (destIsBank && destVal && !topNames.has(destVal)) return true
+        return false
+      })
+    }
+    return rows.filter((r) => {
+      const sourceVal = (r.source_account ?? "").trim()
+      const destVal = (r.destination_account ?? "").trim()
+      return (
+        sourceVal === selected.displayName || destVal === selected.displayName
+      )
+    })
+  }
+
+  if (selected.type === "Budget") {
+    return rows.filter((r) => {
+      const destVal = (r.destination_account ?? "").trim()
+      return cashFlowBudgetOut(r, destVal) === selected.displayName
+    })
+  }
+
+  if (selected.type === "Category") {
+    return rows.filter((r) => {
+      const destVal = (r.destination_account ?? "").trim()
+      return cashFlowCategoryOut(r, destVal) === selected.displayName
+    })
+  }
+
+  if (selected.type === "Source") {
+    return rows.filter(
+      (r) => (r.source_account ?? "").trim() === selected.displayName,
+    )
+  }
+
+  return []
+}
+
+export function buildCashFlowDrilldownData(
+  rows: OmniRow[],
+  selected: SelectedCashFlowNode,
+  _aggregateBanks?: boolean,
+): SankeyData {
+  const filtered = filterRowsForCashFlowDrilldown(rows, selected)
+  return buildCashFlowSankeyData(filtered, true)
 }
