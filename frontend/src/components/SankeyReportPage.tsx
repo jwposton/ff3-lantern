@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 
 import { SankeyChart } from "@/components/SankeyChart"
 import { Button } from "@/components/ui/button"
 import { useDateRange } from "@/context/DateRangeContext"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
+import {
+  buildDateRangeFilters,
+  buildFireflyFilters,
+  getSpendingNodeQueryString,
+  openFireflySearch,
+} from "@/lib/fireflySearch"
 import type { FlowType, SankeyData, SelectedSankeyNode } from "@/lib/sankey"
 import {
   buildSpendingSankeyData,
@@ -110,6 +116,16 @@ export function SankeyReportPage({
 
   const allRows = isSuccess ? (data?.data ?? []) : []
 
+  const fireflyBaseUrl =
+    (isSuccess ? data?.firefly_base_url : undefined) ??
+    (import.meta.env.VITE_FIREFLY_BASE_URL as string | undefined) ??
+    ""
+
+  const dateFilters = useMemo(
+    () => buildDateRangeFilters(committedStart, committedEnd),
+    [committedStart, committedEnd],
+  )
+
   const sliceRows = useMemo(() => allRows.filter(filter), [allRows, filter])
 
   const mainData = useMemo(
@@ -132,6 +148,40 @@ export function SankeyReportPage({
     const filtered = filterRowsForDrilldown(sliceRows, selectedNode)
     return buildSpendingSankeyData(filtered, drilldownFlowType(selectedNode))
   }, [enableDrilldown, selectedNode, sliceRows])
+
+  const subchartNodeDisplay = useMemo(() => {
+    const map: Record<string, string> = {}
+    subchartData.nodes.forEach((n) => {
+      map[n.name] = n.displayName
+    })
+    return map
+  }, [subchartData.nodes])
+
+  const handleEdgeFirefly = useCallback(
+    (source: string, target: string, nodeDisplay: Record<string, string>) => {
+      if (!fireflyBaseUrl) return
+      const filters = buildFireflyFilters(
+        dateFilters,
+        source,
+        target,
+        nodeDisplay,
+      )
+      openFireflySearch(fireflyBaseUrl, filters)
+    },
+    [fireflyBaseUrl, dateFilters],
+  )
+
+  const handleSubchartNodeFirefly = useCallback(
+    (nodeName: string) => {
+      if (!fireflyBaseUrl) return
+      const displayName = subchartNodeDisplay[nodeName] ?? nodeName
+      const nodeFilter = getSpendingNodeQueryString(nodeName, displayName)
+      if (!nodeFilter) return
+      const filters = [...dateFilters, nodeFilter].filter(Boolean).join(" ")
+      openFireflySearch(fireflyBaseUrl, filters)
+    },
+    [fireflyBaseUrl, dateFilters, subchartNodeDisplay],
+  )
 
   const handleMainNodeClick = (nodeName: string) => {
     if (!enableDrilldown) return
@@ -179,6 +229,9 @@ export function SankeyReportPage({
             chartTitle={mainChartTitle}
             interactionHint={interactionHint}
             onNodeClick={enableDrilldown ? handleMainNodeClick : undefined}
+            onEdgeClick={(source, target) =>
+              handleEdgeFirefly(source, target, mainNodeDisplay)
+            }
           />
 
           {enableDrilldown && selectedNode && (
@@ -197,6 +250,10 @@ export function SankeyReportPage({
                 >
                   Clear
                 </Button>
+              }
+              onNodeClick={handleSubchartNodeFirefly}
+              onEdgeClick={(source, target) =>
+                handleEdgeFirefly(source, target, subchartNodeDisplay)
               }
             />
           )}
