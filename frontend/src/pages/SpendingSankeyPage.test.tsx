@@ -6,6 +6,7 @@ import { mainCheckingWithdrawal } from "@/test/fixtures/omniRows"
 
 const mockUseDateRange = vi.fn()
 const mockUseNormalizedTransactions = vi.fn()
+const mockSankeyReportPageProps = vi.fn()
 
 vi.mock("@/context/DateRangeContext", () => ({
   useDateRange: () => mockUseDateRange(),
@@ -15,6 +16,18 @@ vi.mock("@/hooks/useNormalizedTransactions", () => ({
   useNormalizedTransactions: (...args: unknown[]) =>
     mockUseNormalizedTransactions(...args),
 }))
+
+vi.mock("@/components/SankeyReportPage", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/components/SankeyReportPage")>()
+  return {
+    ...actual,
+    SankeyReportPage: (props: Parameters<typeof actual.SankeyReportPage>[0]) => {
+      mockSankeyReportPageProps(props)
+      return actual.SankeyReportPage(props)
+    },
+  }
+})
 
 vi.mock("@/components/SankeyChart", () => ({
   SankeyChart: ({
@@ -64,6 +77,7 @@ describe("SpendingSankeyPage", () => {
   })
 
   beforeEach(() => {
+    mockSankeyReportPageProps.mockClear()
     mockUseDateRange.mockReturnValue({
       committedRange: { start: "2024-01-01", end: "2024-01-31" },
     })
@@ -136,5 +150,14 @@ describe("SpendingSankeyPage", () => {
     expect(screen.getByText("Categories shown:")).toBeTruthy()
     expect(screen.getByRole("slider").getAttribute("min")).toBe("5")
     expect(screen.getByRole("slider").getAttribute("max")).toBe("25")
+  })
+
+  it("passes topN to SankeyReportPage for Other (C) drilldown", () => {
+    render(<SpendingSankeyPage />)
+
+    expect(mockSankeyReportPageProps).toHaveBeenCalled()
+    const props = mockSankeyReportPageProps.mock.calls[0][0]
+    expect(props.topN).toBeGreaterThanOrEqual(5)
+    expect(props.topN).toBeLessThanOrEqual(25)
   })
 })

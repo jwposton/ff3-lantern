@@ -24,6 +24,28 @@ describe("firefly:", () => {
     )
   })
 
+  it('returns empty string for Other (C) node', () => {
+    expect(getSpendingNodeQueryString("Other (C)", "Other")).toBe("")
+  })
+
+  it("escapes embedded double quotes in account_is filter", () => {
+    expect(getSpendingNodeQueryString('My "Special" (A)', 'My "Special"')).toBe(
+      'account_is:"My \\"Special\\""',
+    )
+  })
+
+  it("omits category_is:Other when edge targets Other (C)", () => {
+    const result = buildFireflyFilters(
+      buildDateRangeFilters("2024-01-01", "2024-01-31"),
+      "Essentials (B)",
+      "Other (C)",
+      { "Essentials (B)": "Essentials", "Other (C)": "Other" },
+    )
+    expect(result).toContain('budget_is:"Essentials"')
+    expect(result).not.toContain("category_is")
+    expect(result).not.toContain("Other")
+  })
+
   it("includes date_after and date_before from buildDateRangeFilters in buildFireflyFilters", () => {
     const base = buildDateRangeFilters("2024-01-01", "2024-01-31")
     const result = buildFireflyFilters(
