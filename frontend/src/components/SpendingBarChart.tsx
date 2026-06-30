@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useCallback, useMemo, useRef } from "react"
 import ReactECharts from "echarts-for-react"
 import type { EChartsOption } from "echarts"
 
@@ -55,6 +55,7 @@ export function SpendingBarChart({
 }: SpendingBarChartProps) {
   const { months, stacks, data } = chartData
   const isEmpty = !loading && !hasNonZeroStacks(chartData)
+  const chartRef = useRef<ReactECharts>(null)
 
   const option = useMemo((): EChartsOption => {
     const monthlyTotals = months.map((month) =>
@@ -100,7 +101,6 @@ export function SpendingBarChart({
         right: 0,
         top: "middle",
         data: stacks,
-        selectedMode: false,
         triggerEvent: true,
       },
       grid: { left: 48, right: 120, bottom: 40, top: 24 },
@@ -124,19 +124,34 @@ export function SpendingBarChart({
     }
   }, [months, stacks, data, yAxisName])
 
-  function handleClick(params: {
-    componentType?: string
-    seriesName?: string
-    name?: string
-  }) {
-    if (params.componentType === "legend" && params.name) {
+  const handleChartClick = useCallback(
+    (params: { seriesName?: string }) => {
+      if (params?.seriesName) {
+        onSelect(params.seriesName)
+      }
+    },
+    [onSelect],
+  )
+
+  const handleLegendSelectChanged = useCallback(
+    (params: { name?: string; selected?: Record<string, boolean> }) => {
+      if (!params.name) return
       onSelect(params.name)
-      return
-    }
-    if (params?.seriesName) {
-      onSelect(params.seriesName)
-    }
-  }
+      const chart = chartRef.current?.getEchartsInstance()
+      if (chart && params.selected) {
+        chart.dispatchAction({ type: "legendAllSelect" })
+      }
+    },
+    [onSelect],
+  )
+
+  const onEvents = useMemo(
+    () => ({
+      click: handleChartClick,
+      legendselectchanged: handleLegendSelectChanged,
+    }),
+    [handleChartClick, handleLegendSelectChanged],
+  )
 
   if (loading) {
     return (
@@ -163,9 +178,10 @@ export function SpendingBarChart({
           </div>
         ) : (
           <ReactECharts
+            ref={chartRef}
             option={option}
             style={{ height: 380, width: "100%" }}
-            onEvents={{ click: handleClick }}
+            onEvents={onEvents}
             notMerge
             lazyUpdate
           />

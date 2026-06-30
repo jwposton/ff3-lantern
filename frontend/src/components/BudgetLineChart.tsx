@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useCallback, useMemo, useRef } from "react"
 import ReactECharts from "echarts-for-react"
 import type { EChartsOption } from "echarts"
 
@@ -54,6 +54,7 @@ export function BudgetLineChart({
   onSelect,
 }: BudgetLineChartProps) {
   const isEmpty = !loading && (!hasNonZeroData(series) || months.length === 0)
+  const chartRef = useRef<ReactECharts>(null)
 
   const option = useMemo((): EChartsOption => {
     const echartsSeries = series.map((item, idx) => ({
@@ -89,7 +90,6 @@ export function BudgetLineChart({
         right: 0,
         top: "middle",
         data: series.map((s) => s.name),
-        selectedMode: false,
         triggerEvent: true,
       },
       grid: { left: 48, right: 120, bottom: 40, top: 24 },
@@ -113,20 +113,34 @@ export function BudgetLineChart({
     }
   }, [months, series, yAxisName])
 
-  function handleClick(params: {
-    componentType?: string
-    seriesName?: string
-    name?: string
-  }) {
-    if (params.componentType === "legend" && params.name) {
-      if (params.name === TOTAL_LABEL) return
+  const handleChartClick = useCallback(
+    (params: { seriesName?: string }) => {
+      if (params?.seriesName && params.seriesName !== TOTAL_LABEL) {
+        onSelect(params.seriesName)
+      }
+    },
+    [onSelect],
+  )
+
+  const handleLegendSelectChanged = useCallback(
+    (params: { name?: string; selected?: Record<string, boolean> }) => {
+      if (!params.name || params.name === TOTAL_LABEL) return
       onSelect(params.name)
-      return
-    }
-    if (params?.seriesName && params.seriesName !== TOTAL_LABEL) {
-      onSelect(params.seriesName)
-    }
-  }
+      const chart = chartRef.current?.getEchartsInstance()
+      if (chart && params.selected) {
+        chart.dispatchAction({ type: "legendAllSelect" })
+      }
+    },
+    [onSelect],
+  )
+
+  const onEvents = useMemo(
+    () => ({
+      click: handleChartClick,
+      legendselectchanged: handleLegendSelectChanged,
+    }),
+    [handleChartClick, handleLegendSelectChanged],
+  )
 
   if (loading) {
     return (
@@ -153,9 +167,10 @@ export function BudgetLineChart({
           </div>
         ) : (
           <ReactECharts
+            ref={chartRef}
             option={option}
             style={{ height: 380, width: "100%" }}
-            onEvents={{ click: handleClick }}
+            onEvents={onEvents}
             notMerge
             lazyUpdate
           />

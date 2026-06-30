@@ -48,12 +48,12 @@ describe("BudgetLineChart", () => {
     capturedOnEvents = null
   })
 
-  it("sets legend selectedMode false and triggerEvent true", () => {
+  it("enables legend interaction with triggerEvent true", () => {
     render(<BudgetLineChart {...sampleProps} onSelect={() => {}} />)
 
     const legend = capturedOption?.legend as Record<string, unknown>
-    expect(legend?.selectedMode).toBe(false)
     expect(legend?.triggerEvent).toBe(true)
+    expect(legend?.selectedMode).not.toBe(false)
   })
 
   it("registers legendselectchanged handler for legend drill", () => {
