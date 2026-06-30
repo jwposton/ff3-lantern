@@ -1,13 +1,20 @@
 import { useEffect, useMemo, useState } from "react"
 
+import { TransactionFilters } from "@/components/TransactionFilters"
 import { TransactionTable } from "@/components/TransactionTable"
 import { Button } from "@/components/ui/button"
 import { useDateRange } from "@/context/DateRangeContext"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
 import {
   applyDefaultTypeScope,
+  applyFilters,
+  distinctBudgets,
+  distinctCategories,
+  distinctSourceAccounts,
+  EMPTY_FILTERS,
   paginateRows,
   sortRows,
+  type FilterState,
   type SortDir,
   type SortKey,
 } from "@/lib/transactionTable"
@@ -19,28 +26,54 @@ export function TransactionExplorerPage() {
     useNormalizedTransactions(committedStart, committedEnd)
 
   const [showAllTypes, setShowAllTypes] = useState(false)
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS)
   const [sortKey, setSortKey] = useState<SortKey>("date")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [pageIndex, setPageIndex] = useState(0)
 
   useEffect(() => {
     setPageIndex(0)
-  }, [committedStart, committedEnd, sortKey, sortDir])
+  }, [
+    committedStart,
+    committedEnd,
+    sortKey,
+    sortDir,
+    showAllTypes,
+    filters,
+  ])
 
   const allRows = isSuccess ? (data?.data ?? []) : []
 
-  const displayRows = useMemo(() => {
-    const scoped = applyDefaultTypeScope(allRows, showAllTypes)
-    const sorted = sortRows(scoped, sortKey, sortDir)
-    return paginateRows(sorted, pageIndex).pageRows
-  }, [allRows, showAllTypes, sortKey, sortDir, pageIndex])
+  const scopedRows = useMemo(
+    () => applyDefaultTypeScope(allRows, showAllTypes),
+    [allRows, showAllTypes],
+  )
 
-  const { totalPages, totalCount } = useMemo(() => {
-    const scoped = applyDefaultTypeScope(allRows, showAllTypes)
-    const sorted = sortRows(scoped, sortKey, sortDir)
-    const { totalPages: pages } = paginateRows(sorted, pageIndex)
-    return { totalPages: pages, totalCount: sorted.length }
-  }, [allRows, showAllTypes, sortKey, sortDir, pageIndex])
+  const filterOptions = useMemo(
+    () => ({
+      categories: distinctCategories(scopedRows),
+      budgets: distinctBudgets(scopedRows),
+      accounts: distinctSourceAccounts(scopedRows),
+    }),
+    [scopedRows],
+  )
+
+  const filteredRows = useMemo(
+    () => applyFilters(scopedRows, filters),
+    [scopedRows, filters],
+  )
+
+  const sortedRows = useMemo(
+    () => sortRows(filteredRows, sortKey, sortDir),
+    [filteredRows, sortKey, sortDir],
+  )
+
+  const { pageRows, totalPages } = useMemo(
+    () => paginateRows(sortedRows, pageIndex),
+    [sortedRows, pageIndex],
+  )
+
+  const totalCount = sortedRows.length
 
   function handleSort(key: SortKey) {
     if (key === sortKey) {
@@ -56,7 +89,17 @@ export function TransactionExplorerPage() {
   const scopedEmpty =
     isSuccess &&
     allRows.length > 0 &&
-    applyDefaultTypeScope(allRows, showAllTypes).length === 0
+    scopedRows.length === 0 &&
+    !isPending &&
+    !isError
+  const filteredEmpty =
+    isSuccess &&
+    scopedRows.length > 0 &&
+    filteredRows.length === 0 &&
+    !isPending &&
+    !isError
+
+  const controlsDisabled = isPending || isError
 
   return (
     <div className="space-y-6 px-0 lg:px-0">
@@ -64,16 +107,14 @@ export function TransactionExplorerPage() {
         Transaction Explorer
       </h1>
 
-      <label className="flex items-center gap-2 text-sm text-muted-foreground">
-        <input
-          type="checkbox"
-          checked={showAllTypes}
-          disabled
-          onChange={(e) => setShowAllTypes(e.target.checked)}
-          className="rounded border"
-        />
-        Show all types (filters in next release)
-      </label>
+      <TransactionFilters
+        filters={filters}
+        onChange={setFilters}
+        options={filterOptions}
+        showAllTypes={showAllTypes}
+        onShowAllTypesChange={setShowAllTypes}
+        disabled={controlsDisabled}
+      />
 
       {isError ? (
         <div
@@ -109,27 +150,43 @@ export function TransactionExplorerPage() {
         <p className="text-sm text-muted-foreground">
           No transactions match your filters
         </p>
+      ) : filteredEmpty ? (
+        <div className="space-y-3 rounded-lg border p-6 text-center">
+          <p className="text-sm text-muted-foreground">
+            No transactions match your filters
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setFilters(EMPTY_FILTERS)}
+          >
+            Clear all filters
+          </Button>
+        </div>
       ) : (
         <>
           <TransactionTable
-            rows={displayRows}
+            rows={pageRows}
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={handleSort}
             isLoading={isPending}
             showAllTypes={showAllTypes}
+            fireflyBaseUrl={data?.firefly_base_url}
           />
           {totalPages > 0 ? (
             <div className="flex flex-wrap items-center justify-between gap-4 text-xs font-medium text-muted-foreground">
               <span>
-                Page {pageIndex + 1} of {totalPages} · {totalCount} transactions
+                Page {pageIndex + 1} of {totalPages} · {totalCount}{" "}
+                transactions
               </span>
               <div className="flex gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={pageIndex <= 0 || isPending}
+                  disabled={pageIndex <= 0 || controlsDisabled}
                   onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
                 >
                   Prev
@@ -138,7 +195,7 @@ export function TransactionExplorerPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={pageIndex >= totalPages - 1 || isPending}
+                  disabled={pageIndex >= totalPages - 1 || controlsDisabled}
                   onClick={() => setPageIndex((p) => p + 1)}
                 >
                   Next
