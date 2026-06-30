@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { isCashMovementRow } from "@/lib/sankey"
 import { mainCheckingWithdrawal } from "@/test/fixtures/omniRows"
+import type { OmniRow } from "@/types/NormalizedTransaction"
 
 const mockUseDateRange = vi.fn()
 const mockUseNormalizedTransactions = vi.fn()
@@ -113,5 +114,45 @@ describe("CashFlowSankeyPage", () => {
     expect(
       screen.getByTestId("sankey-chart").getAttribute("data-has-node-click"),
     ).toBe("false")
+  })
+
+  it("shows bank bucketing helper when many banks and aggregate unchecked", () => {
+    const rows: OmniRow[] = []
+    for (let i = 0; i < 12; i++) {
+      rows.push({
+        amount: String(100 - i),
+        type: "withdrawal",
+        source_account: `Bank ${i}`,
+        source_type: "Asset account",
+        source_role: "Default account",
+        destination_account: "Store",
+        destination_type: "Expense account",
+        destination_role: null,
+        budget: "Essentials",
+        category: "Food",
+        date: `2024-01-${String(i + 1).padStart(2, "0")}`,
+      })
+    }
+
+    mockUseNormalizedTransactions.mockReturnValue({
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+      data: { data: rows },
+      refetch: vi.fn(),
+    })
+
+    render(<CashFlowSankeyPage />)
+
+    const checkbox = screen.getByLabelText(
+      "Aggregate bank accounts",
+    ) as HTMLInputElement
+    checkbox.click()
+
+    expect(
+      screen.getByText(
+        /Showing top 8 bank accounts by flow; others grouped as Other Banks/,
+      ),
+    ).toBeTruthy()
   })
 })

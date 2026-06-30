@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { OmniRow } from "@/types/NormalizedTransaction"
+import { isBankAccount } from "@/lib/accounts"
 import {
   creditCardPaymentTransfer,
   creditCardPaymentTransferNoBudget,
@@ -10,9 +11,15 @@ import {
 import { isSpendingExpense } from "@/lib/spending"
 import {
   buildCashFlowSankeyData,
+  buildCashFlowDrilldownData,
   buildSpendingSankeyData,
+  countDistinctBankAccounts,
+  filterRowsForCashFlowDrilldown,
   filterRowsForDrilldown,
   isCashMovementRow,
+  MAX_VISIBLE_BANKS,
+  parseCashFlowNodeSelection,
+  shouldBucketBanks,
 } from "@/lib/sankey"
 
 function makeRow(overrides: Partial<OmniRow> & Pick<OmniRow, "date">): OmniRow {
@@ -246,6 +253,95 @@ describe("cashFlow:", () => {
     const data = buildCashFlowSankeyData([transferIn], false)
     expect(data.nodes.some((n) => n.name === "Main Checking_BANK")).toBe(true)
     expect(data.nodes.some((n) => n.name === "BankAccounts_BANK")).toBe(false)
+  })
+
+  it("buckets low-volume banks into Other Banks when unaggregated and > MAX_VISIBLE_BANKS", () => {
+    const rows: OmniRow[] = []
+    for (let i = 0; i < 12; i++) {
+      rows.push({
+        amount: String(100 - i),
+        type: "withdrawal",
+        source_account: `Bank ${i}`,
+        source_type: "Asset account",
+        source_role: "Default account",
+        destination_account: "Store",
+        destination_type: "Expense account",
+        destination_role: null,
+        budget: "Essentials",
+        category: "Food",
+        date: `2024-01-${String(i + 1).padStart(2, "0")}`,
+      })
+    }
+    expect(countDistinctBankAccounts(rows)).toBe(12)
+    expect(shouldBucketBanks(rows)).toBe(true)
+
+    const data = buildCashFlowSankeyData(rows, false)
+    const bankNodes = data.nodes.filter((n) => n.name.endsWith("_BANK"))
+    expect(bankNodes.length).toBeLessThanOrEqual(MAX_VISIBLE_BANKS + 1)
+    expect(data.nodes.some((n) => n.name === "Other Banks_BANK")).toBe(true)
+    expect(data.nodes.some((n) => n.displayName === "Other Banks")).toBe(true)
+    const individualBanks = bankNodes.filter(
+      (n) => n.name !== "Other Banks_BANK",
+    )
+    expect(individualBanks.length).toBe(MAX_VISIBLE_BANKS)
+  })
+})
+
+describe("cashFlowDrilldown:", () => {
+  it("parseCashFlowNodeSelection maps _BUDGET suffix to Budget type", () => {
+    const nodes = [
+      { name: "Essentials_BUDGET", displayName: "Essentials" },
+    ]
+    const selected = parseCashFlowNodeSelection("Essentials_BUDGET", nodes)
+    expect(selected).toEqual({
+      name: "Essentials_BUDGET",
+      type: "Budget",
+      displayName: "Essentials",
+    })
+  })
+
+  it("filterRowsForCashFlowDrilldown on BankAccounts_BANK returns bank-side rows", () => {
+    const rows = [
+      mainCheckingWithdrawal,
+      {
+        amount: "5000.00",
+        type: "deposit",
+        source_account: "Employer",
+        source_type: "Revenue account",
+        source_role: null,
+        destination_account: "Main Checking",
+        destination_type: "Asset account",
+        destination_role: "Default account",
+        budget: null,
+        category: null,
+        date: "2024-01-01",
+      },
+    ]
+    const filtered = filterRowsForCashFlowDrilldown(rows, {
+      name: "BankAccounts_BANK",
+      type: "Bank",
+      displayName: "Bank Accounts",
+    })
+    expect(filtered.length).toBeGreaterThan(0)
+    expect(
+      filtered.every(
+        (r) =>
+          isBankAccount(r.source_type, r.source_role) ||
+          isBankAccount(r.destination_type, r.destination_role),
+      ),
+    ).toBe(true)
+  })
+
+  it("buildCashFlowDrilldownData produces non-empty subchart from filtered rows", () => {
+    const rows = [mainCheckingWithdrawal, creditCardPaymentTransfer]
+    const selected = {
+      name: "Essentials_BUDGET",
+      type: "Budget" as const,
+      displayName: "Essentials",
+    }
+    const data = buildCashFlowDrilldownData(rows, selected, true)
+    expect(data.nodes.length).toBeGreaterThan(0)
+    expect(data.links.length).toBeGreaterThan(0)
   })
 })
 
