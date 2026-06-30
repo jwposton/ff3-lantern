@@ -10,6 +10,18 @@ export type BarChartData = {
   data: Record<string, Record<string, number>>
 }
 
+export type TrendLineSeries = {
+  name: string
+  data: number[]
+  dashed?: boolean
+}
+
+export const TOTAL_LABEL = "Total"
+
+export type LineSeriesOptions = {
+  includeTotal?: boolean
+}
+
 export type BuildBarChartOptions = {
   start: string
   end: string
@@ -85,4 +97,24 @@ export function buildBarChartData(
   }
 
   return { months, stacks, data }
+}
+
+export function barChartDataToLineSeries(
+  chartData: BarChartData,
+  options?: LineSeriesOptions,
+): TrendLineSeries[] {
+  const { months, stacks, data } = chartData
+  const series: TrendLineSeries[] = stacks.map((stack) => ({
+    name: stack,
+    data: months.map((month) => data[month]?.[stack] ?? 0),
+  }))
+
+  if (options?.includeTotal) {
+    const totalData = months.map((month) =>
+      stacks.reduce((sum, stack) => sum + (data[month]?.[stack] ?? 0), 0),
+    )
+    series.push({ name: TOTAL_LABEL, data: totalData, dashed: true })
+  }
+
+  return series
 }
