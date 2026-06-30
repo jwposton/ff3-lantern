@@ -2,9 +2,9 @@ import { createBrowserRouter } from "react-router-dom"
 
 import { AppShell } from "@/layouts/AppShell"
 import { DashboardPage } from "@/pages/DashboardPage"
-import { ReportStubPage } from "@/pages/ReportStubPage"
 import { SpendingBarPage } from "@/pages/SpendingBarPage"
 import { SpendingLinePage } from "@/pages/SpendingLinePage"
+import { SpendingSankeyPage } from "@/pages/SpendingSankeyPage"
 import { CashFlowBarPage } from "@/pages/CashFlowBarPage"
 import { CashFlowLinePage } from "@/pages/CashFlowLinePage"
 import { TransactionExplorerPage } from "@/pages/TransactionExplorerPage"
@@ -28,18 +28,16 @@ export const router = createBrowserRouter([
         element: <SpendingLinePage />,
       },
       {
+        path: "reports/spending/sankey",
+        element: <SpendingSankeyPage />,
+      },
+      {
         path: "reports/cash-flow",
         element: <CashFlowBarPage />,
       },
       {
         path: "reports/cash-flow/trends",
         element: <CashFlowLinePage />,
-      },
-      {
-        path: "reports/sankey",
-        element: (
-          <ReportStubPage reportName="Sankey Flows" deliveryPhase={7} />
-        ),
       },
     ],
   },

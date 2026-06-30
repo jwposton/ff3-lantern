@@ -77,6 +77,19 @@ describe("AppSidebar active nav state", () => {
     expectActive("/reports/cash-flow", false)
   })
 
+  it("highlights Spending Sankey on /reports/spending/sankey", () => {
+    renderSidebar("/reports/spending/sankey")
+    expectActive("/reports/spending/sankey", true)
+    expectActive("/reports/spending", false)
+    expectActive("/reports/spending/trends", false)
+  })
+
+  it("does not include legacy /reports/sankey nav item", () => {
+    renderSidebar("/reports/spending/sankey")
+    const legacyLink = document.querySelector('a[href="/reports/sankey"]')
+    expect(legacyLink).toBeNull()
+  })
+
   it("highlights Dashboard on /", () => {
     renderSidebar("/")
     expectActive("/", true)

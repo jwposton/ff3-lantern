@@ -43,8 +43,8 @@ const spendingNavItems = [
     end: false,
   },
   {
-    to: "/reports/sankey",
-    label: "Sankey Flows",
+    to: "/reports/spending/sankey",
+    label: "Sankey",
     icon: GitBranch,
     end: false,
   },
