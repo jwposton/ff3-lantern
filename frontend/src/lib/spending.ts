@@ -23,6 +23,14 @@ export function isTrendCashOutflow(row: OmniRow): boolean {
   return false
 }
 
+/**
+ * Spending bar slice (D-09–D-11): asset-account withdrawals including credit card
+ * purchases; excludes transfers and deposits.
+ */
+export function isSpendingExpense(row: OmniRow): boolean {
+  return row.type === "withdrawal" && row.source_type === "Asset account"
+}
+
 export function spendingWithdrawalTotal(rows: OmniRow[]): number {
   return rows.reduce((sum, row) => {
     if (!isSpendingWithdrawal(row)) return sum
