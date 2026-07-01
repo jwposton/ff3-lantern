@@ -11,6 +11,33 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
+def _format_firefly_error(response: httpx.Response) -> str:
+    """Extract a short operator-facing message from a Firefly error response."""
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            message = payload.get("message")
+            if message:
+                return str(message)
+            errors = payload.get("errors")
+            if isinstance(errors, dict):
+                parts: list[str] = []
+                for field, msgs in errors.items():
+                    if isinstance(msgs, list):
+                        parts.extend(f"{field}: {m}" for m in msgs)
+                    else:
+                        parts.append(f"{field}: {msgs}")
+                if parts:
+                    return "; ".join(parts[:6])
+    except Exception:
+        pass
+    text = response.text.strip()
+    if len(text) > 400:
+        return text[:400] + "…"
+    return text or f"HTTP {response.status_code}"
+
+
 _ACCOUNT_TYPE_MAP = {
     "asset": "Asset account",
     "expense": "Expense account",
@@ -181,7 +208,7 @@ class FireflyClient:
             response = await client.post("/api/v1/rules", json=rule_body)
             if response.status_code not in (200, 201):
                 raise RuntimeError(
-                    f"Firefly API error {response.status_code}: {response.text}"
+                    f"Firefly API error {response.status_code}: {_format_firefly_error(response)}"
                 )
             payload = response.json()
             data = payload.get("data", {})
@@ -197,12 +224,14 @@ class FireflyClient:
         async with self._build_client() as client:
             response = await client.post(
                 f"/api/v1/rules/{rule_id}/trigger",
-                json={"start": start, "end": end},
+                params={"start": start, "end": end},
             )
-            if response.status_code not in (200, 201):
+            if response.status_code not in (200, 201, 204):
                 raise RuntimeError(
-                    f"Firefly API error {response.status_code}: {response.text}"
+                    f"Firefly API error {response.status_code}: {_format_firefly_error(response)}"
                 )
+            if response.status_code == 204 or not response.content:
+                return {"ok": True}
             return response.json()
 
     async def fetch_account(self, account_id: str) -> dict[str, Any]:

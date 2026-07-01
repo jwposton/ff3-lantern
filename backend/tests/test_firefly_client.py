@@ -322,12 +322,12 @@ def test_create_rule_posts_active_body():
 
 
 def test_trigger_rule_posts_date_range():
-    seen: list[dict] = []
+    seen: list[tuple[str, str]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/rules/12/trigger" and request.method == "POST":
-            seen.append(json.loads(request.content.decode()))
-            return httpx.Response(200, json={"message": "triggered"})
+            seen.append((request.url.params.get("start", ""), request.url.params.get("end", "")))
+            return httpx.Response(204)
         return httpx.Response(404)
 
     client = FireflyClient(
@@ -335,8 +335,9 @@ def test_trigger_rule_posts_date_range():
         base_url="https://firefly.example",
         api_token="tok",
     )
-    asyncio.run(client.trigger_rule("12", "2024-01-01", "2024-01-31"))
-    assert seen == [{"start": "2024-01-01", "end": "2024-01-31"}]
+    result = asyncio.run(client.trigger_rule("12", "2024-01-01", "2024-01-31"))
+    assert seen == [("2024-01-01", "2024-01-31")]
+    assert result == {"ok": True}
 
 
 def test_fetch_rule_groups_returns_id_and_title():

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-07-01
+
+### Changed
+
+- **AI suggest context** — Removed Firefly rule titles from the OpenRouter prompt; suggestions use transaction fields, category/budget allowlists, and few-shot categorized history only
+- **Rule editor** — Destination account (payee), transaction type, and bank description context; triggers can combine description and payee (AND logic)
+- **AI rule drafts** — Normalize titles to `{Merchant} → {Category}`; prefer payee trigger when bank description is generic (`POS PURCHASE`, etc.)
+
+### Fixed
+
+- **Create rule 502** — Firefly rule trigger backfill uses query params (`start`/`end`) and accepts HTTP 204; readable Firefly error messages on failure
+- **Rule create payload** — `active: true` on triggers/actions, `strict` when multiple triggers, duplicate title detection
+- **Rule duplicate detection** — Destination account triggers included in overlap checks
+
 ## [1.1.2] - 2026-07-01
 
 ### Changed
@@ -110,7 +124,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.3...HEAD
+[1.1.3]: https://github.com/jwposton/FF3Analytics/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/jwposton/FF3Analytics/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/jwposton/FF3Analytics/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/jwposton/FF3Analytics/compare/v1.0.2...v1.1.0

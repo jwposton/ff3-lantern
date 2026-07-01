@@ -12,7 +12,12 @@ Use ONLY category and budget names from the allowed lists in the user message.
 Never invent category or budget names.
 Recommend "rule" for recurring merchants with stable description patterns.
 Recommend "direct" for one-off or ambiguous transactions.
-When recommending "rule", include a rule object with title and description_contains.
+When recommendation is "rule", include a rule object:
+- title: short human label for the Firefly rules list (e.g. "Amazon → Shopping", "Netflix subscription"). NOT the raw bank description, NOT the trigger needle, NOT your rationale.
+- description_contains: substring from the bank description when it has a stable merchant token (e.g. "AMZN MKTP", "NETFLIX"). Use empty string when the description is generic (e.g. "POS PURCHASE") and destination_account is better.
+- destination_account: Firefly payee / destination account name when it identifies the merchant (from transaction.destination_name). Use null when description_contains is sufficient.
+- transaction_type: "withdrawal" or "deposit" when the pattern is type-specific; null otherwise.
+At least one of description_contains or destination_account must be non-empty.
 Output JSON matching the required schema."""
 
 
@@ -22,14 +27,10 @@ def _name_map(items: list[dict[str, Any]]) -> dict[str, str]:
 
 async def fetch_allowlists(
     client: FireflyClient,
-) -> tuple[dict[str, str], dict[str, str], list[dict[str, str]]]:
+) -> tuple[dict[str, str], dict[str, str]]:
     categories = await client.fetch_categories()
     budgets = await client.fetch_budgets()
-    rules = await client.fetch_rules()
-    rule_summaries = [
-        {"id": r["id"], "title": r.get("title") or ""} for r in rules[:20]
-    ]
-    return _name_map(categories), _name_map(budgets), rule_summaries
+    return _name_map(categories), _name_map(budgets)
 
 
 def _is_categorized_split(flat: dict[str, Any]) -> bool:
@@ -83,13 +84,11 @@ def build_user_payload(
     category_names: list[str],
     budget_names: list[str],
     few_shot: list[dict[str, Any]],
-    rule_summaries: list[dict[str, str]],
 ) -> dict[str, Any]:
     """Single-transaction JSON payload — no notes or account numbers."""
     return {
         "allowed_categories": category_names,
         "allowed_budgets": budget_names,
-        "rule_summaries": rule_summaries,
         "few_shot_examples": few_shot,
         "transaction": {
             "journal_id": transaction.get("journal_id"),
@@ -109,7 +108,7 @@ async def build_suggest_context(
     start: str,
     end: str,
 ) -> tuple[dict[str, str], dict[str, str], dict[str, Any]]:
-    cat_map, budget_map, rule_summaries = await fetch_allowlists(client)
+    cat_map, budget_map = await fetch_allowlists(client)
     flat = await client.fetch_splits(start, end)
     few_shot = select_few_shot_examples(flat, transaction)
     payload = build_user_payload(
@@ -117,6 +116,5 @@ async def build_suggest_context(
         category_names=sorted(cat_map.keys()),
         budget_names=sorted(budget_map.keys()),
         few_shot=few_shot,
-        rule_summaries=rule_summaries,
     )
     return cat_map, budget_map, payload

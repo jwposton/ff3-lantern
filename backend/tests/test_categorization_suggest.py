@@ -34,6 +34,7 @@ def test_model_parses_direct_suggestion():
 def test_suggestion_json_schema_rule_includes_transaction_type_in_required():
     rule_schema = SUGGESTION_JSON_SCHEMA["properties"]["rule"]
     assert "transaction_type" in rule_schema["required"]
+    assert "destination_account" in rule_schema["required"]
 
 
 def test_model_requires_rule_when_recommendation_rule():
@@ -159,8 +160,8 @@ def test_context_payload_excludes_sensitive_fields():
         category_names=["Shopping"],
         budget_names=["Household"],
         few_shot=[],
-        rule_summaries=[],
     )
+    assert "rule_summaries" not in payload
     tx = payload["transaction"]
     assert "notes" not in tx
     assert "source_name" in tx

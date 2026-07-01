@@ -8,7 +8,7 @@ from typing import Any
 
 import sidecar_db
 from categorization_apply import validate_apply_ids
-from categorization_models import RuleDraft
+from categorization_models import RuleDraft, validate_rule_triggers
 from firefly_client import FireflyClient
 from transaction_normalization import is_uncategorized_for_queue
 
@@ -33,15 +33,21 @@ def _rule_group_title() -> str:
 
 
 def _matches_draft(split: dict[str, Any], draft: RuleDraft) -> bool:
-    needle = draft.description_contains.strip().lower()
-    if not needle:
-        return False
-    desc = (split.get("description") or "").lower()
-    if needle not in desc:
-        return False
     if draft.transaction_type and split.get("type") != draft.transaction_type:
         return False
-    return True
+    desc_needle = draft.description_contains.strip().lower()
+    dest_needle = (draft.destination_account or "").strip()
+    desc_ok = True
+    dest_ok = True
+    if desc_needle:
+        desc = (split.get("description") or "").lower()
+        desc_ok = desc_needle in desc
+    if dest_needle:
+        dest_name = (split.get("destination_name") or "").strip()
+        dest_ok = dest_name == dest_needle
+    if desc_needle and dest_needle:
+        return desc_ok and dest_ok
+    return desc_ok and dest_ok
 
 
 async def preview_rule_matches(
@@ -50,9 +56,8 @@ async def preview_rule_matches(
     end: str,
     draft: RuleDraft,
 ) -> dict[str, int]:
-    """Count splits matching draft description_contains in date range."""
-    if not draft.description_contains.strip():
-        raise ValueError("description_contains must be non-empty")
+    """Count splits matching draft triggers in date range."""
+    validate_rule_triggers(draft)
     splits = await client.fetch_splits(start, end)
     total = uncategorized_count = categorized_count = 0
     for split in splits:
@@ -94,22 +99,43 @@ def build_firefly_rule_body(
     budget_name: str | None,
 ) -> dict[str, Any]:
     """Map approved draft to Firefly POST /api/v1/rules JSON."""
-    triggers: list[dict[str, str]] = [
-        {"type": "description_contains", "value": draft.description_contains.strip()}
-    ]
+    triggers: list[dict[str, Any]] = []
+    if draft.description_contains.strip():
+        triggers.append(
+            {
+                "type": "description_contains",
+                "value": draft.description_contains.strip(),
+                "active": True,
+            }
+        )
+    if (draft.destination_account or "").strip():
+        triggers.append(
+            {
+                "type": "destination_account_is",
+                "value": draft.destination_account.strip(),
+                "active": True,
+            }
+        )
     if draft.transaction_type:
-        triggers.append({"type": "transaction_type", "value": draft.transaction_type})
-    actions: list[dict[str, str]] = [
-        {"type": "set_category", "value": category_name},
+        triggers.append(
+            {
+                "type": "transaction_type",
+                "value": draft.transaction_type,
+                "active": True,
+            }
+        )
+    actions: list[dict[str, Any]] = [
+        {"type": "set_category", "value": category_name, "active": True},
     ]
     if budget_name:
-        actions.append({"type": "set_budget", "value": budget_name})
-    actions.append({"type": "add_tag", "value": _ai_tag_name()})
+        actions.append({"type": "set_budget", "value": budget_name, "active": True})
+    actions.append({"type": "add_tag", "value": _ai_tag_name(), "active": True})
     return {
         "rule_group_title": _rule_group_title(),
         "title": draft.title.strip(),
         "trigger": "store-journal",
         "active": True,
+        "strict": len(triggers) > 1,
         "triggers": triggers,
         "actions": actions,
     }
@@ -120,7 +146,9 @@ async def find_duplicate_rules(
 ) -> list[dict[str, str]]:
     """Return existing rules whose title or description_contains overlaps the draft."""
     needle = draft.description_contains.strip().lower()
-    if not needle:
+    dest_needle = (draft.destination_account or "").strip().lower()
+    title_lower = draft.title.strip().lower()
+    if not needle and not dest_needle:
         return []
     rules = await client.fetch_rules()
     conflicts: list[dict[str, str]] = []
@@ -130,13 +158,23 @@ async def find_duplicate_rules(
         if rule_id in seen:
             continue
         title = (rule.get("title") or "").lower()
-        overlap = needle in title
+        overlap = False
+        if title_lower and title == title_lower:
+            overlap = True
+        elif needle in title:
+            overlap = True
         if not overlap:
             for trig in rule.get("triggers") or []:
-                if trig.get("type") != "description_contains":
-                    continue
+                trig_type = trig.get("type") or ""
                 val = (trig.get("value") or "").lower()
-                if needle in val or val in needle:
+                if needle and trig_type == "description_contains" and (
+                    needle in val or val in needle
+                ):
+                    overlap = True
+                    break
+                if dest_needle and trig_type.startswith("destination_account") and (
+                    val == dest_needle
+                ):
                     overlap = True
                     break
         if overlap:
@@ -152,8 +190,7 @@ async def create_approved_rule(
     budget_id: str | None = None,
 ) -> dict[str, Any]:
     """Create a Firefly rule after user approval; never triggers backfill."""
-    if not draft.description_contains.strip():
-        raise ValueError("description_contains must be non-empty")
+    validate_rule_triggers(draft)
     await validate_apply_ids(client, category_id, budget_id)
     conflicts = await find_duplicate_rules(client, draft)
     if conflicts:

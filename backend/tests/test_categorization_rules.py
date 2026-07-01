@@ -34,13 +34,29 @@ def test_build_firefly_rule_body_includes_active_and_tag(monkeypatch):
     assert body["trigger"] == "store-journal"
     assert body["rule_group_title"] == "Test Group"
     assert body["triggers"] == [
-        {"type": "description_contains", "value": "AMZN MKTP"},
-        {"type": "transaction_type", "value": "withdrawal"},
+        {"type": "description_contains", "value": "AMZN MKTP", "active": True},
+        {"type": "transaction_type", "value": "withdrawal", "active": True},
     ]
+    assert body["strict"] is True
     assert body["actions"] == [
-        {"type": "set_category", "value": "Shopping"},
-        {"type": "set_budget", "value": "Discretionary"},
-        {"type": "add_tag", "value": "ai-tagged"},
+        {"type": "set_category", "value": "Shopping", "active": True},
+        {"type": "set_budget", "value": "Discretionary", "active": True},
+        {"type": "add_tag", "value": "ai-tagged", "active": True},
+    ]
+
+
+def test_build_firefly_rule_body_destination_account_trigger(monkeypatch):
+    monkeypatch.setenv("FF3ANALYTICS_RULE_GROUP", "Test Group")
+    draft = RuleDraft(
+        title="Safeway → Groceries",
+        description_contains="",
+        destination_account="Safeway",
+        transaction_type="withdrawal",
+    )
+    body = build_firefly_rule_body(draft, "Groceries", None)
+    assert body["triggers"] == [
+        {"type": "destination_account_is", "value": "Safeway", "active": True},
+        {"type": "transaction_type", "value": "withdrawal", "active": True},
     ]
 
 

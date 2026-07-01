@@ -28,6 +28,7 @@ export type CategorizeMetaResponse = {
 export type RuleDraft = {
   title: string
   description_contains: string
+  destination_account?: string | null
   transaction_type?: "withdrawal" | "deposit" | null
 }
 
@@ -68,6 +69,31 @@ export type RulePreviewCounts = {
   total: number
   uncategorized_count: number
   categorized_count: number
+}
+
+function apiErrorDetail(payload: { detail?: unknown }, fallback: string): string {
+  const { detail } = payload
+  if (typeof detail === "string") {
+    const prefix = "Rule create failed: "
+    if (detail.startsWith(prefix)) {
+      return detail.slice(prefix.length)
+    }
+    const firefly = "Firefly API error "
+    const idx = detail.indexOf(firefly)
+    if (idx >= 0) {
+      const rest = detail.slice(idx + firefly.length)
+      const colon = rest.indexOf(": ")
+      if (colon >= 0) {
+        return rest.slice(colon + 2)
+      }
+    }
+    return detail
+  }
+  if (detail && typeof detail === "object" && "message" in detail) {
+    const message = (detail as { message?: string }).message
+    if (message) return message
+  }
+  return fallback
 }
 
 export async function fetchPending(
@@ -177,7 +203,7 @@ export async function createRule(body: {
           : "A similar rule already exists.",
       )
     }
-    throw new Error(`Rule create failed (${res.status})`)
+    throw new Error(apiErrorDetail(payload, `Rule create failed (${res.status})`))
   }
   return (await res.json()) as { data: { rule_id: string; title?: string } }
 }

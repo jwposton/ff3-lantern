@@ -9,8 +9,14 @@ from pydantic import BaseModel, Field, model_validator
 
 class RuleDraft(BaseModel):
     title: str
-    description_contains: str
+    description_contains: str = ""
+    destination_account: str | None = None
     transaction_type: Literal["withdrawal", "deposit"] | None = None
+
+
+def validate_rule_triggers(draft: RuleDraft) -> None:
+    if not draft.description_contains.strip() and not (draft.destination_account or "").strip():
+        raise ValueError("Set description_contains and/or destination_account")
 
 
 class CategorizationSuggestion(BaseModel):
@@ -55,12 +61,20 @@ SUGGESTION_JSON_SCHEMA: dict = {
             "properties": {
                 "title": {"type": "string"},
                 "description_contains": {"type": "string"},
+                "destination_account": {
+                    "type": ["string", "null"],
+                },
                 "transaction_type": {
                     "type": ["string", "null"],
                     "enum": ["withdrawal", "deposit", None],
                 },
             },
-            "required": ["title", "description_contains", "transaction_type"],
+            "required": [
+                "title",
+                "description_contains",
+                "destination_account",
+                "transaction_type",
+            ],
             "additionalProperties": False,
         },
         "rationale": {"type": "string"},

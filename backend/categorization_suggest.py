@@ -21,12 +21,12 @@ from categorize_queue import build_pending_queue
 from categorization_models import CategorizationSuggestion
 from firefly_client import FireflyClient
 from openrouter_client import build_http_client, suggest_category
+from rule_draft_normalize import normalize_rule_draft
 
 _SEMAPHORE = asyncio.Semaphore(3)
 _PreloadedContext = tuple[
     dict[str, str],
     dict[str, str],
-    list[dict[str, str]],
     list[dict[str, Any]],
 ]
 
@@ -39,18 +39,32 @@ def _suggestion_to_dict(suggestion: CategorizationSuggestion) -> dict[str, Any]:
     return suggestion.model_dump()
 
 
+def _normalize_suggestion_rule(
+    suggestion: CategorizationSuggestion,
+    transaction: dict[str, Any],
+) -> CategorizationSuggestion:
+    if suggestion.rule is None:
+        return suggestion
+    normalized = normalize_rule_draft(
+        suggestion.rule,
+        description=str(transaction.get("description") or ""),
+        destination_name=transaction.get("destination_name"),
+        category_name=suggestion.category,
+    )
+    return suggestion.model_copy(update={"rule": normalized})
+
+
 def _user_payload_from_preloaded(
     transaction: dict[str, Any],
     preloaded: _PreloadedContext,
 ) -> dict[str, Any]:
-    cat_map, budget_map, rule_summaries, flat_splits = preloaded
+    cat_map, budget_map, flat_splits = preloaded
     few_shot = select_few_shot_examples(flat_splits, transaction)
     return build_user_payload(
         transaction,
         category_names=sorted(cat_map.keys()),
         budget_names=sorted(budget_map.keys()),
         few_shot=few_shot,
-        rule_summaries=rule_summaries,
     )
 
 
@@ -72,10 +86,11 @@ async def suggest_for_journal(
         if cached:
             try:
                 suggestion = CategorizationSuggestion.model_validate_json(cached)
+                suggestion = _normalize_suggestion_rule(suggestion, transaction)
                 if preloaded is not None:
-                    cat_map, budget_map, _, _ = preloaded
+                    cat_map, budget_map, _ = preloaded
                 else:
-                    cat_map, budget_map, _ = await fetch_allowlists(firefly)
+                    cat_map, budget_map = await fetch_allowlists(firefly)
                 suggestion.validate_against_allowlists(cat_map, budget_map)
             except (ValueError, json.JSONDecodeError):
                 pass
@@ -87,7 +102,7 @@ async def suggest_for_journal(
                 }
 
     if preloaded is not None:
-        cat_map, budget_map, _, _ = preloaded
+        cat_map, budget_map, _ = preloaded
         user_payload = _user_payload_from_preloaded(transaction, preloaded)
     else:
         cat_map, budget_map, user_payload = await build_suggest_context(
@@ -101,6 +116,7 @@ async def suggest_for_journal(
             system_prompt=SYSTEM_PROMPT,
             user_payload=user_payload,
         )
+    suggestion = _normalize_suggestion_rule(suggestion, transaction)
     try:
         suggestion.validate_against_allowlists(cat_map, budget_map)
     except ValueError as exc:
@@ -140,14 +156,9 @@ async def suggest_batch(
     else:
         targets = [row["journal_id"] for row in pending]
 
-    cat_map, budget_map, rule_summaries = await fetch_allowlists(firefly)
+    cat_map, budget_map = await fetch_allowlists(firefly)
     flat_splits = await firefly.fetch_splits(start, end)
-    preloaded: _PreloadedContext = (
-        cat_map,
-        budget_map,
-        rule_summaries,
-        flat_splits,
-    )
+    preloaded: _PreloadedContext = (cat_map, budget_map, flat_splits)
 
     async with build_http_client() as http:
 

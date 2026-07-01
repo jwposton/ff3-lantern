@@ -36,10 +36,29 @@ type CardState = {
   mode: ApplyMode
   ruleTitle: string
   ruleDescriptionContains: string
+  ruleDestinationAccount: string
+  ruleTransactionType: "" | "withdrawal" | "deposit"
   preview: RulePreviewCounts | null
   previewError?: string
   ruleError?: string
   backfillOptIn: boolean
+}
+
+function hasRuleTrigger(state: CardState | undefined): boolean {
+  return Boolean(
+    state?.ruleDescriptionContains.trim() || state?.ruleDestinationAccount.trim(),
+  )
+}
+
+function ruleDraftFromState(state: CardState): RuleDraft {
+  const txType = state.ruleTransactionType
+  return {
+    title: state.ruleTitle,
+    description_contains: state.ruleDescriptionContains,
+    destination_account: state.ruleDestinationAccount.trim() || null,
+    transaction_type:
+      txType === "withdrawal" || txType === "deposit" ? txType : null,
+  }
 }
 
 function confidenceBadgeClass(confidence: number): string {
@@ -60,22 +79,14 @@ function inputClassName(): string {
   return "border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-2 focus-visible:outline-hidden"
 }
 
-function ruleTransactionType(
-  row: PendingRow,
+function defaultCardState(
   suggestion?: SuggestionPayload,
-): "withdrawal" | "deposit" | null {
-  if (suggestion?.rule?.transaction_type) {
-    return suggestion.rule.transaction_type
-  }
-  if (row.type === "withdrawal" || row.type === "deposit") {
-    return row.type
-  }
-  return null
-}
-
-function defaultCardState(suggestion?: SuggestionPayload): CardState {
+  row?: PendingRow,
+): CardState {
   const mode: ApplyMode =
     suggestion?.recommendation === "rule" ? "rule" : "direct"
+  const rowType =
+    row?.type === "withdrawal" || row?.type === "deposit" ? row.type : ""
   return {
     suggestion,
     categoryId: "",
@@ -83,6 +94,9 @@ function defaultCardState(suggestion?: SuggestionPayload): CardState {
     mode,
     ruleTitle: suggestion?.rule?.title ?? "",
     ruleDescriptionContains: suggestion?.rule?.description_contains ?? "",
+    ruleDestinationAccount:
+      suggestion?.rule?.destination_account ?? row?.destination_name ?? "",
+    ruleTransactionType: suggestion?.rule?.transaction_type ?? rowType,
     preview: null,
     backfillOptIn: false,
   }
@@ -103,6 +117,8 @@ function TransactionCard({
   onModeChange,
   onRuleTitleChange,
   onRuleDescriptionChange,
+  onRuleDestinationChange,
+  onRuleTransactionTypeChange,
   onBackfillChange,
   onApprove,
   onPreview,
@@ -124,6 +140,11 @@ function TransactionCard({
   onModeChange: (journalId: string, mode: ApplyMode) => void
   onRuleTitleChange: (journalId: string, title: string) => void
   onRuleDescriptionChange: (journalId: string, value: string) => void
+  onRuleDestinationChange: (journalId: string, value: string) => void
+  onRuleTransactionTypeChange: (
+    journalId: string,
+    value: "" | "withdrawal" | "deposit",
+  ) => void
   onBackfillChange: (journalId: string, checked: boolean) => void
   onApprove: (row: PendingRow) => void
   onPreview: (journalId: string) => void
@@ -244,6 +265,10 @@ function TransactionCard({
 
         {mode === "rule" ? (
           <div className="space-y-3 rounded-lg border p-3">
+            <p className="text-xs text-muted-foreground">
+              Rule matches when every condition below is met. Use destination
+              account (payee) when the bank description is generic.
+            </p>
             <label className="flex flex-col gap-1 text-xs font-medium">
               Rule title
               <input
@@ -256,22 +281,54 @@ function TransactionCard({
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium">
               Description contains
+              <span className="font-normal text-muted-foreground">
+                Bank statement text: &ldquo;{row.description}&rdquo;
+              </span>
               <input
                 className={inputClassName()}
+                placeholder="e.g. AMZN MKTP (optional if payee is set)"
                 value={state?.ruleDescriptionContains ?? ""}
                 onChange={(e) => {
                   onRuleDescriptionChange(row.journal_id, e.target.value)
                 }}
               />
             </label>
+            <label className="flex flex-col gap-1 text-xs font-medium">
+              Destination account (payee)
+              <span className="font-normal text-muted-foreground">
+                Firefly account on this transaction: {row.destination_name}
+              </span>
+              <input
+                className={inputClassName()}
+                placeholder="Exact Firefly account name"
+                value={state?.ruleDestinationAccount ?? ""}
+                onChange={(e) => {
+                  onRuleDestinationChange(row.journal_id, e.target.value)
+                }}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium">
+              Transaction type
+              <select
+                className={selectClassName()}
+                value={state?.ruleTransactionType ?? ""}
+                onChange={(e) => {
+                  onRuleTransactionTypeChange(
+                    row.journal_id,
+                    e.target.value as "" | "withdrawal" | "deposit",
+                  )
+                }}
+              >
+                <option value="">Any</option>
+                <option value="withdrawal">Withdrawal</option>
+                <option value="deposit">Deposit</option>
+              </select>
+            </label>
             <Button
               type="button"
               size="sm"
               variant="outline"
-              disabled={
-                !state?.ruleDescriptionContains?.trim() ||
-                previewingId === row.journal_id
-              }
+              disabled={!hasRuleTrigger(state) || previewingId === row.journal_id}
               onClick={() => {
                 onPreview(row.journal_id)
               }}
@@ -422,6 +479,7 @@ export function CategorizePage() {
       setCardState((prev) => {
         const next: Record<string, CardState> = { ...prev }
         for (const item of allItems) {
+          const row = visibleRows.find((r) => r.journal_id === item.journal_id)
           const categoryId =
             item.suggestion != null
               ? (categories.find((c) => c.name === item.suggestion?.category)?.id ??
@@ -432,7 +490,7 @@ export function CategorizePage() {
               ? (budgets.find((b) => b.name === item.suggestion?.budget)?.id ?? "")
               : ""
           next[item.journal_id] = {
-            ...defaultCardState(item.suggestion ?? undefined),
+            ...defaultCardState(item.suggestion ?? undefined, row),
             categoryId,
             budgetId,
             error: item.error,
@@ -479,8 +537,7 @@ export function CategorizePage() {
 
   async function handlePreview(journalId: string) {
     const state = cardState[journalId]
-    const row = visibleRows.find((r) => r.journal_id === journalId)
-    if (!state?.ruleDescriptionContains.trim() || !row) return
+    if (!state || !hasRuleTrigger(state)) return
     setPreviewingId(journalId)
     setCardState((prev) => ({
       ...prev,
@@ -494,11 +551,7 @@ export function CategorizePage() {
       const result = await previewRule({
         start: committedRange.start,
         end: committedRange.end,
-        rule: {
-          title: state.ruleTitle,
-          description_contains: state.ruleDescriptionContains,
-          transaction_type: ruleTransactionType(row, state.suggestion),
-        },
+        rule: ruleDraftFromState(state),
       })
       setCardState((prev) => ({
         ...prev,
@@ -537,11 +590,7 @@ export function CategorizePage() {
         end: committedRange.end,
         category_id: state.categoryId,
         budget_id: state.budgetId || null,
-        rule: {
-          title: state.ruleTitle,
-          description_contains: state.ruleDescriptionContains,
-          transaction_type: ruleTransactionType(row, state.suggestion),
-        },
+        rule: ruleDraftFromState(state),
       })
       if (state.backfillOptIn) {
         try {
@@ -622,6 +671,33 @@ export function CategorizePage() {
       [journalId]: {
         ...prev[journalId],
         ruleDescriptionContains: value,
+        preview: null,
+        previewError: undefined,
+      },
+    }))
+  }
+
+  function updateRuleDestination(journalId: string, value: string) {
+    setCardState((prev) => ({
+      ...prev,
+      [journalId]: {
+        ...prev[journalId],
+        ruleDestinationAccount: value,
+        preview: null,
+        previewError: undefined,
+      },
+    }))
+  }
+
+  function updateRuleTransactionType(
+    journalId: string,
+    value: "" | "withdrawal" | "deposit",
+  ) {
+    setCardState((prev) => ({
+      ...prev,
+      [journalId]: {
+        ...prev[journalId],
+        ruleTransactionType: value,
         preview: null,
         previewError: undefined,
       },
@@ -766,6 +842,8 @@ export function CategorizePage() {
                   onModeChange={updateMode}
                   onRuleTitleChange={updateRuleTitle}
                   onRuleDescriptionChange={updateRuleDescription}
+                  onRuleDestinationChange={updateRuleDestination}
+                  onRuleTransactionTypeChange={updateRuleTransactionType}
                   onBackfillChange={updateBackfill}
                   onApprove={handleApprove}
                   onPreview={handlePreview}
@@ -812,6 +890,8 @@ export function CategorizePage() {
                         onModeChange={updateMode}
                         onRuleTitleChange={updateRuleTitle}
                         onRuleDescriptionChange={updateRuleDescription}
+                        onRuleDestinationChange={updateRuleDestination}
+                        onRuleTransactionTypeChange={updateRuleTransactionType}
                         onBackfillChange={updateBackfill}
                         onApprove={handleApprove}
                         onPreview={handlePreview}
