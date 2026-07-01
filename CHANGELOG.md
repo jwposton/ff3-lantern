@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CI** — Bump GitHub Actions to Node.js 24 runtimes (`checkout@v5`, `setup-python@v6`, `setup-node@v6`, Docker actions v4/v7)
+
 ## [1.1.5] - 2026-07-01
 
 ### Fixed
