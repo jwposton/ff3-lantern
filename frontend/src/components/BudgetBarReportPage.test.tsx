@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { useState } from "react"
+import { useState, type ReactElement } from "react"
+import { MemoryRouter, Route, Routes } from "react-router-dom"
 
 import { creditCardPaymentTransfer } from "@/test/fixtures/omniRows"
 
@@ -60,6 +61,19 @@ const pageProps = {
 const alwaysFalse = () => false
 const alwaysTrue = () => true
 
+function renderPage(
+  ui: ReactElement,
+  initialEntry = "/reports/spending?start=2026-01-01&end=2026-01-31",
+) {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Routes>
+        <Route path="/reports/spending" element={ui} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
 function DateRangeHarness() {
   const [range, setRange] = useState({
     start: "2026-01-01",
@@ -102,9 +116,7 @@ describe("BudgetBarReportPage", () => {
   })
 
   it("renders SpendingBarChart emptyMessage from props when slice rows empty", () => {
-    render(
-      <BudgetBarReportPage filter={alwaysFalse} {...pageProps} />,
-    )
+    renderPage(<BudgetBarReportPage filter={alwaysFalse} {...pageProps} />)
 
     expect(screen.getByTestId("empty-message").textContent).toBe(
       "No spending in this date range",
@@ -112,7 +124,7 @@ describe("BudgetBarReportPage", () => {
   })
 
   it("clears selectedBudget when committed date range changes", () => {
-    render(<DateRangeHarness />)
+    renderPage(<DateRangeHarness />)
 
     fireEvent.click(screen.getByTestId("select-budget"))
     expect(screen.getByTestId("drilldown").textContent).toBe("Groceries")
@@ -122,9 +134,18 @@ describe("BudgetBarReportPage", () => {
   })
 
   it("shows BudgetReportDrilldown when onSelect sets budget", () => {
-    render(<BudgetBarReportPage filter={alwaysTrue} {...pageProps} />)
+    renderPage(<BudgetBarReportPage filter={alwaysTrue} {...pageProps} />)
 
     fireEvent.click(screen.getByTestId("select-budget"))
+    expect(screen.getByTestId("drilldown").textContent).toBe("Groceries")
+  })
+
+  it("pre-selects budget from URL search param", () => {
+    renderPage(
+      <BudgetBarReportPage filter={alwaysTrue} {...pageProps} />,
+      "/reports/spending?start=2026-01-01&end=2026-01-31&budget=Groceries",
+    )
+
     expect(screen.getByTestId("drilldown").textContent).toBe("Groceries")
   })
 })

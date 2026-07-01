@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboard budget pie chart legend** — Fixed vertical legend listing all slices (top 15 + Other) with budget name and % share; complements exterior labels on larger slices
+
+### Changed
+
+- **Dashboard budget charts** — Click a pie slice or bar row to drill into Spending Bar scoped to that budget and the dashboard date range; uncategorized budgets route to the categorize queue (same pattern as MoM/Sankey)
+
 ## [1.1.7] - 2026-07-01
 
 ### Added

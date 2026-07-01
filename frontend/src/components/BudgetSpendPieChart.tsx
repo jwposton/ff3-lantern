@@ -1,10 +1,11 @@
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import ReactECharts from "echarts-for-react"
 import type { EChartsOption } from "echarts"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CHART_COLORS } from "@/lib/chartColors"
+import { truncateLegendLabel } from "@/lib/chartLegend"
 import { formatCurrency } from "@/lib/spending"
 
 export type BudgetSpendSlice = {
@@ -15,15 +16,17 @@ export type BudgetSpendSlice = {
 /** Segments below this share hide exterior labels (tooltip still shows detail). */
 export const PIE_LABEL_MIN_PERCENT = 5
 
+const PIE_LEGEND_COLUMN_WIDTH = 108
+const CHART_HEIGHT = 480
+const CHART_OPTS = { renderer: "canvas" as const }
+
 type BudgetSpendPieChartProps = {
   slices: BudgetSpendSlice[]
   loading: boolean
   emptyMessage: string
   chartTitle?: string
+  onSliceSelect?: (name: string) => void
 }
-
-const CHART_HEIGHT = 480
-const CHART_OPTS = { renderer: "canvas" as const }
 
 function tooltipFormatter(params: unknown): string {
   const item = Array.isArray(params) ? params[0] : params
@@ -40,6 +43,17 @@ function tooltipFormatter(params: unknown): string {
   return `${record.name ?? ""}\n${formatCurrency(value)} (${pct}%)`
 }
 
+export function slicePercentMap(
+  slices: readonly BudgetSpendSlice[],
+): Map<string, number> {
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0)
+  const map = new Map<string, number>()
+  for (const slice of slices) {
+    map.set(slice.name, total > 0 ? (slice.value / total) * 100 : 0)
+  }
+  return map
+}
+
 export function pieSegmentLabel(
   name: string,
   percent: number,
@@ -50,13 +64,19 @@ export function pieSegmentLabel(
   return `${shortName}\n${percent.toFixed(1)}%`
 }
 
+export function pieLegendLabel(name: string, percent: number): string {
+  return `${truncateLegendLabel(name, 16)}  ${percent.toFixed(1)}%`
+}
+
 export function BudgetSpendPieChart({
   slices,
   loading,
   emptyMessage,
   chartTitle = "Spending by budget",
+  onSliceSelect,
 }: BudgetSpendPieChartProps) {
   const isEmpty = !loading && slices.length === 0
+  const percentByName = useMemo(() => slicePercentMap(slices), [slices])
 
   const option = useMemo((): EChartsOption => {
     return {
@@ -64,11 +84,25 @@ export function BudgetSpendPieChart({
         trigger: "item",
         formatter: tooltipFormatter,
       },
+      legend: {
+        type: "plain",
+        orient: "vertical",
+        right: 4,
+        top: "middle",
+        width: PIE_LEGEND_COLUMN_WIDTH,
+        itemWidth: 10,
+        itemHeight: 10,
+        itemGap: 6,
+        textStyle: { fontSize: 11, color: "hsl(240 5% 34%)" },
+        data: slices.map((slice) => slice.name),
+        formatter: (name: string) =>
+          pieLegendLabel(name, percentByName.get(name) ?? 0),
+      },
       series: [
         {
           type: "pie",
-          radius: "74%",
-          center: ["50%", "52%"],
+          radius: "68%",
+          center: ["38%", "52%"],
           minAngle: 2,
           avoidLabelOverlap: true,
           itemStyle: {
@@ -81,10 +115,7 @@ export function BudgetSpendPieChart({
             color: "hsl(240 5% 34%)",
             lineHeight: 14,
             formatter: (params: { name?: string; percent?: number }) =>
-              pieSegmentLabel(
-                params.name ?? "",
-                params.percent ?? 0,
-              ),
+              pieSegmentLabel(params.name ?? "", params.percent ?? 0),
           },
           labelLine: {
             length: 12,
@@ -111,7 +142,21 @@ export function BudgetSpendPieChart({
         },
       ],
     }
-  }, [slices])
+  }, [slices, percentByName])
+
+  const handleChartClick = useCallback(
+    (params: { name?: string }) => {
+      if (params.name && onSliceSelect) {
+        onSliceSelect(params.name)
+      }
+    },
+    [onSliceSelect],
+  )
+
+  const onEvents = useMemo(() => {
+    if (!onSliceSelect) return undefined
+    return { click: handleChartClick }
+  }, [handleChartClick, onSliceSelect])
 
   if (loading) {
     return (
@@ -140,7 +185,12 @@ export function BudgetSpendPieChart({
           <ReactECharts
             option={option}
             opts={CHART_OPTS}
-            style={{ height: CHART_HEIGHT, width: "100%" }}
+            style={{
+              height: CHART_HEIGHT,
+              width: "100%",
+              cursor: onSliceSelect ? "pointer" : undefined,
+            }}
+            onEvents={onEvents}
             notMerge
             lazyUpdate
             data-testid="budget-spend-pie-chart"

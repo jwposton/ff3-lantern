@@ -1,4 +1,5 @@
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
+import { useNavigate } from "react-router-dom"
 
 import { BudgetCurrentVsAverageChart } from "@/components/BudgetCurrentVsAverageChart"
 import { BudgetSpendPieChart } from "@/components/BudgetSpendPieChart"
@@ -6,6 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { buildBarChartData, stackTotalsAcrossMonths } from "@/lib/barChart"
+import {
+  buildCategorizeQueuePath,
+  buildSpendingBarPath,
+  isUncategorizedDisplayName,
+} from "@/lib/manageNav"
 import {
   readMomRollingAverageMethod,
   type RollingWindowMonths,
@@ -71,6 +77,19 @@ export function DashboardTiles({
   isError,
   onRetry,
 }: DashboardTilesProps) {
+  const navigate = useNavigate()
+
+  const handleBudgetSelect = useCallback(
+    (name: string) => {
+      if (isUncategorizedDisplayName(name)) {
+        navigate(buildCategorizeQueuePath(rangeStart, rangeEnd))
+        return
+      }
+      navigate(buildSpendingBarPath(rangeStart, rangeEnd, name))
+    },
+    [navigate, rangeStart, rangeEnd],
+  )
+
   const spendingRows = useMemo(
     () => rangeRows.filter(isSpendingWithdrawal),
     [rangeRows],
@@ -201,6 +220,7 @@ export function DashboardTiles({
         loading={isRangeLoading}
         emptyMessage="No spending in this date range"
         chartTitle="Spending by budget"
+        onSliceSelect={handleBudgetSelect}
       />
 
       <BudgetCurrentVsAverageChart
@@ -209,6 +229,7 @@ export function DashboardTiles({
         loading={isAverageLoading}
         emptyMessage="Not enough history for a rolling average comparison"
         chartTitle="Current month vs 12-month average"
+        onSelect={handleBudgetSelect}
       />
     </div>
   )
