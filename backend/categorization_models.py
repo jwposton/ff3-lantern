@@ -6,11 +6,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+DestinationMatchType = Literal["contains", "starts_with", "ends_with", "is"]
+
 
 class RuleDraft(BaseModel):
     title: str
     description_contains: str = ""
     destination_account: str | None = None
+    destination_match_type: DestinationMatchType = "is"
     transaction_type: Literal["withdrawal", "deposit"] | None = None
 
 
@@ -64,6 +67,10 @@ SUGGESTION_JSON_SCHEMA: dict = {
                 "destination_account": {
                     "type": ["string", "null"],
                 },
+                "destination_match_type": {
+                    "type": "string",
+                    "enum": ["contains", "starts_with", "ends_with", "is"],
+                },
                 "transaction_type": {
                     "type": ["string", "null"],
                     "enum": ["withdrawal", "deposit", None],
@@ -73,6 +80,7 @@ SUGGESTION_JSON_SCHEMA: dict = {
                 "title",
                 "description_contains",
                 "destination_account",
+                "destination_match_type",
                 "transaction_type",
             ],
             "additionalProperties": False,

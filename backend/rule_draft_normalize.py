@@ -145,5 +145,6 @@ def normalize_rule_draft(
         title=title,
         description_contains=needle,
         destination_account=dest_account or None,
+        destination_match_type=draft.destination_match_type,
         transaction_type=draft.transaction_type,
     )

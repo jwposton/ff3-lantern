@@ -54,7 +54,7 @@ Used by AI categorization and loan split features (v1.1+). See [Automations](#au
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | No | — | OpenRouter API key for AI suggest; when empty, queue is read-only |
 | `OPENROUTER_MODEL` | No | `openai/gpt-4o-mini` | Model id sent to OpenRouter for categorization |
-| `FF3ANALYTICS_RULE_GROUP` | No | `FF3Analytics AI` | Firefly rule group title for user-approved AI rules |
+| `FF3ANALYTICS_RULE_GROUP` | No | `FF3Analytics AI` | Firefly rule group for user-approved AI rules (created automatically if missing) |
 | `FF3ANALYTICS_AI_TAG` | No | `ai-categorized` | Tag applied on direct apply and AI-created rules |
 | `FF3ANALYTICS_LOAN_SPLITS_SINCE` | No | — | Forward-only start date for loan split queue (`YYYY-MM-DD`) |
 | `FF3ANALYTICS_LOAN_TAG` | No | `loan-split` | Tag applied after loan split apply |

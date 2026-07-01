@@ -60,6 +60,120 @@ def test_build_firefly_rule_body_destination_account_trigger(monkeypatch):
     ]
 
 
+@pytest.mark.parametrize(
+    ("match_type", "firefly_type", "needle"),
+    [
+        ("contains", "destination_account_contains", "Amazon"),
+        ("starts_with", "destination_account_starts", "AMZN"),
+        ("ends_with", "destination_account_ends", "Prime"),
+    ],
+)
+def test_build_firefly_rule_body_destination_match_types(
+    monkeypatch, match_type, firefly_type, needle
+):
+    monkeypatch.setenv("FF3ANALYTICS_RULE_GROUP", "Test Group")
+    draft = RuleDraft(
+        title="Amazon",
+        description_contains="",
+        destination_account=needle,
+        destination_match_type=match_type,
+    )
+    body = build_firefly_rule_body(draft, "Shopping", None)
+    assert body["triggers"] == [
+        {"type": firefly_type, "value": needle, "active": True},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_matches_destination_contains():
+    splits = [
+        {
+            "type": "withdrawal",
+            "description": "POS PURCHASE",
+            "destination_name": "Amazon Marketplace",
+            "category_name": None,
+        },
+        {
+            "type": "withdrawal",
+            "description": "POS PURCHASE",
+            "destination_name": "Netflix",
+            "category_name": None,
+        },
+    ]
+
+    class _Client:
+        async def fetch_splits(self, start, end):
+            return splits
+
+    draft = RuleDraft(
+        title="Amazon payee",
+        description_contains="",
+        destination_account="Amazon",
+        destination_match_type="contains",
+    )
+    result = await preview_rule_matches(_Client(), "2024-01-01", "2024-01-31", draft)
+    assert result == {"total": 1, "uncategorized_count": 1, "categorized_count": 0}
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_matches_destination_starts_with():
+    splits = [
+        {
+            "type": "withdrawal",
+            "description": "DEBIT",
+            "destination_name": "Safeway #123",
+            "category_name": None,
+        },
+        {
+            "type": "withdrawal",
+            "description": "DEBIT",
+            "destination_name": "Whole Foods",
+            "category_name": None,
+        },
+    ]
+
+    class _Client:
+        async def fetch_splits(self, start, end):
+            return splits
+
+    draft = RuleDraft(
+        title="Safeway",
+        description_contains="",
+        destination_account="Safe",
+        destination_match_type="starts_with",
+    )
+    result = await preview_rule_matches(_Client(), "2024-01-01", "2024-01-31", draft)
+    assert result["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_find_duplicate_rules_by_destination_contains():
+    class _Client:
+        async def fetch_rules(self):
+            return [
+                {
+                    "id": "12",
+                    "title": "Amazon payee",
+                    "triggers": [
+                        {
+                            "type": "destination_account_contains",
+                            "value": "amazon",
+                        }
+                    ],
+                }
+            ]
+
+    draft = RuleDraft(
+        title="New Amazon",
+        description_contains="",
+        destination_account="Amazon",
+        destination_match_type="contains",
+    )
+    conflicts = await find_duplicate_rules(_Client(), draft)
+    assert len(conflicts) == 1
+    assert conflicts[0]["id"] == "12"
+
+
 @pytest.mark.asyncio
 async def test_preview_rule_matches_counts():
     splits = [
@@ -154,6 +268,9 @@ async def test_create_approved_rule_posts_and_audits(monkeypatch, tmp_path):
         async def fetch_rules(self):
             return []
 
+        async def ensure_rule_group(self, title):
+            return "3"
+
         async def create_rule(self, body):
             posted.append(body)
             return {"id": "99", "title": body["title"]}
@@ -166,6 +283,8 @@ async def test_create_approved_rule_posts_and_audits(monkeypatch, tmp_path):
     created = await create_approved_rule(_Client(), draft, "1", "2")
     assert created["id"] == "99"
     assert posted[0]["active"] is True
+    assert posted[0]["rule_group_id"] == "3"
+    assert "rule_group_title" not in posted[0]
 
 
 @pytest.mark.asyncio

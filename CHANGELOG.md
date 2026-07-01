@@ -16,10 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Firefly reference data cache** — In-process 2h TTL cache for accounts, categories, and budgets; reduces repeated Firefly API calls on transaction and meta endpoints (`FIREFLY_REFERENCE_CACHE_TTL_SECONDS` override)
 - **Clear reference cache** — Refresh icon in the global date bar calls `POST /api/cache/clear` and refreshes normalized transactions, categorize meta, and loan meta
 - **Dashboard budget pie chart legend** — Fixed vertical legend listing all slices (top 15 + Other) with budget name and % share; complements exterior labels on larger slices
+- **Categorize destination rule triggers** — Payee rules support contains, starts with, ends with, and exact match; preview counts, Firefly rule creation, and duplicate detection honor the selected match type (closes #6)
+- **Categorize rule group bootstrap** — Auto-creates the `FF3ANALYTICS_RULE_GROUP` rule group in Firefly when missing so rule creation does not fail with “No such rule group”
 
 ### Fixed
 
 - **Categorize rule mode** — Switching to rule mode without running Suggest no longer crashes when rule trigger fields are uninitialized
+- **Categorize rule backfill** — Firefly 6.5+ requires `Content-Type` on rule trigger POST; send empty JSON body with date query params so backfill no longer fails with HTTP 415; UI surfaces Firefly error text instead of a bare status code
 
 ### Changed
 

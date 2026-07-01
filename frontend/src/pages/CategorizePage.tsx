@@ -23,6 +23,7 @@ import {
   type RuleDraft,
   type RulePreviewCounts,
   type SuggestionPayload,
+  type DestinationMatchType,
 } from "@/lib/categorizeApi"
 import { invalidateReportCaches } from "@/lib/reportCache"
 import { cn } from "@/lib/utils"
@@ -38,6 +39,7 @@ type CardState = {
   ruleTitle: string
   ruleDescriptionContains: string
   ruleDestinationAccount: string
+  ruleDestinationMatchType: DestinationMatchType
   ruleTransactionType: "" | "withdrawal" | "deposit"
   preview: RulePreviewCounts | null
   previewError?: string
@@ -58,6 +60,7 @@ function ruleDraftFromState(state: CardState): RuleDraft {
     title: state.ruleTitle ?? "",
     description_contains: state.ruleDescriptionContains ?? "",
     destination_account: (state.ruleDestinationAccount ?? "").trim() || null,
+    destination_match_type: state.ruleDestinationMatchType ?? "is",
     transaction_type:
       txType === "withdrawal" || txType === "deposit" ? txType : null,
   }
@@ -111,6 +114,8 @@ function defaultCardState(
     ruleDescriptionContains: suggestion?.rule?.description_contains ?? "",
     ruleDestinationAccount:
       suggestion?.rule?.destination_account ?? row?.destination_name ?? "",
+    ruleDestinationMatchType:
+      suggestion?.rule?.destination_match_type ?? "is",
     ruleTransactionType: suggestion?.rule?.transaction_type ?? rowType,
     preview: null,
     backfillOptIn: false,
@@ -133,6 +138,7 @@ function TransactionCard({
   onRuleTitleChange,
   onRuleDescriptionChange,
   onRuleDestinationChange,
+  onRuleDestinationMatchTypeChange,
   onRuleTransactionTypeChange,
   onBackfillChange,
   onApprove,
@@ -156,6 +162,10 @@ function TransactionCard({
   onRuleTitleChange: (journalId: string, title: string) => void
   onRuleDescriptionChange: (journalId: string, value: string) => void
   onRuleDestinationChange: (journalId: string, value: string) => void
+  onRuleDestinationMatchTypeChange: (
+    journalId: string,
+    value: DestinationMatchType,
+  ) => void
   onRuleTransactionTypeChange: (
     journalId: string,
     value: "" | "withdrawal" | "deposit",
@@ -313,14 +323,35 @@ function TransactionCard({
               <span className="font-normal text-muted-foreground">
                 Firefly account on this transaction: {row.destination_name}
               </span>
-              <input
-                className={inputClassName()}
-                placeholder="Exact Firefly account name"
-                value={state?.ruleDestinationAccount ?? ""}
-                onChange={(e) => {
-                  onRuleDestinationChange(row.journal_id, e.target.value)
-                }}
-              />
+              <div className="flex gap-2">
+                <select
+                  className={cn(selectClassName(), "w-auto shrink-0")}
+                  value={state?.ruleDestinationMatchType ?? "is"}
+                  onChange={(e) => {
+                    onRuleDestinationMatchTypeChange(
+                      row.journal_id,
+                      e.target.value as DestinationMatchType,
+                    )
+                  }}
+                >
+                  <option value="contains">Contains</option>
+                  <option value="starts_with">Starts with</option>
+                  <option value="ends_with">Ends with</option>
+                  <option value="is">Is exactly</option>
+                </select>
+                <input
+                  className={inputClassName()}
+                  placeholder={
+                    state?.ruleDestinationMatchType === "is"
+                      ? "Exact Firefly account name"
+                      : "Payee name fragment"
+                  }
+                  value={state?.ruleDestinationAccount ?? ""}
+                  onChange={(e) => {
+                    onRuleDestinationChange(row.journal_id, e.target.value)
+                  }}
+                />
+              </div>
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium">
               Transaction type
@@ -710,6 +741,21 @@ export function CategorizePage() {
     }))
   }
 
+  function updateRuleDestinationMatchType(
+    journalId: string,
+    value: DestinationMatchType,
+  ) {
+    setCardState((prev) => ({
+      ...prev,
+      [journalId]: {
+        ...prev[journalId],
+        ruleDestinationMatchType: value,
+        preview: null,
+        previewError: undefined,
+      },
+    }))
+  }
+
   function updateRuleTransactionType(
     journalId: string,
     value: "" | "withdrawal" | "deposit",
@@ -864,6 +910,7 @@ export function CategorizePage() {
                   onRuleTitleChange={updateRuleTitle}
                   onRuleDescriptionChange={updateRuleDescription}
                   onRuleDestinationChange={updateRuleDestination}
+                  onRuleDestinationMatchTypeChange={updateRuleDestinationMatchType}
                   onRuleTransactionTypeChange={updateRuleTransactionType}
                   onBackfillChange={updateBackfill}
                   onApprove={handleApprove}
@@ -912,6 +959,7 @@ export function CategorizePage() {
                         onRuleTitleChange={updateRuleTitle}
                         onRuleDescriptionChange={updateRuleDescription}
                         onRuleDestinationChange={updateRuleDestination}
+                  onRuleDestinationMatchTypeChange={updateRuleDestinationMatchType}
                         onRuleTransactionTypeChange={updateRuleTransactionType}
                         onBackfillChange={updateBackfill}
                         onApprove={handleApprove}

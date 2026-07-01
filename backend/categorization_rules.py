@@ -8,7 +8,7 @@ from typing import Any
 
 import sidecar_db
 from categorization_apply import validate_apply_ids
-from categorization_models import RuleDraft, validate_rule_triggers
+from categorization_models import DestinationMatchType, RuleDraft, validate_rule_triggers
 from firefly_client import FireflyClient
 from transaction_normalization import is_uncategorized_for_queue
 
@@ -32,6 +32,64 @@ def _rule_group_title() -> str:
     )
 
 
+def _firefly_destination_trigger_type(match_type: DestinationMatchType) -> str:
+    mapping: dict[DestinationMatchType, str] = {
+        "contains": "destination_account_contains",
+        "starts_with": "destination_account_starts",
+        "ends_with": "destination_account_ends",
+        "is": "destination_account_is",
+    }
+    return mapping[match_type]
+
+
+def _destination_matches(
+    dest_name: str, needle: str, match_type: DestinationMatchType
+) -> bool:
+    haystack = dest_name.strip()
+    n = needle.strip()
+    if not n:
+        return True
+    if match_type == "is":
+        return haystack == n
+    haystack_lower = haystack.lower()
+    n_lower = n.lower()
+    if match_type == "contains":
+        return n_lower in haystack_lower
+    if match_type == "starts_with":
+        return haystack_lower.startswith(n_lower)
+    if match_type == "ends_with":
+        return haystack_lower.endswith(n_lower)
+    return False
+
+
+def _destination_trigger_overlap(
+    draft_type: DestinationMatchType,
+    draft_val: str,
+    trig_type: str,
+    trig_val: str,
+) -> bool:
+    d = draft_val.strip().lower()
+    t = trig_val.strip().lower()
+    if not d or not t:
+        return False
+    if d == t:
+        return True
+    if d in t or t in d:
+        if draft_type == "contains" or trig_type == "destination_account_contains":
+            return True
+        if draft_type == "is" and trig_type == "destination_account_is":
+            return False
+        if trig_type == "destination_account_is" and draft_type == "contains":
+            return d == t or d in t or t in d
+        if draft_type == "is" and trig_type == "destination_account_contains":
+            return d in t or t in d
+    if draft_type == "starts_with" and trig_type == "destination_account_starts":
+        return d.startswith(t) or t.startswith(d)
+    if draft_type == "ends_with" and trig_type == "destination_account_ends":
+        return d.endswith(t) or t.endswith(d)
+    return False
+
+
 def _matches_draft(split: dict[str, Any], draft: RuleDraft) -> bool:
     if draft.transaction_type and split.get("type") != draft.transaction_type:
         return False
@@ -44,7 +102,9 @@ def _matches_draft(split: dict[str, Any], draft: RuleDraft) -> bool:
         desc_ok = desc_needle in desc
     if dest_needle:
         dest_name = (split.get("destination_name") or "").strip()
-        dest_ok = dest_name == dest_needle
+        dest_ok = _destination_matches(
+            dest_name, dest_needle, draft.destination_match_type
+        )
     if desc_needle and dest_needle:
         return desc_ok and dest_ok
     return desc_ok and dest_ok
@@ -111,7 +171,7 @@ def build_firefly_rule_body(
     if (draft.destination_account or "").strip():
         triggers.append(
             {
-                "type": "destination_account_is",
+                "type": _firefly_destination_trigger_type(draft.destination_match_type),
                 "value": draft.destination_account.strip(),
                 "active": True,
             }
@@ -173,7 +233,12 @@ async def find_duplicate_rules(
                     overlap = True
                     break
                 if dest_needle and trig_type.startswith("destination_account") and (
-                    val == dest_needle
+                    _destination_trigger_overlap(
+                        draft.destination_match_type,
+                        draft.destination_account or "",
+                        trig_type,
+                        trig.get("value") or "",
+                    )
                 ):
                     overlap = True
                     break
@@ -197,6 +262,8 @@ async def create_approved_rule(
         raise DuplicateRuleError(conflicts)
     category_name, budget_name = await _lookup_names(client, category_id, budget_id)
     body = build_firefly_rule_body(draft, category_name, budget_name)
+    group_title = body.pop("rule_group_title")
+    body["rule_group_id"] = await client.ensure_rule_group(group_title)
     created = await client.create_rule(body)
     await sidecar_db.log_audit(
         "categorize_rule_create",
@@ -205,6 +272,8 @@ async def create_approved_rule(
                 "rule_id": created["id"],
                 "title": created.get("title"),
                 "description_contains": draft.description_contains,
+                "destination_account": draft.destination_account,
+                "destination_match_type": draft.destination_match_type,
                 "category_id": category_id,
                 "budget_id": budget_id,
             }

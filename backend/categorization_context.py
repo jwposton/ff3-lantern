@@ -16,6 +16,7 @@ When recommendation is "rule", include a rule object:
 - title: short human label for the Firefly rules list (e.g. "Amazon → Shopping", "Netflix subscription"). NOT the raw bank description, NOT the trigger needle, NOT your rationale.
 - description_contains: substring from the bank description when it has a stable merchant token (e.g. "AMZN MKTP", "NETFLIX"). Use empty string when the description is generic (e.g. "POS PURCHASE") and destination_account is better.
 - destination_account: Firefly payee / destination account name when it identifies the merchant (from transaction.destination_name). Use null when description_contains is sufficient.
+- destination_match_type: how to match destination_account — "contains", "starts_with", "ends_with", or "is" (exact). Default "is" when destination_account is set.
 - transaction_type: "withdrawal" or "deposit" when the pattern is type-specific; null otherwise.
 At least one of description_contains or destination_account must be non-empty.
 Output JSON matching the required schema."""
