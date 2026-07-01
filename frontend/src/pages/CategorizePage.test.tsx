@@ -38,6 +38,14 @@ function mockFetch(handlers: Record<string, () => unknown>) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input)
     const method = init?.method ?? "GET"
+    if (url.includes("/api/normalized_transactions") && method === "GET") {
+      return new Response(
+        JSON.stringify(
+          handlers.normalized?.() ?? { data: [], firefly_base_url: undefined },
+        ),
+        { status: 200 },
+      )
+    }
     if (url.includes("/api/categorize/pending") && method === "GET") {
       return new Response(JSON.stringify(handlers.pending?.() ?? { data: [], meta: {} }), {
         status: 200,
@@ -304,5 +312,106 @@ describe("CategorizePage interactions", () => {
       expect(body.category_id).toBe("1")
       expect(body.transaction_journal_id).toBe("1001")
     })
+  })
+
+  it("approve success invalidates normalizedTransactions cache", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[`/?start=${RANGE.start}&end=${RANGE.end}`]}>
+          <DateRangeProvider>
+            <CategorizePage />
+          </DateRangeProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Suggest categories/i })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /Suggest categories/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText("Amazon purchase")).toBeTruthy()
+    })
+
+    const categorySelect = screen.getByLabelText("Category") as HTMLSelectElement
+    fireEvent.change(categorySelect, { target: { value: "1" } })
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+
+    await waitFor(() => {
+      expect(
+        invalidateSpy.mock.calls.some(
+          ([args]) =>
+            Array.isArray(args.queryKey) &&
+            args.queryKey[0] === "normalizedTransactions",
+        ),
+      ).toBe(true)
+    })
+  })
+})
+
+describe("CategorizePage Firefly links", () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it("renders Open in Firefly link when firefly_base_url is configured", async () => {
+    mockFetch({
+      pending: () => ({ data: [PENDING_ROW], meta: { count: 1, ...RANGE, limit: 50 } }),
+      meta: () => ({
+        openrouter_configured: false,
+        categories: [],
+        budgets: [],
+        default_model: "openai/gpt-4o-mini",
+      }),
+      normalized: () => ({
+        data: [],
+        firefly_base_url: "https://ff.example",
+      }),
+    })
+
+    render(
+      <TestProviders>
+        <CategorizePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /Open in Firefly/i })).toBeTruthy()
+    })
+    expect(screen.getByRole("link", { name: /Open in Firefly/i }).getAttribute("href")).toBe(
+      "https://ff.example/transactions/show/1001",
+    )
+  })
+
+  it("hides link when firefly_base_url absent", async () => {
+    mockFetch({
+      pending: () => ({ data: [PENDING_ROW], meta: { count: 1, ...RANGE, limit: 50 } }),
+      meta: () => ({
+        openrouter_configured: false,
+        categories: [],
+        budgets: [],
+        default_model: "openai/gpt-4o-mini",
+      }),
+      normalized: () => ({ data: [] }),
+    })
+
+    render(
+      <TestProviders>
+        <CategorizePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("AMZN MKTP")).toBeTruthy()
+    })
+    expect(screen.queryByRole("link", { name: /Open in Firefly/i })).toBeNull()
   })
 })

@@ -1,17 +1,20 @@
 import { useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
+import { FireflyTransactionLink } from "@/components/FireflyTransactionLink"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useDateRange } from "@/context/DateRangeContext"
 import { useLoanSplitsQueue } from "@/hooks/useLoanSplitsQueue"
+import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
 import {
   applyLoanSplit,
   type PendingLoanSplit,
   type SplitAmounts,
 } from "@/lib/loanApi"
+import { invalidateReportCaches } from "@/lib/reportCache"
 
 type AmountState = Record<string, SplitAmounts>
 
@@ -22,6 +25,11 @@ export function LoanSplitsQueuePage() {
     committedRange.start,
     committedRange.end,
   )
+  const { data: normalizedData } = useNormalizedTransactions(
+    committedRange.start,
+    committedRange.end,
+  )
+  const fireflyBaseUrl = normalizedData?.firefly_base_url
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const [amounts, setAmounts] = useState<AmountState>({})
   const [applyingId, setApplyingId] = useState<string | null>(null)
@@ -71,7 +79,10 @@ export function LoanSplitsQueuePage() {
         end: committedRange.end,
       })
       setDismissed((prev) => new Set(prev).add(row.journal_id))
-      await queryClient.invalidateQueries({ queryKey: ["loanSplitsQueue"] })
+      await Promise.all([
+        invalidateReportCaches(queryClient),
+        queryClient.invalidateQueries({ queryKey: ["loanSplitsQueue"] }),
+      ])
     } catch (err) {
       setErrors((prev) => ({
         ...prev,
@@ -122,7 +133,13 @@ export function LoanSplitsQueuePage() {
               <CardHeader className="space-y-1">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-medium">{row.description}</span>
-                  <span className="font-medium">{row.amount}</span>
+                  <div className="flex items-center gap-3">
+                    <FireflyTransactionLink
+                      fireflyBaseUrl={fireflyBaseUrl}
+                      journalId={row.transaction_journal_id}
+                    />
+                    <span className="font-medium">{row.amount}</span>
+                  </div>
                 </div>
                 <p className="text-muted-foreground text-xs">{row.date}</p>
               </CardHeader>

@@ -37,6 +37,14 @@ function mockFetch(handlers: Record<string, () => unknown>) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input)
     const method = init?.method ?? "GET"
+    if (url.includes("/api/normalized_transactions") && method === "GET") {
+      return new Response(
+        JSON.stringify(
+          handlers.normalized?.() ?? { data: [], firefly_base_url: undefined },
+        ),
+        { status: 200 },
+      )
+    }
     if (url.includes("/api/loan-splits/pending") && method === "GET") {
       return new Response(JSON.stringify(handlers.pending?.()), { status: 200 })
     }
@@ -135,5 +143,90 @@ describe("LoanSplitsQueuePage", () => {
       String(url).includes("/apply"),
     )
     expect(applyCalls).toHaveLength(0)
+  })
+
+  it("apply success invalidates normalizedTransactions cache", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
+
+    mockFetch({
+      pending: () => ({
+        data: [PENDING_ROW],
+        meta: { count: 1, ...RANGE, forward_only_since: "2026-07-01" },
+      }),
+      apply: () => ({ ok: true, journal_id: "100" }),
+    })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[`/?start=${RANGE.start}&end=${RANGE.end}`]}>
+          <DateRangeProvider>
+            <LoanSplitsQueuePage />
+          </DateRangeProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Loan Provider July")).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /Apply split/i }))
+
+    await waitFor(() => {
+      expect(
+        invalidateSpy.mock.calls.some(
+          ([args]) =>
+            Array.isArray(args.queryKey) &&
+            args.queryKey[0] === "normalizedTransactions",
+        ),
+      ).toBe(true)
+    })
+  })
+
+  it("renders Open in Firefly link when firefly_base_url configured", async () => {
+    mockFetch({
+      pending: () => ({
+        data: [PENDING_ROW],
+        meta: { count: 1, ...RANGE, forward_only_since: "2026-07-01" },
+      }),
+      normalized: () => ({
+        data: [],
+        firefly_base_url: "https://ff.example",
+      }),
+    })
+
+    render(
+      <TestProviders>
+        <LoanSplitsQueuePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /Open in Firefly/i })).toBeTruthy()
+    })
+  })
+
+  it("hides link when firefly_base_url absent", async () => {
+    mockFetch({
+      pending: () => ({
+        data: [PENDING_ROW],
+        meta: { count: 1, ...RANGE, forward_only_since: "2026-07-01" },
+      }),
+      normalized: () => ({ data: [] }),
+    })
+
+    render(
+      <TestProviders>
+        <LoanSplitsQueuePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Loan Provider July")).toBeTruthy()
+    })
+    expect(screen.queryByRole("link", { name: /Open in Firefly/i })).toBeNull()
   })
 })
