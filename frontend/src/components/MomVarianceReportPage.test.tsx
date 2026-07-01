@@ -1,12 +1,22 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { MemoryRouter } from "react-router-dom"
 
 import { creditCardPaymentTransfer, mainCheckingWithdrawal } from "@/test/fixtures/omniRows"
 
 import { MomVarianceReportPage } from "./MomVarianceReportPage"
 
+const mockNavigate = vi.fn()
 const mockUseDateRange = vi.fn()
 const mockUseNormalizedTransactions = vi.fn()
+
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>()
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  }
+})
 
 vi.mock("@/context/DateRangeContext", () => ({
   useDateRange: () => mockUseDateRange(),
@@ -46,13 +56,22 @@ vi.mock("@/components/MomTrendChart", () => ({
         <span>{chartTitle}</span>
         <span data-testid="series-count">{series.length}</span>
         {onSelect ? (
-          <button
-            type="button"
-            data-testid="trend-drill-trigger"
-            onClick={() => onSelect("Groceries")}
-          >
-            Drill budget
-          </button>
+          <>
+            <button
+              type="button"
+              data-testid="trend-drill-trigger"
+              onClick={() => onSelect("Groceries")}
+            >
+              Drill budget
+            </button>
+            <button
+              type="button"
+              data-testid="trend-uncategorized-trigger"
+              onClick={() => onSelect("Uncategorized")}
+            >
+              Drill uncategorized
+            </button>
+          </>
         ) : null}
       </div>
     )
@@ -290,6 +309,23 @@ describe("MomVarianceReportPage", () => {
         data: { data: groceriesRows },
         refetch: vi.fn(),
       }))
+    })
+
+    it("navigates to categorize queue when Uncategorized selected on trend chart", () => {
+      mockNavigate.mockClear()
+      render(
+        <MemoryRouter>
+          <MomVarianceReportPage filter={alwaysTrue} {...pageProps} />
+        </MemoryRouter>,
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Trend" }))
+      fireEvent.click(screen.getByTestId("trend-uncategorized-trigger"))
+
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/manage/categorize?start=2024-01-01&end=2024-03-31",
+      )
+      expect(screen.queryByText("Uncategorized breakdown")).toBeNull()
     })
 
     it("opens category drilldown card when budget selected on Trend tab", () => {

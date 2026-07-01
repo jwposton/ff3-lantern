@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
 
 import { MomCompareChart } from "@/components/MomCompareChart"
 import { MomTrendChart } from "@/components/MomTrendChart"
@@ -32,6 +33,10 @@ import {
   rollingMonthsBefore,
   sliceTrendWindowMonths,
 } from "@/lib/momVariance"
+import {
+  buildCategorizeQueuePath,
+  isUncategorizedDisplayName,
+} from "@/lib/manageNav"
 import { readMomTopN, writeMomTopN, type MomTopNFamily } from "@/lib/momTopN"
 import { TOP_N_MAX, TOP_N_MIN } from "@/lib/topNConstants"
 import type { OmniRow } from "@/types/NormalizedTransaction"
@@ -158,6 +163,7 @@ export function MomVarianceReportPage({
   currentMonthLabel = "Current month",
   averageWindowLabel = "Avg window",
 }: MomVarianceReportPageProps) {
+  const navigate = useNavigate()
   const { committedRange } = useDateRange()
   const { start: committedStart, end: committedEnd } = committedRange
   const { isPending, isError, isSuccess, data, refetch } =
@@ -179,6 +185,17 @@ export function MomVarianceReportPage({
   const [monthB, setMonthB] = useState("")
   const [currentMonth, setCurrentMonth] = useState(() => currentCalendarMonth())
   const [selectedBudget, setSelectedBudget] = useState<string | null>(null)
+
+  const handleBudgetSelect = useCallback(
+    (name: string) => {
+      if (isUncategorizedDisplayName(name)) {
+        navigate(buildCategorizeQueuePath(committedStart, committedEnd))
+        return
+      }
+      setSelectedBudget(name)
+    },
+    [navigate, committedStart, committedEnd],
+  )
 
   const [averageStart, averageEnd] = useMemo(
     () => rollingAverageFetchRange(currentMonth, rollingWindow),
@@ -649,7 +666,7 @@ export function MomVarianceReportPage({
               chartTitle={trendChartTitle}
               interactionHint={interactionHintTrend}
               yAxisName={yAxisNameTrend}
-              onSelect={setSelectedBudget}
+              onSelect={handleBudgetSelect}
             />
           ) : (
             <MomCompareChart
@@ -660,7 +677,7 @@ export function MomVarianceReportPage({
               chartTitle={compareTitle}
               interactionHint={interactionHintCompare}
               yAxisName={yAxisNameCompare}
-              onSelect={setSelectedBudget}
+              onSelect={handleBudgetSelect}
             />
           )}
 
