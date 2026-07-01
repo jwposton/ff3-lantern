@@ -36,7 +36,8 @@ async def fetch_allowlists(
 
 def _is_categorized_split(flat: dict[str, Any]) -> bool:
     cat = flat.get("category_name") or flat.get("category")
-    return bool(cat and str(cat).strip())
+    budget = flat.get("budget_name") or flat.get("budget")
+    return bool(cat and str(cat).strip() and budget and str(budget).strip())
 
 
 def select_few_shot_examples(

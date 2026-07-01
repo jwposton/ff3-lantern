@@ -25,7 +25,7 @@ def _to_pending_row(flat: dict[str, Any]) -> dict[str, Any]:
 
 
 def _is_categorize_queue_row(flat: dict[str, Any]) -> bool:
-    """Uncategorized spending withdrawals only — deposits are excluded."""
+    """Withdrawals missing category and/or budget — deposits are excluded."""
     if (flat.get("type") or "").lower() != "withdrawal":
         return False
     return is_uncategorized_for_queue(flat)
@@ -38,7 +38,7 @@ async def build_pending_queue(
     *,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """Return uncategorized withdrawals sorted by date desc, journal_id."""
+    """Return withdrawals missing category and/or budget, sorted by date desc."""
     cap = min(max(limit, 1), 100)
     flat = await client.fetch_splits(start, end)
     pending = [

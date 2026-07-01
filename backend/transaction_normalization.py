@@ -124,16 +124,17 @@ def _preview_normalized_category(flat_split: dict[str, Any]) -> str | None:
 
 
 def is_uncategorized_for_queue(flat_split: dict[str, Any]) -> bool:
-    """True when a withdrawal/deposit lacks category and is not transfer-like."""
+    """True when a withdrawal/deposit lacks category or budget and is not transfer-like."""
     tx_type = flat_split.get("type")
     if tx_type not in ("withdrawal", "deposit"):
         return False
     cat = flat_split.get("category_name") or flat_split.get("category")
-    if _empty_to_none(cat) is not None:
+    budget = flat_split.get("budget_name") or flat_split.get("budget")
+    missing_category = _empty_to_none(cat) is None
+    missing_budget = _empty_to_none(budget) is None
+    if missing_category and _preview_normalized_category(flat_split):
         return False
-    if _preview_normalized_category(flat_split):
-        return False
-    return True
+    return missing_category or missing_budget
 
 
 def spending_withdrawal_total(rows: list[dict[str, Any]]) -> float:

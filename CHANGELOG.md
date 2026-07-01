@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-07-01
+
+### Fixed
+
+- **Categorize queue scope** — Pending queue includes withdrawals missing a category, a budget, or both (aligns with dashboard “Uncategorized” budget bucket)
+
+### Changed
+
+- **Categorize page copy** — Queue and empty state refer to missing category or budget, not category alone
+
 ## [1.1.8] - 2026-07-01
 
 ### Added
@@ -23,7 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Categorize rule mode** — Switching to rule mode without running Suggest no longer crashes when rule trigger fields are uninitialized
 - **Categorize rule backfill** — Firefly 6.5+ requires `Content-Type` on rule trigger POST; send empty JSON body with date query params so backfill no longer fails with HTTP 415; UI surfaces Firefly error text instead of a bare status code
 
 ### Changed
@@ -184,7 +193,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.8...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.9...HEAD
+[1.1.9]: https://github.com/jwposton/FF3Analytics/compare/v1.1.8...v1.1.9
 [1.1.8]: https://github.com/jwposton/FF3Analytics/compare/v1.1.7...v1.1.8
 [1.1.7]: https://github.com/jwposton/FF3Analytics/compare/v1.1.6...v1.1.7
 [1.1.6]: https://github.com/jwposton/FF3Analytics/compare/v1.1.5...v1.1.6

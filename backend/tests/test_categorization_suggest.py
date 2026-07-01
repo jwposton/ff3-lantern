@@ -180,6 +180,7 @@ def test_few_shot_selects_destination_match():
             "description": "AMZN MKTP US",
             "destination_name": "Amazon",
             "category_name": "Shopping",
+            "budget_name": "Fun",
             "type": "withdrawal",
         },
         {
@@ -187,6 +188,7 @@ def test_few_shot_selects_destination_match():
             "description": "NETFLIX",
             "destination_name": "Netflix",
             "category_name": "Entertainment",
+            "budget_name": "Subscriptions",
             "type": "withdrawal",
         },
     ]

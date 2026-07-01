@@ -799,8 +799,8 @@ export function CategorizePage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Categorize</h1>
           <p className="text-sm text-muted-foreground">
-            {visibleRows.length} uncategorized transaction
-            {visibleRows.length === 1 ? "" : "s"}
+            {visibleRows.length} transaction
+            {visibleRows.length === 1 ? "" : "s"} missing category or budget
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -874,10 +874,10 @@ export function CategorizePage() {
 
       {!isPending && !isError && visibleRows.length === 0 ? (
         <div className="rounded-lg border p-8 text-center">
-          <h2 className="text-lg font-semibold">No uncategorized transactions</h2>
+          <h2 className="text-lg font-semibold">Nothing to categorize</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            All uncategorized withdrawals in this date range have categories. Try
-            widening the date range.
+            All withdrawals in this date range have both a category and a budget.
+            Try widening the date range.
           </p>
         </div>
       ) : null}

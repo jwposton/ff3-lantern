@@ -56,7 +56,28 @@ def test_uncategorized_withdrawal_budget_no_category():
 
 def test_categorized_withdrawal_excluded():
     assert not is_uncategorized_for_queue(
-        {"type": "withdrawal", "category_name": "Groceries"}
+        {
+            "type": "withdrawal",
+            "category_name": "Groceries",
+            "budget_name": "Food",
+        }
+    )
+
+
+def test_withdrawal_category_no_budget_in_queue():
+    assert is_uncategorized_for_queue(
+        {
+            "type": "withdrawal",
+            "category_name": "Groceries",
+            "budget_name": None,
+        }
+    )
+    assert is_uncategorized_for_queue(
+        {
+            "type": "withdrawal",
+            "category_name": "Groceries",
+            "budget_name": "   ",
+        }
     )
 
 
@@ -128,7 +149,7 @@ MIXED_SPLITS = [
         "type": "withdrawal",
         "amount": "-20.00",
         "category_name": "Groceries",
-        "budget_name": "Food",
+        "budget_name": None,
         "date": "2024-06-14",
         "description": "SAFEWAY",
         "source_name": "Checking",
@@ -201,7 +222,7 @@ async def test_pending_queue_filters_and_sorts():
     )
     rows = await build_pending_queue(client, "2024-06-01", "2024-06-30")
     journal_ids = [r["journal_id"] for r in rows]
-    assert journal_ids == ["100"]
+    assert journal_ids == ["100", "101"]
     assert rows[0]["description"] == "AMZN MKTP"
     assert rows[0]["transaction_journal_id"] == "1001"
 

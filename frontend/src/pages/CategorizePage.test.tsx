@@ -229,7 +229,7 @@ describe("CategorizePage degraded or empty", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("No uncategorized transactions")).toBeTruthy()
+      expect(screen.getByText("Nothing to categorize")).toBeTruthy()
     })
   })
 
