@@ -25,6 +25,8 @@ type MomTrendChartProps = {
   interactionHint?: string
   yAxisName: string
   onSelect?: (budget: string) => void
+  /** When true, render chart body only (no Card shell) for drilldown embedding. */
+  embedded?: boolean
 }
 
 function hasData(series: MomTrendSeries[]): boolean {
@@ -61,6 +63,7 @@ export function MomTrendChart({
   interactionHint,
   yAxisName,
   onSelect,
+  embedded = false,
 }: MomTrendChartProps) {
   const isEmpty = !loading && (!hasData(series) || deltaMonths.length === 0)
   const chartRef = useRef<ReactECharts>(null)
@@ -157,7 +160,26 @@ export function MomTrendChart({
     }
   }, [handleChartClick, handleLegendSelectChanged, onSelect])
 
+  const chartBody = isEmpty ? (
+    <div className="flex min-h-[480px] items-center justify-center text-center text-sm text-muted-foreground">
+      {emptyMessage}
+    </div>
+  ) : (
+    <ReactECharts
+      ref={chartRef}
+      option={option}
+      style={{ height: 480, width: "100%" }}
+      onEvents={onEvents}
+      notMerge
+      lazyUpdate
+      data-testid={embedded ? "mom-trend-chart-embedded" : "mom-trend-chart"}
+    />
+  )
+
   if (loading) {
+    if (embedded) {
+      return <Skeleton className="h-[480px] w-full" />
+    }
     return (
       <Card>
         <CardHeader>
@@ -170,6 +192,10 @@ export function MomTrendChart({
     )
   }
 
+  if (embedded) {
+    return chartBody
+  }
+
   return (
     <Card>
       <CardHeader className="space-y-1">
@@ -178,23 +204,7 @@ export function MomTrendChart({
           <p className="text-sm text-muted-foreground">{interactionHint}</p>
         ) : null}
       </CardHeader>
-      <CardContent>
-        {isEmpty ? (
-          <div className="flex min-h-[480px] items-center justify-center text-center text-sm text-muted-foreground">
-            {emptyMessage}
-          </div>
-        ) : (
-          <ReactECharts
-            ref={chartRef}
-            option={option}
-            style={{ height: 480, width: "100%" }}
-            onEvents={onEvents}
-            notMerge
-            lazyUpdate
-            data-testid="mom-trend-chart"
-          />
-        )}
-      </CardContent>
+      <CardContent>{chartBody}</CardContent>
     </Card>
   )
 }

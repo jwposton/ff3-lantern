@@ -44,6 +44,8 @@ type MomCompareChartProps = {
   interactionHint?: string
   yAxisName: string
   onSelect?: (name: string) => void
+  /** When true, render chart body only (no Card shell) for drilldown embedding. */
+  embedded?: boolean
 }
 
 export function MomCompareChart({
@@ -55,6 +57,7 @@ export function MomCompareChart({
   interactionHint,
   yAxisName,
   onSelect,
+  embedded = false,
 }: MomCompareChartProps) {
   const isEmpty = !loading && sortedNames.length === 0
   const chartHeight = compareChartHeight(sortedNames.length)
@@ -123,7 +126,29 @@ export function MomCompareChart({
     return { click: handleChartClick }
   }, [handleChartClick, onSelect])
 
+  const chartBody = isEmpty ? (
+    <div
+      className="flex items-center justify-center text-center text-sm text-muted-foreground"
+      style={{ minHeight: 480 }}
+    >
+      {emptyMessage}
+    </div>
+  ) : (
+    <ReactECharts
+      ref={chartRef}
+      option={option}
+      style={{ height: chartHeight, width: "100%" }}
+      onEvents={onEvents}
+      notMerge
+      lazyUpdate
+      data-testid={embedded ? "mom-compare-chart-embedded" : "mom-compare-chart"}
+    />
+  )
+
   if (loading) {
+    if (embedded) {
+      return <Skeleton className="h-[480px] w-full" />
+    }
     return (
       <Card>
         <CardHeader>
@@ -136,6 +161,10 @@ export function MomCompareChart({
     )
   }
 
+  if (embedded) {
+    return chartBody
+  }
+
   return (
     <Card>
       <CardHeader className="space-y-1">
@@ -144,26 +173,7 @@ export function MomCompareChart({
           <p className="text-sm text-muted-foreground">{interactionHint}</p>
         ) : null}
       </CardHeader>
-      <CardContent>
-        {isEmpty ? (
-          <div
-            className="flex items-center justify-center text-center text-sm text-muted-foreground"
-            style={{ minHeight: 480 }}
-          >
-            {emptyMessage}
-          </div>
-        ) : (
-          <ReactECharts
-            ref={chartRef}
-            option={option}
-            style={{ height: chartHeight, width: "100%" }}
-            onEvents={onEvents}
-            notMerge
-            lazyUpdate
-            data-testid="mom-compare-chart"
-          />
-        )}
-      </CardContent>
+      <CardContent>{chartBody}</CardContent>
     </Card>
   )
 }

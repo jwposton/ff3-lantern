@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react"
 import { MomCompareChart } from "@/components/MomCompareChart"
 import { MomTrendChart } from "@/components/MomTrendChart"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useDateRange } from "@/context/DateRangeContext"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
 import { buildBarChartData } from "@/lib/barChart"
@@ -20,6 +21,9 @@ import { TOP_N_MAX, TOP_N_MIN } from "@/lib/topNConstants"
 import type { OmniRow } from "@/types/NormalizedTransaction"
 
 const OTHER_LABEL = "Other"
+const DRILLDOWN_EMPTY_MESSAGE =
+  "No category breakdown for this budget in this date range"
+const CATEGORIES_TOP_N_LABEL = "Categories shown:"
 
 export type MomVarianceReportPageProps = {
   filter: (row: OmniRow) => boolean
@@ -93,6 +97,7 @@ export function MomVarianceReportPage({
   const [topN, setTopN] = useState(() => readMomTopN(momTopNFamily))
   const [monthA, setMonthA] = useState("")
   const [monthB, setMonthB] = useState("")
+  const [selectedBudget, setSelectedBudget] = useState<string | null>(null)
 
   const allRows = isSuccess ? (data?.data ?? []) : []
   const sliceRows = useMemo(() => allRows.filter(filter), [allRows, filter])
@@ -114,7 +119,24 @@ export function MomVarianceReportPage({
     const pair = defaultMonthPair(months)
     setMonthA(pair.monthA)
     setMonthB(pair.monthB)
+    setSelectedBudget(null)
   }, [committedStart, committedEnd, months])
+
+  const categoryChartData = useMemo(() => {
+    if (selectedBudget == null) return null
+    return buildBarChartData(sliceRows, ["month", "category"], {
+      start: committedStart,
+      end: committedEnd,
+      filter: { budget: selectedBudget },
+      useCashFlowLabels,
+    })
+  }, [
+    sliceRows,
+    committedStart,
+    committedEnd,
+    useCashFlowLabels,
+    selectedBudget,
+  ])
 
   const trendChartData = useMemo(() => {
     const windowMonths = sliceTrendWindowMonths(budgetChartData.months)
@@ -143,6 +165,45 @@ export function MomVarianceReportPage({
 
     return { sortedNames, deltas: aggregated }
   }, [budgetChartData, monthA, monthB, topN, monthsSelectable])
+
+  const categoryTrendChartData = useMemo(() => {
+    if (!categoryChartData) {
+      return { deltaMonths: [] as string[], series: [] as { name: string; data: number[] }[] }
+    }
+    const windowMonths = sliceTrendWindowMonths(categoryChartData.months)
+    const { deltaMonths, series: allSeries } = buildTrendDeltaSeries(
+      categoryChartData,
+      windowMonths,
+    )
+    const { names: topNames } = rankTrendStacksByActivity(
+      categoryChartData,
+      windowMonths,
+      topN,
+    )
+    const series = filterTrendSeriesByTopN(allSeries, topNames)
+    return { deltaMonths, series }
+  }, [categoryChartData, topN])
+
+  const categoryCompareChartData = useMemo(() => {
+    if (
+      !categoryChartData ||
+      !monthsSelectable ||
+      !monthA ||
+      !monthB
+    ) {
+      return { sortedNames: [] as string[], deltas: new Map<string, number>() }
+    }
+
+    const rawDeltas = compareDelta(categoryChartData, monthA, monthB)
+    const { names: topNames } = rankStacksByAbsDelta(rawDeltas, topN)
+    const aggregated = aggregateOtherDeltas(rawDeltas, topNames)
+    const sortedNames = topNames.filter((name) => aggregated.has(name))
+
+    return { sortedNames, deltas: aggregated }
+  }, [categoryChartData, monthA, monthB, topN, monthsSelectable])
+
+  const displayTopNLabel =
+    selectedBudget != null ? CATEGORIES_TOP_N_LABEL : topNLabel
 
   const compareDisplayMessage = monthsSelectable
     ? emptyMessage
@@ -246,7 +307,7 @@ export function MomVarianceReportPage({
             ) : null}
 
             <label className="flex items-center gap-2 font-medium">
-              {topNLabel}
+              {displayTopNLabel}
               <input
                 type="range"
                 min={TOP_N_MIN}
@@ -257,6 +318,7 @@ export function MomVarianceReportPage({
                   const n = Number(e.target.value)
                   setTopN(n)
                   writeMomTopN(momTopNFamily, n)
+                  setSelectedBudget(null)
                 }}
                 className="accent-primary"
                 style={{ width: 120 }}
@@ -276,6 +338,7 @@ export function MomVarianceReportPage({
               chartTitle={trendChartTitle}
               interactionHint={interactionHintTrend}
               yAxisName={yAxisNameTrend}
+              onSelect={setSelectedBudget}
             />
           ) : (
             <MomCompareChart
@@ -286,8 +349,51 @@ export function MomVarianceReportPage({
               chartTitle={compareChartTitle}
               interactionHint={interactionHintCompare}
               yAxisName={yAxisNameCompare}
+              onSelect={setSelectedBudget}
             />
           )}
+
+          {selectedBudget != null && !isPending ? (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+                <CardTitle className="text-base">
+                  {selectedBudget} breakdown
+                </CardTitle>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedBudget(null)}
+                  aria-label="Clear MoM drilldown"
+                >
+                  Clear
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {activeTab === "trend" ? (
+                  <MomTrendChart
+                    embedded
+                    deltaMonths={categoryTrendChartData.deltaMonths}
+                    series={categoryTrendChartData.series}
+                    loading={false}
+                    emptyMessage={DRILLDOWN_EMPTY_MESSAGE}
+                    chartTitle=""
+                    yAxisName={yAxisNameTrend}
+                  />
+                ) : (
+                  <MomCompareChart
+                    embedded
+                    sortedNames={categoryCompareChartData.sortedNames}
+                    deltas={categoryCompareChartData.deltas}
+                    loading={false}
+                    emptyMessage={DRILLDOWN_EMPTY_MESSAGE}
+                    chartTitle=""
+                    yAxisName={yAxisNameCompare}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       )}
     </div>
