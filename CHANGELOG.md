@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-07-01
+
 ### Added
 
 - **MoM variance data tables** — Budget × month numeric tables below Compare and Trend charts on Spending and Cash Flow variance pages; drilldown shows category rows for the selected budget
@@ -182,7 +184,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.7...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.8...HEAD
+[1.1.8]: https://github.com/jwposton/FF3Analytics/compare/v1.1.7...v1.1.8
 [1.1.7]: https://github.com/jwposton/FF3Analytics/compare/v1.1.6...v1.1.7
 [1.1.6]: https://github.com/jwposton/FF3Analytics/compare/v1.1.5...v1.1.6
 [1.1.5]: https://github.com/jwposton/FF3Analytics/compare/v1.1.4...v1.1.5
