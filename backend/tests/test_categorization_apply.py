@@ -30,7 +30,8 @@ def test_mutate_fn_adds_ai_tag():
     attrs = load_fixture("transactions_put_roundtrip.json")["data"]["attributes"]
     mutate = build_apply_mutate_fn("5001", "99", None)
     updated = mutate(attrs)
-    assert "ai-categorized" in updated.get("tags", [])
+    tagged = updated["transactions"][0]
+    assert "ai-categorized" in tagged.get("tags", [])
 
 
 def test_mutate_fn_raises_when_journal_missing():
@@ -66,6 +67,11 @@ def test_apply_category_put_preserves_splits(monkeypatch, tmp_path):
     assert body.get("apply_rules") is False
     journal_ids = {s["transaction_journal_id"] for s in body["transactions"]}
     assert journal_ids == {"5001", "5002"}
+    tagged_split = next(
+        s for s in body["transactions"] if s["transaction_journal_id"] == "5001"
+    )
+    assert "ai-categorized" in tagged_split.get("tags", [])
+    assert "tags" not in body
 
 
 @pytest.mark.asyncio

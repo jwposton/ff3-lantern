@@ -15,8 +15,9 @@ def _ai_tag_name() -> str:
     return os.environ.get("FF3ANALYTICS_AI_TAG", "ai-categorized").strip() or "ai-categorized"
 
 
-def _merge_tags(attrs: dict[str, Any], tag: str) -> None:
-    existing = attrs.get("tags")
+def _merge_tags(split: dict[str, Any], tag: str) -> None:
+    """Merge tag onto a Firefly transaction split."""
+    existing = split.get("tags")
     if existing is None:
         tags: list[str] = []
     elif isinstance(existing, str):
@@ -27,7 +28,7 @@ def _merge_tags(attrs: dict[str, Any], tag: str) -> None:
         tags = []
     if tag not in tags:
         tags.append(tag)
-    attrs["tags"] = tags
+    split["tags"] = tags
 
 
 def build_apply_mutate_fn(
@@ -45,12 +46,12 @@ def build_apply_mutate_fn(
                 split["category_id"] = category_id
                 if budget_id is not None:
                     split["budget_id"] = budget_id
+                _merge_tags(split, _ai_tag_name())
                 found = True
         if not found:
             raise ValueError(
                 f"transaction_journal_id {transaction_journal_id} not found in journal"
             )
-        _merge_tags(updated, _ai_tag_name())
         return updated
 
     return mutate
@@ -65,7 +66,7 @@ async def apply_category(
     *,
     model: str | None = None,
 ) -> dict[str, Any]:
-    """Write category/budget to one split and tag journal as AI-categorized."""
+    """Write category/budget to one split and tag it with FF3ANALYTICS_AI_TAG."""
     mutate = build_apply_mutate_fn(transaction_journal_id, category_id, budget_id)
     result = await client.update_transaction(group_id, mutate)
     await sidecar_db.log_audit(
