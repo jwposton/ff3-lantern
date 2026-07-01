@@ -91,6 +91,18 @@ describe("AppSidebar active nav state", () => {
     expectActive("/reports/spending/trends", false)
   })
 
+  it("highlights Spending MoM on /reports/spending/mom", () => {
+    renderSidebar("/reports/spending/mom")
+    expectActive("/reports/spending/mom", true)
+    expectActive("/reports/spending", false)
+  })
+
+  it("highlights Cash Flow MoM on /reports/cash-flow/mom", () => {
+    renderSidebar("/reports/cash-flow/mom")
+    expectActive("/reports/cash-flow/mom", true)
+    expectActive("/reports/cash-flow", false)
+  })
+
   it("does not include legacy /reports/sankey nav item", () => {
     renderSidebar("/reports/spending/sankey")
     const legacyLink = document.querySelector('a[href="/reports/sankey"]')
