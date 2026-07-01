@@ -106,6 +106,25 @@ def test_split_journal_produces_two_rows():
     )
     flat = asyncio.run(client.fetch_splits("2024-01-01", "2024-01-31"))
     assert len(flat) == 2
+    journal_ids = {row["transaction_journal_id"] for row in flat}
+    assert journal_ids == {"2001", "2002"}
+
+
+def test_withdrawal_fixture_includes_description_and_transaction_journal_id():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/accounts"):
+            return httpx.Response(200, json=load_fixture("accounts.json"))
+        return httpx.Response(200, json=load_fixture("transactions_withdrawal.json"))
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    flat = asyncio.run(client.fetch_splits("2024-01-01", "2024-01-31"))
+    assert len(flat) == 1
+    assert flat[0]["description"] == "Weekly groceries"
+    assert flat[0]["transaction_journal_id"] == "1001"
 
 
 def test_cc_withdrawal_source_role_is_credit_card():
