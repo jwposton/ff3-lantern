@@ -94,7 +94,7 @@ async def suggest_category(
                 await asyncio.sleep(2**attempt)
                 continue
             raise
-        except Exception as exc:
+        except httpx.TransportError as exc:
             last_exc = exc
             if attempt < _MAX_RETRIES:
                 await asyncio.sleep(2**attempt)

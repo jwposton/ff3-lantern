@@ -38,3 +38,6 @@ docker-compose.override.yml
 
 # GSD planning (stored outside git — see ~/HarvestWind/planning/ff3analytics/)
 .planning
+
+# Datafiles
+data/

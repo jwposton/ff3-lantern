@@ -34,7 +34,7 @@ def _valid_profile() -> dict:
                 },
                 {
                     "role": "interest",
-                    "type": "withdrawal",
+                    "type": "transfer",
                     "destination_account_id": "88",
                     "destination_account": "Mortgage Interest",
                 },
@@ -79,6 +79,35 @@ def test_expected_amount_parsed_as_decimal_string():
     assert result["match"]["amount_tolerance"] == "1.00"
 
 
+def test_escrow_destination_required_when_escrow_amount_positive():
+    profile = _valid_profile()
+    profile["split"]["escrow_amount"] = "100.00"
+    profile["split"]["components"].append(
+        {
+            "role": "escrow",
+            "type": "withdrawal",
+            "destination_account_id": "",
+            "destination_account": "",
+        }
+    )
+    with pytest.raises(ValueError, match="escrow destination"):
+        validate_profile(profile, ACCOUNTS)
+
+
+def test_escrow_component_optional_when_escrow_zero():
+    profile = _valid_profile()
+    profile["split"]["components"].append(
+        {
+            "role": "escrow",
+            "type": "withdrawal",
+            "destination_account_id": "",
+            "destination_account": "",
+        }
+    )
+    result = validate_profile(profile, ACCOUNTS)
+    assert result["split"]["escrow_amount"] == "0.00"
+
+
 def test_disabled_profile_skips_component_requirements():
     profile = _valid_profile()
     profile["enabled"] = False
@@ -91,4 +120,20 @@ def test_oversized_profile_rejected():
     profile = _valid_profile()
     profile["notes"] = "x" * 20000
     with pytest.raises(ValueError, match="16KB"):
+        validate_profile(profile, ACCOUNTS)
+
+
+def test_withdrawal_match_allows_principal_withdrawal_to_liability():
+    profile = _valid_profile()
+    profile["match"]["type"] = "withdrawal"
+    profile["split"]["components"][0]["type"] = "withdrawal"
+    profile["split"]["components"][1]["type"] = "withdrawal"
+    result = validate_profile(profile, ACCOUNTS)
+    assert result["match"]["type"] == "withdrawal"
+
+
+def test_component_type_must_match_match_type():
+    profile = _valid_profile()
+    profile["split"]["components"][1]["type"] = "withdrawal"
+    with pytest.raises(ValueError, match="must match match.type"):
         validate_profile(profile, ACCOUNTS)

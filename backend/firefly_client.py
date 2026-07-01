@@ -257,10 +257,21 @@ class FireflyClient:
                 "mutate_fn must preserve all transaction_journal_id values; "
                 f"expected {original_ids}, got {put_ids}"
             )
-        put_body = {
+        put_body: dict[str, Any] = {
             "apply_rules": False,
             "transactions": updated_attrs.get("transactions", []),
         }
+        txns = put_body["transactions"]
+        if len(txns) > 1:
+            put_body["group_title"] = (
+                updated_attrs.get("group_title")
+                or attrs.get("group_title")
+                or (txns[0].get("description") if txns else None)
+                or "Split transaction"
+            )
+        tags = updated_attrs.get("tags")
+        if tags:
+            put_body["tags"] = tags
         async with self._build_client() as client:
             response = await client.put(
                 f"/api/v1/transactions/{group_id}",

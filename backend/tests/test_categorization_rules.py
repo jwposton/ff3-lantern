@@ -78,6 +78,28 @@ async def test_preview_rule_matches_counts():
 
 
 @pytest.mark.asyncio
+async def test_find_duplicate_rules_ignores_short_title_substring_of_needle():
+    """Existing short titles must not block when only title-in-needle would match."""
+    class _Client:
+        async def fetch_rules(self):
+            return [
+                {
+                    "id": "9",
+                    "title": "Pay",
+                    "triggers": [],
+                }
+            ]
+
+    draft = RuleDraft(
+        title="Vendor payment",
+        description_contains="Payment to Vendor",
+        transaction_type=None,
+    )
+    conflicts = await find_duplicate_rules(_Client(), draft)
+    assert conflicts == []
+
+
+@pytest.mark.asyncio
 async def test_find_duplicate_rules_by_trigger():
     class _Client:
         async def fetch_rules(self):

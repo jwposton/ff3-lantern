@@ -1,3 +1,16 @@
+export type LoanAccountOption = {
+  id: string
+  name: string
+}
+
+export type LoanMeta = {
+  liability_accounts: LoanAccountOption[]
+  expense_accounts: LoanAccountOption[]
+  asset_accounts: LoanAccountOption[]
+  categories: LoanAccountOption[]
+  budgets: LoanAccountOption[]
+}
+
 export type LoanAccountRow = {
   account_id: string
   name: string
@@ -10,6 +23,7 @@ export type LoanProfile = {
   version: number
   enabled: boolean
   match: {
+    type?: "transfer" | "withdrawal"
     description_contains: string
     expected_amount: string
     amount_tolerance?: string
@@ -75,6 +89,12 @@ export async function fetchLoans(): Promise<{ data: LoanAccountRow[] }> {
   return (await res.json()) as { data: LoanAccountRow[] }
 }
 
+export async function fetchLoanMeta(): Promise<LoanMeta> {
+  const res = await fetch("/api/loans/meta")
+  if (!res.ok) throw new Error(`Failed to fetch loan meta (${res.status})`)
+  return (await res.json()) as LoanMeta
+}
+
 export async function fetchLoan(accountId: string): Promise<LoanDetail> {
   const res = await fetch(`/api/loans/${accountId}`)
   if (!res.ok) throw new Error(`Failed to fetch loan (${res.status})`)
@@ -85,10 +105,11 @@ export async function saveLoanProfile(
   accountId: string,
   profile: LoanProfile,
 ): Promise<{ ok: boolean; profile: LoanProfile }> {
+  const { rate_override: _omit, ...payload } = profile
   const res = await fetch(`/api/loans/${accountId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(profile),
+    body: JSON.stringify(payload),
   })
   if (!res.ok) throw new Error(`Failed to save loan profile (${res.status})`)
   return (await res.json()) as { ok: boolean; profile: LoanProfile }
@@ -120,7 +141,18 @@ export async function applyLoanSplit(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`Apply loan split failed (${res.status})`)
+  if (!res.ok) {
+    let detail = `Apply loan split failed (${res.status})`
+    try {
+      const json = (await res.json()) as { detail?: string }
+      if (typeof json.detail === "string" && json.detail.trim()) {
+        detail = json.detail
+      }
+    } catch {
+      // ignore parse errors
+    }
+    throw new Error(detail)
+  }
   return (await res.json()) as { ok: boolean; journal_id: string }
 }
 

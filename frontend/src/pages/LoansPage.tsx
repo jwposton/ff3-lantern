@@ -31,8 +31,13 @@ export function LoansPage() {
 
       {!isPending && !isError && rows.length === 0 && (
         <Card>
-          <CardContent className="text-muted-foreground py-8 text-sm">
-            No liability accounts found in Firefly.
+          <CardContent className="text-muted-foreground space-y-2 py-8 text-sm">
+            <p>No liability accounts found in Firefly.</p>
+            <p>
+              Loan profiles attach to Firefly <strong>liability</strong> accounts
+              (mortgage, auto loan, etc.). Create or reclassify the account in
+              Firefly, then refresh this page.
+            </p>
           </CardContent>
         </Card>
       )}

@@ -71,7 +71,7 @@ async def is_writable() -> bool:
         probe.unlink(missing_ok=True)
         await init_db()
         return True
-    except OSError:
+    except Exception:
         return False
 
 

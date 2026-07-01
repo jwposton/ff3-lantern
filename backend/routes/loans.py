@@ -58,6 +58,20 @@ def _is_liability_row(acct: dict[str, Any]) -> bool:
     return "liabilit" in raw_type
 
 
+def _is_expense_row(acct: dict[str, Any]) -> bool:
+    raw_type = (acct.get("type") or "").lower()
+    return raw_type in ("expense", "expense account")
+
+
+def _is_asset_row(acct: dict[str, Any]) -> bool:
+    raw_type = (acct.get("type") or "").lower()
+    return "asset" in raw_type
+
+
+def _account_option(account_id: str, acct: dict[str, Any]) -> dict[str, str]:
+    return {"id": account_id, "name": acct.get("name") or account_id}
+
+
 def _account_row(account_id: str, attrs: dict[str, Any], profile: dict | None) -> dict:
     return {
         "account_id": account_id,
@@ -87,6 +101,46 @@ async def get_loans(client: FireflyClient = Depends(get_firefly_client)):
             detail=f"Failed to fetch Firefly accounts: {exc}",
         ) from exc
     return {"data": rows}
+
+
+@router.get("/loans/meta")
+async def get_loans_meta(client: FireflyClient = Depends(get_firefly_client)):
+    try:
+        accounts = await client.fetch_accounts()
+        categories = await client.fetch_categories()
+        budgets = await client.fetch_budgets()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch Firefly reference data: {exc}",
+        ) from exc
+    liabilities = [
+        _account_option(aid, acct)
+        for aid, acct in accounts.items()
+        if _is_liability_row(acct)
+    ]
+    expenses = [
+        _account_option(aid, acct)
+        for aid, acct in accounts.items()
+        if _is_expense_row(acct)
+    ]
+    assets = [
+        _account_option(aid, acct)
+        for aid, acct in accounts.items()
+        if _is_asset_row(acct)
+    ]
+    liabilities.sort(key=lambda row: row["name"].lower())
+    expenses.sort(key=lambda row: row["name"].lower())
+    assets.sort(key=lambda row: row["name"].lower())
+    categories.sort(key=lambda row: row["name"].lower())
+    budgets.sort(key=lambda row: row["name"].lower())
+    return {
+        "liability_accounts": liabilities,
+        "expense_accounts": expenses,
+        "asset_accounts": assets,
+        "categories": categories,
+        "budgets": budgets,
+    }
 
 
 @router.get("/loans/{account_id}")

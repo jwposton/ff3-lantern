@@ -3,34 +3,60 @@
 from __future__ import annotations
 
 import json
-import re
 
 from firefly_client import FireflyClient
 
 LOAN_PROFILE_MARKER = "<!-- ff3analytics:loan_profile.v1 -->"
 
-_MARKER_PATTERN = re.compile(
-    rf"{re.escape(LOAN_PROFILE_MARKER)}\s*(\{{.*\}})",
-    re.DOTALL,
-)
+
+def _extract_json_after_marker(notes: str) -> str | None:
+    idx = notes.find(LOAN_PROFILE_MARKER)
+    if idx == -1:
+        return None
+    rest = notes[idx + len(LOAN_PROFILE_MARKER) :].lstrip()
+    if not rest.startswith("{"):
+        return None
+    depth = 0
+    for i, ch in enumerate(rest):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return rest[: i + 1]
+    return None
+
+
+def _strip_profile_block(notes: str) -> str:
+    idx = notes.find(LOAN_PROFILE_MARKER)
+    if idx == -1:
+        return notes
+    before = notes[:idx].rstrip()
+    suffix = notes[idx:]
+    raw_json = _extract_json_after_marker(suffix)
+    if raw_json is None:
+        return before
+    after_marker = suffix[len(LOAN_PROFILE_MARKER) :].lstrip()
+    json_pos = after_marker.find(raw_json)
+    after_json = after_marker[json_pos + len(raw_json) :].strip()
+    parts = [p for p in (before, after_json) if p]
+    return "\n\n".join(parts)
 
 
 def parse_loan_profile_from_notes(notes: str) -> dict | None:
     if not notes:
         return None
-    match = _MARKER_PATTERN.search(notes)
-    if not match:
+    raw_json = _extract_json_after_marker(notes)
+    if raw_json is None:
         return None
     try:
-        return json.loads(match.group(1))
+        return json.loads(raw_json)
     except json.JSONDecodeError:
         return None
 
 
 def serialize_loan_profile_to_notes(profile: dict, existing_notes: str = "") -> str:
-    base = existing_notes or ""
-    if LOAN_PROFILE_MARKER in base:
-        base = _MARKER_PATTERN.sub("", base).strip()
+    base = _strip_profile_block(existing_notes or "")
     profile_json = json.dumps(profile, indent=2)
     block = f"{LOAN_PROFILE_MARKER}\n{profile_json}"
     if base:

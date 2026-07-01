@@ -58,6 +58,19 @@ function inputClassName(): string {
   return "border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-2 focus-visible:outline-hidden"
 }
 
+function ruleTransactionType(
+  row: PendingRow,
+  suggestion?: SuggestionPayload,
+): "withdrawal" | "deposit" | null {
+  if (suggestion?.rule?.transaction_type) {
+    return suggestion.rule.transaction_type
+  }
+  if (row.type === "withdrawal" || row.type === "deposit") {
+    return row.type
+  }
+  return null
+}
+
 function defaultCardState(suggestion?: SuggestionPayload): CardState {
   const mode: ApplyMode =
     suggestion?.recommendation === "rule" ? "rule" : "direct"
@@ -458,7 +471,8 @@ export function CategorizePage() {
 
   async function handlePreview(journalId: string) {
     const state = cardState[journalId]
-    if (!state?.ruleDescriptionContains.trim()) return
+    const row = visibleRows.find((r) => r.journal_id === journalId)
+    if (!state?.ruleDescriptionContains.trim() || !row) return
     setPreviewingId(journalId)
     setCardState((prev) => ({
       ...prev,
@@ -475,7 +489,7 @@ export function CategorizePage() {
         rule: {
           title: state.ruleTitle,
           description_contains: state.ruleDescriptionContains,
-          transaction_type: state.suggestion?.rule?.transaction_type ?? null,
+          transaction_type: ruleTransactionType(row, state.suggestion),
         },
       })
       setCardState((prev) => ({
@@ -518,14 +532,28 @@ export function CategorizePage() {
         rule: {
           title: state.ruleTitle,
           description_contains: state.ruleDescriptionContains,
-          transaction_type: state.suggestion?.rule?.transaction_type ?? null,
+          transaction_type: ruleTransactionType(row, state.suggestion),
         },
       })
       if (state.backfillOptIn) {
-        await triggerRule(created.data.rule_id, {
-          start: committedRange.start,
-          end: committedRange.end,
-        })
+        try {
+          await triggerRule(created.data.rule_id, {
+            start: committedRange.start,
+            end: committedRange.end,
+          })
+        } catch (triggerErr) {
+          setCardState((prev) => ({
+            ...prev,
+            [row.journal_id]: {
+              ...prev[row.journal_id],
+              ruleError:
+                triggerErr instanceof Error
+                  ? `Rule created but backfill failed: ${triggerErr.message}`
+                  : "Rule created but backfill failed. Try again from Firefly.",
+            },
+          }))
+          return
+        }
       }
       dismissJournalIds(groupJournalIds)
       await invalidateAfterApply()

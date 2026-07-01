@@ -34,6 +34,8 @@ function TestProviders({ children }: { children: ReactNode }) {
   )
 }
 
+type PendingListPayload = { data?: unknown[]; meta?: Record<string, unknown> }
+
 function mockFetch(handlers: Record<string, () => unknown>) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input)
@@ -48,7 +50,7 @@ function mockFetch(handlers: Record<string, () => unknown>) {
     }
     if (url.includes("/api/categorize/pending") && method === "GET") {
       const grouped = url.includes("group_by_fingerprint=true")
-      const flat = handlers.pending?.() ?? { data: [], meta: {} }
+      const flat = (handlers.pending?.() ?? { data: [], meta: {} }) as PendingListPayload
       if (grouped && handlers.groupedPending) {
         return new Response(JSON.stringify(handlers.groupedPending()), { status: 200 })
       }
@@ -270,7 +272,7 @@ describe("CategorizePage interactions", () => {
       expect(screen.getByText("AMZN MKTP")).toBeTruthy()
     })
 
-    const suggestCalls = fetchSpy.mock.calls.filter(([url, init]) =>
+    const suggestCalls = fetchSpy.mock.calls.filter(([url]) =>
       String(url).includes("/suggest"),
     )
     expect(suggestCalls).toHaveLength(0)
@@ -388,6 +390,7 @@ describe("CategorizePage interactions", () => {
       expect(
         invalidateSpy.mock.calls.some(
           ([args]) =>
+            args != null &&
             Array.isArray(args.queryKey) &&
             args.queryKey[0] === "normalizedTransactions",
         ),

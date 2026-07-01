@@ -130,7 +130,7 @@ async def find_duplicate_rules(
         if rule_id in seen:
             continue
         title = (rule.get("title") or "").lower()
-        overlap = needle in title or title in needle
+        overlap = needle in title
         if not overlap:
             for trig in rule.get("triggers") or []:
                 if trig.get("type") != "description_contains":

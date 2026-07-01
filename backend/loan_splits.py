@@ -36,6 +36,15 @@ def _component_amounts(profile: dict[str, Any], amounts: dict[str, Decimal]) -> 
     return rows
 
 
+def _split_transaction_type(profile: dict[str, Any], flat_split: dict[str, Any]) -> str:
+    """Firefly requires every split in a group to share the same transaction type."""
+    return (
+        (profile.get("match") or {}).get("type")
+        or flat_split.get("type")
+        or "transfer"
+    )
+
+
 def build_split_transactions(
     profile: dict[str, Any],
     flat_split: dict[str, Any],
@@ -47,15 +56,15 @@ def build_split_transactions(
     description = flat_split.get("description") or ""
     date = flat_split.get("date")
     budget = (profile.get("split") or {}).get("budget")
+    txn_type = _split_transaction_type(profile, flat_split)
     txns: list[dict[str, Any]] = []
     for comp, amount in _component_amounts(profile, amounts):
         role = comp.get("role")
         dest_name = comp.get("destination_account")
         dest_id = comp.get("destination_account_id")
-        txn_type = comp.get("type")
         entry: dict[str, Any] = {
             "type": txn_type,
-            "amount": f"-{amount:.2f}",
+            "amount": f"{amount:.2f}",
             "date": date,
             "description": description,
             "source_name": source_name,
@@ -89,11 +98,6 @@ async def apply_loan_split(
     new_splits = build_split_transactions(profile, flat_split, adjusted)
     if not new_splits:
         raise ValueError("no split components to apply")
-
-    if new_splits and str(new_splits[0].get("transaction_journal_id")) != str(
-        transaction_journal_id
-    ):
-        new_splits[0]["transaction_journal_id"] = transaction_journal_id
 
     def mutate(attrs: dict[str, Any]) -> dict[str, Any]:
         updated = deepcopy(attrs)

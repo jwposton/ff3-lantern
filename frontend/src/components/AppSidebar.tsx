@@ -8,7 +8,7 @@ import {
   TrendingUp,
   type LucideIcon,
 } from "lucide-react"
-import { NavLink } from "react-router-dom"
+import { NavLink, useMatch } from "react-router-dom"
 
 import { AppVersionBadge } from "@/components/AppVersionBadge"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
@@ -140,6 +140,36 @@ function NavItems({
   )
 }
 
+function ManageNavItem({
+  to,
+  label,
+  icon: Icon,
+  end,
+  badgeCount,
+}: {
+  to: string
+  label: string
+  icon: LucideIcon
+  end: boolean
+  badgeCount: number
+}) {
+  const isActive = Boolean(useMatch({ path: to, end }))
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={isActive} tooltip={label}>
+        <NavLink to={to} end={end}>
+          <Icon />
+          <span>{label}</span>
+        </NavLink>
+      </SidebarMenuButton>
+      {badgeCount > 0 ? (
+        <SidebarMenuBadge>{formatBadgeCount(badgeCount)}</SidebarMenuBadge>
+      ) : null}
+    </SidebarMenuItem>
+  )
+}
+
 function ManageNavItems({
   categorizeCount,
   loanSplitCount,
@@ -154,24 +184,13 @@ function ManageNavItems({
 
   return (
     <>
-      {manageNavItems.map(({ to, label, icon: Icon, end }) => {
-        const badgeCount = badgeCounts[to] ?? 0
-        return (
-          <SidebarMenuItem key={to} className="group/menu-item relative">
-            <NavLink to={to} end={end} className="contents">
-              {({ isActive }) => (
-                <SidebarMenuButton isActive={isActive} tooltip={label}>
-                  <Icon />
-                  <span>{label}</span>
-                </SidebarMenuButton>
-              )}
-            </NavLink>
-            {badgeCount > 0 ? (
-              <SidebarMenuBadge>{formatBadgeCount(badgeCount)}</SidebarMenuBadge>
-            ) : null}
-          </SidebarMenuItem>
-        )
-      })}
+      {manageNavItems.map((item) => (
+        <ManageNavItem
+          key={item.to}
+          {...item}
+          badgeCount={badgeCounts[item.to] ?? 0}
+        />
+      ))}
     </>
   )
 }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { FireflyTransactionLink } from "@/components/FireflyTransactionLink"
@@ -100,11 +101,18 @@ export function LoanSplitsQueuePage() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Loan splits</h1>
+          <p className="text-muted-foreground text-sm">
+            {visible.length} pending payment{visible.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        <Button asChild variant="outline">
+          <Link to="/manage/loans">Configure profiles</Link>
+        </Button>
+      </div>
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Loan splits</h1>
-        <p className="text-muted-foreground text-sm">
-          {visible.length} pending payment{visible.length === 1 ? "" : "s"}
-        </p>
         {data?.meta.forward_only_since && (
           <p className="text-muted-foreground mt-2 text-xs">
             Showing payments on or after {data.meta.forward_only_since} (forward-only)
@@ -119,8 +127,32 @@ export function LoanSplitsQueuePage() {
 
       {!isPending && !isError && visible.length === 0 && (
         <Card>
-          <CardContent className="text-muted-foreground py-8 text-sm">
-            No loan payments to split
+          <CardContent className="text-muted-foreground space-y-2 py-8 text-sm">
+            <p>No loan payments matched your profile in this date range.</p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>
+                Widen the global date range to include the payment date
+              </li>
+              <li>
+                Confirm <code className="text-xs">FF3ANALYTICS_LOAN_SPLITS_SINCE</code>{" "}
+                in <code className="text-xs">.env</code> is on or before the payment
+              </li>
+              <li>
+                Profile must be <strong>Enabled</strong>; payment must still be a{" "}
+                <strong>single split</strong> (not already split)
+              </li>
+              <li>
+                Match <strong>transaction type</strong> (transfer vs withdrawal) and{" "}
+                <strong>description contains</strong> to what Transaction Explorer shows
+              </li>
+              <li>
+                <strong>Expected amount</strong> must be within tolerance of the payment
+                total
+              </li>
+            </ul>
+            <Button asChild variant="outline" size="sm" className="mt-2">
+              <Link to="/manage/loans">Configure profiles</Link>
+            </Button>
           </CardContent>
         </Card>
       )}

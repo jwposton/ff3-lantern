@@ -139,7 +139,7 @@ describe("LoanSplitsQueuePage", () => {
       expect(screen.queryByText("Loan Provider July")).toBeNull()
     })
 
-    const applyCalls = fetchSpy.mock.calls.filter(([url, init]) =>
+    const applyCalls = fetchSpy.mock.calls.filter(([url]) =>
       String(url).includes("/apply"),
     )
     expect(applyCalls).toHaveLength(0)
@@ -179,6 +179,7 @@ describe("LoanSplitsQueuePage", () => {
       expect(
         invalidateSpy.mock.calls.some(
           ([args]) =>
+            args != null &&
             Array.isArray(args.queryKey) &&
             args.queryKey[0] === "normalizedTransactions",
         ),

@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 import sidecar_db
-from categorization_context import SYSTEM_PROMPT, build_suggest_context
+from categorization_context import SYSTEM_PROMPT, build_suggest_context, fetch_allowlists
 from categorize_queue import build_pending_queue
 from categorization_models import CategorizationSuggestion
 from firefly_client import FireflyClient
@@ -42,11 +42,18 @@ async def suggest_for_journal(
     if not refresh:
         cached = await sidecar_db.get_suggestion(journal_id, model)
         if cached:
-            return {
-                "journal_id": journal_id,
-                "suggestion": json.loads(cached),
-                "cached": True,
-            }
+            try:
+                suggestion = CategorizationSuggestion.model_validate_json(cached)
+                cat_map, budget_map, _ = await fetch_allowlists(firefly)
+                suggestion.validate_against_allowlists(cat_map, budget_map)
+            except (ValueError, json.JSONDecodeError):
+                pass
+            else:
+                return {
+                    "journal_id": journal_id,
+                    "suggestion": _suggestion_to_dict(suggestion),
+                    "cached": True,
+                }
 
     cat_map, budget_map, user_payload = await build_suggest_context(
         firefly, transaction, start, end

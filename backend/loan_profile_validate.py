@@ -52,6 +52,7 @@ class SplitComponent(BaseModel):
 
 
 class MatchConfig(BaseModel):
+    type: Literal["transfer", "withdrawal"] = "transfer"
     description_contains: str = Field(min_length=1)
     expected_amount: str
     amount_tolerance: str = "0.50"
@@ -92,27 +93,42 @@ def _validate_component_accounts(
 ) -> None:
     if not profile.enabled:
         return
+    escrow_amt = Decimal(profile.split.escrow_amount)
     roles_seen: set[str] = set()
+    match_type = profile.match.type
     for idx, comp in enumerate(profile.split.components):
+        if comp.role == "escrow" and escrow_amt <= 0:
+            if not (comp.destination_account_id or "").strip():
+                continue
+        if comp.role in ("principal", "interest") and not (
+            comp.destination_account_id or ""
+        ).strip():
+            raise ValueError(
+                f"split.components[{idx}].destination_account_id: required for {comp.role}"
+            )
+        if comp.role == "escrow" and escrow_amt > 0 and not (
+            comp.destination_account_id or ""
+        ).strip():
+            raise ValueError(
+                "split.components: escrow destination required when escrow_amount > 0"
+            )
+        if not (comp.destination_account_id or "").strip():
+            continue
+        if comp.type != match_type:
+            raise ValueError(
+                f"split.components[{idx}].type: must match match.type ({match_type!r})"
+            )
         acct = accounts_by_id.get(comp.destination_account_id)
         if acct is None:
             raise ValueError(
                 f"split.components[{idx}].destination_account_id: account not found"
             )
         if comp.role == "principal":
-            if comp.type != "transfer":
-                raise ValueError(
-                    f"split.components[{idx}]: principal requires type transfer"
-                )
             if not _is_liability(acct):
                 raise ValueError(
                     f"split.components[{idx}]: principal destination must be liability account"
                 )
         elif comp.role in ("interest", "escrow"):
-            if comp.type != "withdrawal":
-                raise ValueError(
-                    f"split.components[{idx}]: {comp.role} requires type withdrawal"
-                )
             if not _is_expense(acct):
                 raise ValueError(
                     f"split.components[{idx}]: {comp.role} destination must be expense account"

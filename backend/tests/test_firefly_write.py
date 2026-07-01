@@ -40,6 +40,15 @@ def test_parse_loan_profile_from_notes_extracts_json():
     assert parsed == SAMPLE_PROFILE
 
 
+def test_parse_loan_profile_handles_trailing_brace_in_notes():
+    notes = (
+        f"{LOAN_PROFILE_MARKER}\n{json.dumps(SAMPLE_PROFILE)}\n\n"
+        "Operator note with stray } character"
+    )
+    parsed = parse_loan_profile_from_notes(notes)
+    assert parsed == SAMPLE_PROFILE
+
+
 def test_serialize_loan_profile_preserves_unrelated_notes():
     existing = "Operator memo line"
     serialized = serialize_loan_profile_to_notes(SAMPLE_PROFILE, existing)

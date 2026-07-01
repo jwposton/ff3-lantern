@@ -88,13 +88,13 @@ async def build_pending_loan_splits(
         profile = find_matching_profile(row, profiles, month_counts)
         if profile is None:
             continue
+        principal_comp = _principal_component(profile)
+        if principal_comp is None:
+            continue
         month = (row.get("date") or "")[:7]
         pid = str(profile.get("_account_id") or "")
         key = f"{pid}:{month}"
         month_counts[key] = month_counts.get(key, 0) + 1
-        principal_comp = _principal_component(profile)
-        if principal_comp is None:
-            continue
         liability_id = str(principal_comp.get("destination_account_id"))
         liability = await client.fetch_account(liability_id)
         liability_attrs = liability.get("attributes", {})
@@ -102,7 +102,10 @@ async def build_pending_loan_splits(
         escrow = Decimal(str((profile.get("split") or {}).get("escrow_amount") or "0"))
         balance = balance_for_interest_calc(liability_attrs, payment)
         rate = _annual_rate(profile, liability_attrs)
-        split_amounts = compute_payment_split(balance, rate, payment, escrow)
+        try:
+            split_amounts = compute_payment_split(balance, rate, payment, escrow)
+        except ValueError:
+            continue
         warning = amount_outside_tolerance(row, profile)
         pending.append(
             {

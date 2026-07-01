@@ -8,8 +8,6 @@ import { DateRangeProvider } from "@/context/DateRangeContext"
 import { LoansPage } from "./LoansPage"
 import { LoanProfilePage } from "./LoanProfilePage"
 
-const RANGE = { start: "2026-07-01", end: "2026-07-31" }
-
 const LOAN_ROW = {
   account_id: "42",
   name: "Mortgage Liability",
@@ -41,12 +39,30 @@ function mockFetch(handlers: Record<string, () => unknown>) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input)
     const method = init?.method ?? "GET"
-    if (url.includes("/api/loans") && method === "GET" && !url.match(/\/api\/loans\/\d/)) {
+    if (url.includes("/api/loans/meta") && method === "GET") {
+      return new Response(
+        JSON.stringify(
+          handlers.meta?.() ?? {
+            liability_accounts: [],
+            expense_accounts: [],
+            asset_accounts: [],
+            categories: [],
+            budgets: [],
+          },
+        ),
+        { status: 200 },
+      )
+    }
+    if (
+      url.includes("/api/loans") &&
+      method === "GET" &&
+      !url.match(/\/api\/loans\/[^/]+$/)
+    ) {
       return new Response(JSON.stringify(handlers.loans?.() ?? { data: [] }), {
         status: 200,
       })
     }
-    if (url.match(/\/api\/loans\/\d+/) && method === "GET") {
+    if (url.match(/\/api\/loans\/[^/]+$/) && method === "GET") {
       return new Response(JSON.stringify(handlers.loan?.()), { status: 200 })
     }
     if (url.includes("/api/loans/") && method === "PUT") {
@@ -105,6 +121,13 @@ describe("LoansPage", () => {
 
   it("save profile test asserts fetch PUT called", async () => {
     const fetchSpy = mockFetch({
+      meta: () => ({
+        liability_accounts: [{ id: "42", name: "Mortgage Liability" }],
+        expense_accounts: [{ id: "88", name: "Mortgage Interest" }],
+        asset_accounts: [],
+        categories: [{ id: "1", name: "Loan Interest" }],
+        budgets: [{ id: "2", name: "Debt" }],
+      }),
       loan: () => ({
         account_id: "42",
         name: "Mortgage Liability",
@@ -124,7 +147,7 @@ describe("LoansPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("Mortgage Liability")).toBeTruthy()
+      expect(screen.getByRole("heading", { name: "Mortgage Liability" })).toBeTruthy()
     })
 
     fireEvent.change(screen.getByLabelText(/Description contains/i), {
