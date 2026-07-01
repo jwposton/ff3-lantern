@@ -94,6 +94,8 @@ export async function fetchMeta(): Promise<CategorizeMetaResponse> {
   return (await res.json()) as CategorizeMetaResponse
 }
 
+export const SUGGEST_CHUNK_SIZE = 5
+
 export async function suggestCategorizations(body: {
   start: string
   end: string
@@ -107,7 +109,11 @@ export async function suggestCategorizations(body: {
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    throw new Error(`Suggest failed (${res.status})`)
+    const detail =
+      res.status === 504
+        ? "Suggest timed out — try again or use a shorter date range."
+        : `Suggest failed (${res.status})`
+    throw new Error(detail)
   }
   return (await res.json()) as { data: SuggestResultItem[] }
 }

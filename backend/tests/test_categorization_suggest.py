@@ -11,7 +11,7 @@ from categorization_context import (
     build_user_payload,
     select_few_shot_examples,
 )
-from categorization_models import CategorizationSuggestion, RuleDraft
+from categorization_models import CategorizationSuggestion, RuleDraft, SUGGESTION_JSON_SCHEMA
 from conftest import load_fixture
 from firefly_client import FireflyClient
 from openrouter_client import suggest_category
@@ -29,6 +29,11 @@ def test_model_parses_direct_suggestion():
         }
     )
     assert suggestion.recommendation == "direct"
+
+
+def test_suggestion_json_schema_rule_includes_transaction_type_in_required():
+    rule_schema = SUGGESTION_JSON_SCHEMA["properties"]["rule"]
+    assert "transaction_type" in rule_schema["required"]
 
 
 def test_model_requires_rule_when_recommendation_rule():

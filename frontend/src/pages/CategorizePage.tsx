@@ -15,6 +15,8 @@ import {
   createRule,
   previewRule,
   suggestCategorizations,
+  SUGGEST_CHUNK_SIZE,
+  type SuggestResultItem,
   triggerRule,
   type PendingGroup,
   type PendingRow,
@@ -401,18 +403,25 @@ export function CategorizePage() {
     if (!openrouterConfigured || visibleRows.length === 0) return
     setSuggesting(true)
     setSuggestError(null)
-    setSuggestProgress({ done: 0, total: visibleRows.length })
+    const journalIds = visibleRows.map((r) => r.journal_id)
+    setSuggestProgress({ done: 0, total: journalIds.length })
     try {
-      const result = await suggestCategorizations({
-        start: committedRange.start,
-        end: committedRange.end,
-        journal_ids: visibleRows.map((r) => r.journal_id),
-      })
+      const allItems: SuggestResultItem[] = []
+      for (let i = 0; i < journalIds.length; i += SUGGEST_CHUNK_SIZE) {
+        const chunk = journalIds.slice(i, i + SUGGEST_CHUNK_SIZE)
+        const result = await suggestCategorizations({
+          start: committedRange.start,
+          end: committedRange.end,
+          journal_ids: chunk,
+        })
+        allItems.push(...result.data)
+        setSuggestProgress({ done: allItems.length, total: journalIds.length })
+      }
       const categories = meta?.categories ?? []
       const budgets = meta?.budgets ?? []
       setCardState((prev) => {
         const next: Record<string, CardState> = { ...prev }
-        for (const item of result.data) {
+        for (const item of allItems) {
           const categoryId =
             item.suggestion != null
               ? (categories.find((c) => c.name === item.suggestion?.category)?.id ??
@@ -431,7 +440,6 @@ export function CategorizePage() {
         }
         return next
       })
-      setSuggestProgress({ done: result.data.length, total: visibleRows.length })
     } catch (err) {
       setSuggestError(
         err instanceof Error ? err.message : "Suggest failed. Try again.",
@@ -725,7 +733,7 @@ export function CategorizePage() {
         <div className="rounded-lg border p-8 text-center">
           <h2 className="text-lg font-semibold">No uncategorized transactions</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            All withdrawals and deposits in this date range have categories. Try
+            All uncategorized withdrawals in this date range have categories. Try
             widening the date range.
           </p>
         </div>

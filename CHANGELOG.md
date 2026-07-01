@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-01
+
 Firefly write automations: AI categorization and loan payment splits, with a Manage section in the sidebar.
 
 ### Added
 
 - **Manage navigation** — Sidebar group with Categorize and Loans links and pending-queue count badges
-- **AI categorization queue** (`/manage/categorize`) — Uncategorized transaction review, OpenRouter suggest, direct category apply, and rule graduation with preview/create/backfill
+- **AI categorization queue** (`/manage/categorize`) — Uncategorized withdrawal review, OpenRouter suggest, direct category apply, and rule graduation with preview/create/backfill
 - **Categorization APIs** — Pending queue, meta, suggest, apply, grouped-by-fingerprint queue, and Firefly rule preview/create/trigger endpoints
 - **Loan profiles** (`/manage/loans`) — Profile editor on Firefly liability accounts (match fingerprint, principal/interest/escrow destinations, categories, budgets); link to the Firefly account page in the header
 - **Loan split queue** (`/manage/loans/queue`) — Forward-only pending payment splits with amortization preview, editable amounts, and apply
@@ -31,6 +33,8 @@ Firefly write automations: AI categorization and loan payment splits, with a Man
 - **Loan profile validation** — `match.type` (`transfer` or `withdrawal`); all split components must use the same type; escrow destination optional when escrow amount is zero
 - **Loan profile editor** — Category/budget/account pickers from meta API; match type syncs component types; omits read-only `rate_override` on save
 - **Loan profile notes parsing** — Brace-balanced JSON extraction so operator notes with stray `}` characters do not break profiles
+- **Categorize queue** — Pending queue includes uncategorized withdrawals only; deposits are ignored
+- **Categorize suggest** — Preloads Firefly context once per batch, runs OpenRouter calls concurrently, and requests five journals per UI call; nginx proxy timeout raised to 300s
 - **Categorize rule graduation** — Rule `transaction_type` taken from the queue row when the AI omits it; backfill failures surface without dismissing the card
 - **Cached AI suggestions** — Revalidated against current category/budget allowlists before reuse
 - **Apply errors** — Loan split apply shows Firefly error detail from the API response
@@ -43,6 +47,7 @@ Firefly write automations: AI categorization and loan payment splits, with a Man
 - **Rule duplicate detection** — Short rule titles no longer false-positive when they are only a substring of the draft needle
 - **Loan split queue** — Skips payments where amortization would produce a negative principal
 - **OpenRouter client** — Retries only on transport errors, not validation failures
+- **OpenRouter suggest schema** — Strict JSON schema includes `transaction_type` on rule objects (fixes 400 errors on every suggest)
 - **Sidecar writability probe** — Treats any init failure as non-writable
 
 ## [1.0.2] - 2026-07-01
@@ -80,7 +85,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/jwposton/FF3Analytics/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/jwposton/FF3Analytics/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/jwposton/FF3Analytics/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jwposton/FF3Analytics/releases/tag/v1.0.0

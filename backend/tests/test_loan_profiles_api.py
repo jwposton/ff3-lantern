@@ -23,7 +23,7 @@ FULL_PROFILE = {
             },
             {
                 "role": "interest",
-                "type": "withdrawal",
+                "type": "transfer",
                 "destination_account_id": "88",
                 "destination_account": "Mortgage Interest",
             },

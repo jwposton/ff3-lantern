@@ -60,7 +60,7 @@ SUGGESTION_JSON_SCHEMA: dict = {
                     "enum": ["withdrawal", "deposit", None],
                 },
             },
-            "required": ["title", "description_contains"],
+            "required": ["title", "description_contains", "transaction_type"],
             "additionalProperties": False,
         },
         "rationale": {"type": "string"},

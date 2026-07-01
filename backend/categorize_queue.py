@@ -24,6 +24,13 @@ def _to_pending_row(flat: dict[str, Any]) -> dict[str, Any]:
     return {key: flat.get(key) for key in _PENDING_FIELDS}
 
 
+def _is_categorize_queue_row(flat: dict[str, Any]) -> bool:
+    """Uncategorized spending withdrawals only — deposits are excluded."""
+    if (flat.get("type") or "").lower() != "withdrawal":
+        return False
+    return is_uncategorized_for_queue(flat)
+
+
 async def build_pending_queue(
     client: FireflyClient,
     start: str,
@@ -31,13 +38,13 @@ async def build_pending_queue(
     *,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """Return uncategorized withdrawals/deposits sorted by date desc, journal_id."""
+    """Return uncategorized withdrawals sorted by date desc, journal_id."""
     cap = min(max(limit, 1), 100)
     flat = await client.fetch_splits(start, end)
     pending = [
         _to_pending_row(row)
         for row in flat
-        if is_uncategorized_for_queue(row)
+        if _is_categorize_queue_row(row)
     ]
     pending.sort(
         key=lambda r: (r.get("date") or "", r.get("journal_id") or ""),

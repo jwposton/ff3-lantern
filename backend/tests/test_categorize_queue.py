@@ -5,7 +5,11 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from categorize_queue import build_grouped_pending_queue, build_pending_queue
+from categorize_queue import (
+    _is_categorize_queue_row,
+    build_grouped_pending_queue,
+    build_pending_queue,
+)
 from firefly_client import FireflyClient
 from transaction_normalization import description_fingerprint, is_uncategorized_for_queue
 
@@ -62,9 +66,18 @@ def test_transfer_excluded_even_without_category():
     )
 
 
-def test_deposit_null_category_included():
+def test_deposit_null_category_included_in_uncategorized_helper():
     assert is_uncategorized_for_queue(
         {"type": "deposit", "category_name": None}
+    )
+
+
+def test_deposit_excluded_from_categorize_queue():
+    assert not _is_categorize_queue_row(
+        {"type": "deposit", "category_name": None}
+    )
+    assert _is_categorize_queue_row(
+        {"type": "withdrawal", "category_name": None}
     )
 
 
@@ -188,7 +201,7 @@ async def test_pending_queue_filters_and_sorts():
     )
     rows = await build_pending_queue(client, "2024-06-01", "2024-06-30")
     journal_ids = [r["journal_id"] for r in rows]
-    assert journal_ids == ["100", "103"]
+    assert journal_ids == ["100"]
     assert rows[0]["description"] == "AMZN MKTP"
     assert rows[0]["transaction_journal_id"] == "1001"
 

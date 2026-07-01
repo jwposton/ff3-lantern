@@ -10,13 +10,25 @@ from typing import Any
 import httpx
 
 import sidecar_db
-from categorization_context import SYSTEM_PROMPT, build_suggest_context, fetch_allowlists
+from categorization_context import (
+    SYSTEM_PROMPT,
+    build_suggest_context,
+    build_user_payload,
+    fetch_allowlists,
+    select_few_shot_examples,
+)
 from categorize_queue import build_pending_queue
 from categorization_models import CategorizationSuggestion
 from firefly_client import FireflyClient
 from openrouter_client import build_http_client, suggest_category
 
 _SEMAPHORE = asyncio.Semaphore(3)
+_PreloadedContext = tuple[
+    dict[str, str],
+    dict[str, str],
+    list[dict[str, str]],
+    list[dict[str, Any]],
+]
 
 
 def _default_model() -> str:
@@ -25,6 +37,21 @@ def _default_model() -> str:
 
 def _suggestion_to_dict(suggestion: CategorizationSuggestion) -> dict[str, Any]:
     return suggestion.model_dump()
+
+
+def _user_payload_from_preloaded(
+    transaction: dict[str, Any],
+    preloaded: _PreloadedContext,
+) -> dict[str, Any]:
+    cat_map, budget_map, rule_summaries, flat_splits = preloaded
+    few_shot = select_few_shot_examples(flat_splits, transaction)
+    return build_user_payload(
+        transaction,
+        category_names=sorted(cat_map.keys()),
+        budget_names=sorted(budget_map.keys()),
+        few_shot=few_shot,
+        rule_summaries=rule_summaries,
+    )
 
 
 async def suggest_for_journal(
@@ -38,13 +65,17 @@ async def suggest_for_journal(
     model: str,
     api_key: str,
     refresh: bool = False,
+    preloaded: _PreloadedContext | None = None,
 ) -> dict[str, Any]:
     if not refresh:
         cached = await sidecar_db.get_suggestion(journal_id, model)
         if cached:
             try:
                 suggestion = CategorizationSuggestion.model_validate_json(cached)
-                cat_map, budget_map, _ = await fetch_allowlists(firefly)
+                if preloaded is not None:
+                    cat_map, budget_map, _, _ = preloaded
+                else:
+                    cat_map, budget_map, _ = await fetch_allowlists(firefly)
                 suggestion.validate_against_allowlists(cat_map, budget_map)
             except (ValueError, json.JSONDecodeError):
                 pass
@@ -55,9 +86,13 @@ async def suggest_for_journal(
                     "cached": True,
                 }
 
-    cat_map, budget_map, user_payload = await build_suggest_context(
-        firefly, transaction, start, end
-    )
+    if preloaded is not None:
+        cat_map, budget_map, _, _ = preloaded
+        user_payload = _user_payload_from_preloaded(transaction, preloaded)
+    else:
+        cat_map, budget_map, user_payload = await build_suggest_context(
+            firefly, transaction, start, end
+        )
     async with _SEMAPHORE:
         suggestion = await suggest_category(
             http,
@@ -105,12 +140,21 @@ async def suggest_batch(
     else:
         targets = [row["journal_id"] for row in pending]
 
-    results: list[dict[str, Any]] = []
+    cat_map, budget_map, rule_summaries = await fetch_allowlists(firefly)
+    flat_splits = await firefly.fetch_splits(start, end)
+    preloaded: _PreloadedContext = (
+        cat_map,
+        budget_map,
+        rule_summaries,
+        flat_splits,
+    )
+
     async with build_http_client() as http:
-        for journal_id in targets:
+
+        async def _suggest_one(journal_id: str) -> dict[str, Any]:
             transaction = by_journal[journal_id]
             try:
-                result = await suggest_for_journal(
+                return await suggest_for_journal(
                     firefly,
                     http,
                     journal_id=journal_id,
@@ -120,13 +164,15 @@ async def suggest_batch(
                     model=model,
                     api_key=api_key,
                     refresh=refresh,
+                    preloaded=preloaded,
                 )
             except Exception as exc:
-                result = {
+                return {
                     "journal_id": journal_id,
                     "suggestion": None,
                     "cached": False,
                     "error": str(exc),
                 }
-            results.append(result)
-    return results
+
+        tasks = [_suggest_one(journal_id) for journal_id in targets]
+        return list(await asyncio.gather(*tasks))
