@@ -13,6 +13,8 @@ def cors_client(monkeypatch):
         "CORS_ALLOWED_ORIGINS",
         "https://analytics.example.com,http://localhost:5174",
     )
+    monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
+    monkeypatch.setenv("FIREFLY_API_TOKEN", "test-token-placeholder")
     import main
 
     importlib.reload(main)
