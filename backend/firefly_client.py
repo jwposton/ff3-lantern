@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -109,6 +109,75 @@ class FireflyClient:
                 page += 1
         self._accounts = accounts
         return accounts
+
+    async def _fetch_paginated_list(
+        self,
+        path: str,
+        *,
+        map_item: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        page = 1
+        async with self._build_client() as client:
+            while True:
+                response = await client.get(
+                    path, params={"limit": 1000, "page": page}
+                )
+                if response.status_code != 200:
+                    raise RuntimeError(
+                        f"Firefly API error {response.status_code}: {response.text}"
+                    )
+                payload = response.json()
+                for entry in payload.get("data", []):
+                    items.append(map_item(entry))
+                pagination = payload.get("meta", {}).get("pagination", {})
+                current = pagination.get("current_page", 1)
+                total_pages = pagination.get("total_pages", 1)
+                if current >= total_pages:
+                    break
+                page += 1
+        return items
+
+    async def fetch_categories(self) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            "/api/v1/categories",
+            map_item=lambda entry: {
+                "id": str(entry.get("id")),
+                "name": entry.get("attributes", {}).get("name"),
+            },
+        )
+
+    async def fetch_budgets(self) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            "/api/v1/budgets",
+            map_item=lambda entry: {
+                "id": str(entry.get("id")),
+                "name": entry.get("attributes", {}).get("name"),
+            },
+        )
+
+    async def fetch_rules(self) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            "/api/v1/rules",
+            map_item=lambda entry: {
+                "id": str(entry.get("id")),
+                "title": entry.get("attributes", {}).get("title"),
+            },
+        )
+
+    async def fetch_account(self, account_id: str) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.get(f"/api/v1/accounts/{account_id}")
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            payload = response.json()
+            data = payload.get("data", {})
+            return {
+                "id": str(data.get("id")),
+                "attributes": data.get("attributes", {}),
+            }
 
     async def fetch_splits(self, start: str, end: str) -> list[dict[str, Any]]:
         accounts = await self.fetch_accounts()
