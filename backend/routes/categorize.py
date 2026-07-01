@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from categorize_queue import build_pending_queue
+from categorization_apply import apply_category, validate_apply_ids
 from categorization_suggest import suggest_batch
 from firefly_client import FireflyClient
 
@@ -124,3 +125,37 @@ async def post_categorize_suggest(
             detail=f"Suggest failed: {exc}",
         ) from exc
     return {"data": data}
+
+
+class ApplyRequest(BaseModel):
+    category_id: str
+    transaction_journal_id: str
+    budget_id: str | None = None
+
+
+@router.post("/categorize/{journal_id}/apply")
+async def post_categorize_apply(
+    journal_id: str,
+    body: ApplyRequest,
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    try:
+        await validate_apply_ids(client, body.category_id, body.budget_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        await apply_category(
+            client,
+            journal_id,
+            body.transaction_journal_id,
+            body.category_id,
+            body.budget_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Firefly apply failed: {exc}",
+        ) from exc
+    return {"ok": True, "journal_id": journal_id}
