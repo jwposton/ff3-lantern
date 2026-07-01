@@ -63,3 +63,14 @@ Planned capabilities captured outside GSD planning (formal phases live in the si
 
 - [Loan & mortgage payment split automation](docs/features/loan-payment-splits.md) — detect lump payments, calculate principal/interest/escrow, apply splits to Firefly
 - [AI-assisted categorization & rules](docs/features/ai-categorization.md) — OpenRouter suggestions for uncategorized transactions; user-approved writes and Firefly rule creation
+
+## Icon attributions
+
+Navigation icons from [The Noun Project](https://thenounproject.com/) (CC BY 3.0):
+
+| Icon | Creator | Used for |
+|------|---------|----------|
+| [Sankey Chart](https://thenounproject.com/browse/icons/term/sankey-chart/) | Kirby Wu | Sankey report nav |
+| [age picture diagram](https://thenounproject.com/browse/icons/term/age-picture-diagram/) | birdpeople | Month-over-month report nav |
+
+Other sidebar icons are from [Lucide](https://lucide.dev/). See the in-app **About** page (`/about`) for live previews and links.

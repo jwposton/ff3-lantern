@@ -11,6 +11,7 @@ import { CashFlowSankeyPage } from "@/pages/CashFlowSankeyPage"
 import { CashFlowMomPage } from "@/pages/CashFlowMomPage"
 import { SpendingMomPage } from "@/pages/SpendingMomPage"
 import { TransactionExplorerPage } from "@/pages/TransactionExplorerPage"
+import { AboutPage } from "@/pages/AboutPage"
 
 export const router = createBrowserRouter([
   {
@@ -53,6 +54,10 @@ export const router = createBrowserRouter([
       {
         path: "reports/cash-flow/mom",
         element: <CashFlowMomPage />,
+      },
+      {
+        path: "about",
+        element: <AboutPage />,
       },
     ],
   },

@@ -113,4 +113,10 @@ describe("AppSidebar active nav state", () => {
     renderSidebar("/")
     expectActive("/", true)
   })
+
+  it("highlights About on /about", () => {
+    renderSidebar("/about")
+    expectActive("/about", true)
+    expectActive("/", false)
+  })
 })

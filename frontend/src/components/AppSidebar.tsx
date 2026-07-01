@@ -1,16 +1,20 @@
 import {
   BarChart3,
-  GitBranch,
-  GitCompare,
+  Info,
   LayoutDashboard,
   Table,
   TrendingUp,
+  type LucideIcon,
 } from "lucide-react"
 import { NavLink } from "react-router-dom"
+
+import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
+import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
 
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -46,13 +50,13 @@ const spendingNavItems = [
   {
     to: "/reports/spending/sankey",
     label: "Sankey",
-    icon: GitBranch,
+    icon: SankeyChartIcon,
     end: false,
   },
   {
     to: "/reports/spending/mom",
     label: "MoM",
-    icon: GitCompare,
+    icon: ComparisonGraphIcon,
     end: false,
   },
 ] as const
@@ -73,13 +77,13 @@ const cashFlowNavItems = [
   {
     to: "/reports/cash-flow/sankey",
     label: "Sankey",
-    icon: GitBranch,
+    icon: SankeyChartIcon,
     end: false,
   },
   {
     to: "/reports/cash-flow/mom",
     label: "MoM",
-    icon: GitCompare,
+    icon: ComparisonGraphIcon,
     end: false,
   },
 ] as const
@@ -90,7 +94,7 @@ function NavItems({
   items: readonly {
     to: string
     label: string
-    icon: typeof LayoutDashboard
+    icon: LucideIcon
     end: boolean
   }[]
 }) {
@@ -150,6 +154,20 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <NavLink to="/about" className="contents">
+              {({ isActive }) => (
+                <SidebarMenuButton isActive={isActive} tooltip="About">
+                  <Info />
+                  <span>About</span>
+                </SidebarMenuButton>
+              )}
+            </NavLink>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   )
 }
