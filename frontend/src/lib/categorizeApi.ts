@@ -10,11 +10,25 @@ export type PendingRow = {
   budget_name: string | null
 }
 
+export type PendingGroup = {
+  fingerprint: string
+  count: number
+  sample_description: string
+  journal_ids: string[]
+  rows: PendingRow[]
+}
+
 export type CategorizeMetaResponse = {
   openrouter_configured: boolean
   categories: Array<{ id: string; name: string }>
   budgets: Array<{ id: string; name: string }>
   default_model: string
+}
+
+export type RuleDraft = {
+  title: string
+  description_contains: string
+  transaction_type?: "withdrawal" | "deposit" | null
 }
 
 export type SuggestionPayload = {
@@ -23,6 +37,7 @@ export type SuggestionPayload = {
   confidence: number
   recommendation: "direct" | "rule"
   rationale: string
+  rule?: RuleDraft | null
 }
 
 export type SuggestResultItem = {
@@ -37,16 +52,38 @@ export type PendingResponse = {
   meta: { count: number; start: string; end: string; limit: number }
 }
 
+export type GroupedPendingResponse = {
+  data: PendingGroup[]
+  meta: {
+    count: number
+    group_count: number
+    grouped: true
+    start: string
+    end: string
+    limit: number
+  }
+}
+
+export type RulePreviewCounts = {
+  total: number
+  uncategorized_count: number
+  categorized_count: number
+}
+
 export async function fetchPending(
   start: string,
   end: string,
-): Promise<PendingResponse> {
+  options?: { groupByFingerprint?: boolean },
+): Promise<PendingResponse | GroupedPendingResponse> {
   const params = new URLSearchParams({ start, end })
+  if (options?.groupByFingerprint) {
+    params.set("group_by_fingerprint", "true")
+  }
   const res = await fetch(`/api/categorize/pending?${params}`)
   if (!res.ok) {
     throw new Error(`Failed to fetch pending queue (${res.status})`)
   }
-  return (await res.json()) as PendingResponse
+  return (await res.json()) as PendingResponse | GroupedPendingResponse
 }
 
 export async function fetchMeta(): Promise<CategorizeMetaResponse> {
@@ -92,4 +129,64 @@ export async function applyCategorization(
     throw new Error(`Apply failed (${res.status})`)
   }
   return (await res.json()) as { ok: boolean; journal_id: string }
+}
+
+export async function previewRule(body: {
+  start: string
+  end: string
+  rule: RuleDraft
+}): Promise<{ data: RulePreviewCounts }> {
+  const res = await fetch("/api/categorize/rules/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    throw new Error(`Rule preview failed (${res.status})`)
+  }
+  return (await res.json()) as { data: RulePreviewCounts }
+}
+
+export async function createRule(body: {
+  start: string
+  end: string
+  category_id: string
+  budget_id?: string | null
+  rule: RuleDraft
+}): Promise<{ data: { rule_id: string; title?: string } }> {
+  const res = await fetch("/api/categorize/rules", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => ({}))) as {
+      detail?: string | { message?: string; existing_rules?: Array<{ title: string }> }
+    }
+    if (res.status === 409 && payload.detail && typeof payload.detail === "object") {
+      const titles = payload.detail.existing_rules?.map((r) => r.title).join(", ")
+      throw new Error(
+        titles
+          ? `Duplicate rule: ${titles}`
+          : "A similar rule already exists.",
+      )
+    }
+    throw new Error(`Rule create failed (${res.status})`)
+  }
+  return (await res.json()) as { data: { rule_id: string; title?: string } }
+}
+
+export async function triggerRule(
+  ruleId: string,
+  body: { start: string; end: string },
+): Promise<{ ok: boolean; rule_id: string }> {
+  const res = await fetch(`/api/categorize/rules/${ruleId}/trigger`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    throw new Error(`Rule trigger failed (${res.status})`)
+  }
+  return (await res.json()) as { ok: boolean; rule_id: string }
 }

@@ -47,9 +47,34 @@ function mockFetch(handlers: Record<string, () => unknown>) {
       )
     }
     if (url.includes("/api/categorize/pending") && method === "GET") {
-      return new Response(JSON.stringify(handlers.pending?.() ?? { data: [], meta: {} }), {
-        status: 200,
-      })
+      const grouped = url.includes("group_by_fingerprint=true")
+      const flat = handlers.pending?.() ?? { data: [], meta: {} }
+      if (grouped && handlers.groupedPending) {
+        return new Response(JSON.stringify(handlers.groupedPending()), { status: 200 })
+      }
+      if (grouped && flat.data?.length) {
+        const rows = flat.data as typeof PENDING_ROW[]
+        return new Response(
+          JSON.stringify({
+            data: rows.map((row) => ({
+              fingerprint: row.description.toLowerCase(),
+              count: 1,
+              sample_description: row.description,
+              journal_ids: [row.journal_id],
+              rows: [row],
+            })),
+            meta: {
+              count: rows.length,
+              group_count: rows.length,
+              grouped: true,
+              ...RANGE,
+              limit: 50,
+            },
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response(JSON.stringify(flat), { status: 200 })
     }
     if (url.includes("/api/categorize/meta") && method === "GET") {
       return new Response(JSON.stringify(handlers.meta?.()), { status: 200 })
@@ -59,6 +84,21 @@ function mockFetch(handlers: Record<string, () => unknown>) {
     }
     if (url.includes("/apply") && method === "POST") {
       return new Response(JSON.stringify(handlers.apply?.() ?? { ok: true }), {
+        status: 200,
+      })
+    }
+    if (url.includes("/api/categorize/rules/preview") && method === "POST") {
+      return new Response(JSON.stringify(handlers.rulePreview?.() ?? { data: {} }), {
+        status: 200,
+      })
+    }
+    if (url.includes("/api/categorize/rules") && method === "POST" && !url.includes("/trigger")) {
+      return new Response(JSON.stringify(handlers.ruleCreate?.() ?? { data: { rule_id: "99" } }), {
+        status: 200,
+      })
+    }
+    if (url.includes("/api/categorize/rules/") && url.includes("/trigger") && method === "POST") {
+      return new Response(JSON.stringify(handlers.ruleTrigger?.() ?? { ok: true }), {
         status: 200,
       })
     }
@@ -413,5 +453,296 @@ describe("CategorizePage Firefly links", () => {
       expect(screen.getByText("AMZN MKTP")).toBeTruthy()
     })
     expect(screen.queryByRole("link", { name: /Open in Firefly/i })).toBeNull()
+  })
+})
+
+describe("CategorizePage grouped queue", () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  const ROW_B = {
+    ...PENDING_ROW,
+    journal_id: "101",
+    transaction_journal_id: "1002",
+    description: "amzn mktp",
+  }
+
+  it("shows similar count for multi-member group", async () => {
+    mockFetch({
+      groupedPending: () => ({
+        data: [
+          {
+            fingerprint: "amzn mktp",
+            count: 2,
+            sample_description: "AMZN MKTP",
+            journal_ids: ["100", "101"],
+            rows: [PENDING_ROW, ROW_B],
+          },
+        ],
+        meta: {
+          count: 2,
+          group_count: 1,
+          grouped: true,
+          ...RANGE,
+          limit: 50,
+        },
+      }),
+      meta: () => ({
+        openrouter_configured: true,
+        categories: [{ id: "1", name: "Shopping" }],
+        budgets: [],
+        default_model: "openai/gpt-4o-mini",
+      }),
+      suggest: () => ({
+        data: [
+          {
+            journal_id: "100",
+            cached: false,
+            suggestion: {
+              category: "Shopping",
+              budget: null,
+              confidence: 0.9,
+              recommendation: "direct",
+              rationale: "A",
+            },
+          },
+          {
+            journal_id: "101",
+            cached: false,
+            suggestion: {
+              category: "Shopping",
+              budget: null,
+              confidence: 0.9,
+              recommendation: "direct",
+              rationale: "B",
+            },
+          },
+        ],
+      }),
+    })
+
+    render(
+      <TestProviders>
+        <CategorizePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 similar transactions/i)).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByText(/2 similar transactions/i))
+    fireEvent.click(screen.getByRole("button", { name: /Suggest categories/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText("A")).toBeTruthy()
+      expect(screen.getByText("B")).toBeTruthy()
+    })
+  })
+})
+
+describe("CategorizePage rule graduation", () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it("backfill checkbox unchecked by default", async () => {
+    mockFetch({
+      pending: () => ({ data: [PENDING_ROW], meta: { count: 1, ...RANGE, limit: 50 } }),
+      meta: () => ({
+        openrouter_configured: true,
+        categories: [{ id: "1", name: "Shopping" }],
+        budgets: [],
+        default_model: "openai/gpt-4o-mini",
+      }),
+      suggest: () => ({
+        data: [
+          {
+            journal_id: "100",
+            cached: false,
+            suggestion: {
+              category: "Shopping",
+              budget: null,
+              confidence: 0.9,
+              recommendation: "rule",
+              rationale: "Recurring",
+              rule: {
+                title: "Amazon",
+                description_contains: "AMZN",
+                transaction_type: "withdrawal",
+              },
+            },
+          },
+        ],
+      }),
+    })
+
+    render(
+      <TestProviders>
+        <CategorizePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Suggest categories/i })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole("button", { name: /Suggest categories/i }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Apply rule to existing/i)).toBeTruthy()
+    })
+    const checkbox = screen.getByLabelText(
+      /Apply rule to existing/i,
+    ) as HTMLInputElement
+    expect(checkbox.checked).toBe(false)
+  })
+
+  it("create without backfill does not call trigger", async () => {
+    const fetchSpy = mockFetch({
+      pending: () => ({ data: [PENDING_ROW], meta: { count: 1, ...RANGE, limit: 50 } }),
+      meta: () => ({
+        openrouter_configured: true,
+        categories: [{ id: "1", name: "Shopping" }],
+        budgets: [],
+        default_model: "openai/gpt-4o-mini",
+      }),
+      suggest: () => ({
+        data: [
+          {
+            journal_id: "100",
+            cached: false,
+            suggestion: {
+              category: "Shopping",
+              budget: null,
+              confidence: 0.9,
+              recommendation: "rule",
+              rationale: "Recurring",
+              rule: {
+                title: "Amazon",
+                description_contains: "AMZN",
+                transaction_type: "withdrawal",
+              },
+            },
+          },
+        ],
+      }),
+      rulePreview: () => ({
+        data: { total: 3, uncategorized_count: 1, categorized_count: 2 },
+      }),
+      ruleCreate: () => ({ data: { rule_id: "55" } }),
+    })
+
+    render(
+      <TestProviders>
+        <CategorizePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Suggest categories/i })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole("button", { name: /Suggest categories/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Preview matches/i })).toBeTruthy()
+    })
+
+    const categorySelect = screen.getByLabelText("Category") as HTMLSelectElement
+    fireEvent.change(categorySelect, { target: { value: "1" } })
+    fireEvent.click(screen.getByRole("button", { name: /Preview matches/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 uncategorized/i)).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /^Create rule$/i }))
+
+    await waitFor(() => {
+      expect(
+        fetchSpy.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes("/api/categorize/rules") &&
+            !String(url).includes("/trigger") &&
+            init?.method === "POST",
+        ),
+      ).toBe(true)
+    })
+
+    const triggerCalls = fetchSpy.mock.calls.filter(([url]) =>
+      String(url).includes("/trigger"),
+    )
+    expect(triggerCalls).toHaveLength(0)
+  })
+
+  it("create with backfill calls trigger after create", async () => {
+    const fetchSpy = mockFetch({
+      pending: () => ({ data: [PENDING_ROW], meta: { count: 1, ...RANGE, limit: 50 } }),
+      meta: () => ({
+        openrouter_configured: true,
+        categories: [{ id: "1", name: "Shopping" }],
+        budgets: [],
+        default_model: "openai/gpt-4o-mini",
+      }),
+      suggest: () => ({
+        data: [
+          {
+            journal_id: "100",
+            cached: false,
+            suggestion: {
+              category: "Shopping",
+              budget: null,
+              confidence: 0.9,
+              recommendation: "rule",
+              rationale: "Recurring",
+              rule: {
+                title: "Amazon",
+                description_contains: "AMZN",
+                transaction_type: "withdrawal",
+              },
+            },
+          },
+        ],
+      }),
+      rulePreview: () => ({
+        data: { total: 3, uncategorized_count: 1, categorized_count: 2 },
+      }),
+      ruleCreate: () => ({ data: { rule_id: "55" } }),
+      ruleTrigger: () => ({ ok: true, rule_id: "55" }),
+    })
+
+    render(
+      <TestProviders>
+        <CategorizePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Suggest categories/i })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole("button", { name: /Suggest categories/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Preview matches/i })).toBeTruthy()
+    })
+
+    const categorySelect = screen.getByLabelText("Category") as HTMLSelectElement
+    fireEvent.change(categorySelect, { target: { value: "1" } })
+    fireEvent.click(screen.getByRole("button", { name: /Preview matches/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 uncategorized/i)).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByLabelText(/Apply rule to existing/i))
+    fireEvent.click(screen.getByRole("button", { name: /^Create rule$/i }))
+
+    await waitFor(() => {
+      expect(
+        fetchSpy.mock.calls.some(([url]) => String(url).includes("/rules/55/trigger")),
+      ).toBe(true)
+    })
   })
 })

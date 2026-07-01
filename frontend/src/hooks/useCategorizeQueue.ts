@@ -13,3 +13,14 @@ export function useCategorizeQueue(start: string, end: string) {
     staleTime: 1000 * 60 * 2,
   })
 }
+
+export function useCategorizeGroupedQueue(start: string, end: string) {
+  const rangeValid = Boolean(start && end && isValidRange(start, end))
+
+  return useQuery({
+    queryKey: ["categorizeQueue", "grouped", start, end],
+    queryFn: () => fetchPending(start, end, { groupByFingerprint: true }),
+    enabled: rangeValid,
+    staleTime: 1000 * 60 * 2,
+  })
+}
