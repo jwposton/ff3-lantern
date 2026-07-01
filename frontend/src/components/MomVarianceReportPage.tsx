@@ -8,12 +8,28 @@ import { useDateRange } from "@/context/DateRangeContext"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
 import { buildBarChartData } from "@/lib/barChart"
 import {
+  type MomCompareMode,
+  readMomCompareMode,
+  readMomRollingAverageMethod,
+  readMomRollingWindow,
+  ROLLING_WINDOW_OPTIONS,
+  type RollingAverageMethod,
+  type RollingWindowMonths,
+  writeMomCompareMode,
+  writeMomRollingAverageMethod,
+  writeMomRollingWindow,
+} from "@/lib/momComparePrefs"
+import {
   aggregateOtherDeltas,
   buildTrendDeltaSeries,
   compareDelta,
+  compareToRollingAverage,
+  currentCalendarMonth,
   defaultMonthPair,
   rankStacksByAbsDelta,
   rankTrendStacksByActivity,
+  rollingAverageFetchRange,
+  rollingMonthsBefore,
   sliceTrendWindowMonths,
 } from "@/lib/momVariance"
 import { readMomTopN, writeMomTopN, type MomTopNFamily } from "@/lib/momTopN"
@@ -30,10 +46,12 @@ export type MomVarianceReportPageProps = {
   pageTitle: string
   emptyMessage: string
   compareEmptyMessage: string
+  compareAverageEmptyMessage?: string
   useCashFlowLabels?: boolean
   momTopNFamily: MomTopNFamily
   trendChartTitle: string
   compareChartTitle: string
+  compareAverageChartTitle?: string
   yAxisNameTrend: string
   yAxisNameCompare: string
   interactionHintTrend: string
@@ -43,6 +61,8 @@ export type MomVarianceReportPageProps = {
   topNLabel: string
   monthALabel?: string
   monthBLabel?: string
+  currentMonthLabel?: string
+  averageWindowLabel?: string
 }
 
 type ActiveTab = "trend" | "compare"
@@ -69,15 +89,63 @@ function filterTrendSeriesByTopN(
   return filtered
 }
 
+function buildCompareChartData(
+  chartData: ReturnType<typeof buildBarChartData>,
+  compareMode: MomCompareMode,
+  topN: number,
+  monthA: string,
+  monthB: string,
+  currentMonth: string,
+  rollingWindow: RollingWindowMonths,
+  rollingAverageMethod: RollingAverageMethod,
+  monthsSelectable: boolean,
+): { sortedNames: string[]; deltas: Map<string, number> } {
+  if (compareMode === "vs-average") {
+    if (!currentMonth) {
+      return { sortedNames: [], deltas: new Map() }
+    }
+    const baselineMonths = rollingMonthsBefore(currentMonth, rollingWindow)
+    const hasBaseline = baselineMonths.some((month) =>
+      chartData.months.includes(month),
+    )
+    if (!hasBaseline) {
+      return { sortedNames: [], deltas: new Map() }
+    }
+
+    const rawDeltas = compareToRollingAverage(
+      chartData,
+      currentMonth,
+      rollingWindow,
+      rollingAverageMethod,
+    )
+    const { names: topNames } = rankStacksByAbsDelta(rawDeltas, topN)
+    const aggregated = aggregateOtherDeltas(rawDeltas, topNames)
+    const sortedNames = topNames.filter((name) => aggregated.has(name))
+    return { sortedNames, deltas: aggregated }
+  }
+
+  if (!monthsSelectable || !monthA || !monthB) {
+    return { sortedNames: [], deltas: new Map() }
+  }
+
+  const rawDeltas = compareDelta(chartData, monthA, monthB)
+  const { names: topNames } = rankStacksByAbsDelta(rawDeltas, topN)
+  const aggregated = aggregateOtherDeltas(rawDeltas, topNames)
+  const sortedNames = topNames.filter((name) => aggregated.has(name))
+  return { sortedNames, deltas: aggregated }
+}
+
 export function MomVarianceReportPage({
   filter,
   pageTitle,
   emptyMessage,
   compareEmptyMessage,
+  compareAverageEmptyMessage = "Not enough history for a rolling average comparison",
   useCashFlowLabels = false,
   momTopNFamily,
   trendChartTitle,
   compareChartTitle,
+  compareAverageChartTitle,
   yAxisNameTrend,
   yAxisNameCompare,
   interactionHintTrend,
@@ -87,20 +155,53 @@ export function MomVarianceReportPage({
   topNLabel,
   monthALabel = "Month A",
   monthBLabel = "Month B",
+  currentMonthLabel = "Current month",
+  averageWindowLabel = "Avg window",
 }: MomVarianceReportPageProps) {
   const { committedRange } = useDateRange()
   const { start: committedStart, end: committedEnd } = committedRange
   const { isPending, isError, isSuccess, data, refetch } =
     useNormalizedTransactions(committedStart, committedEnd)
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>("trend")
+  const [activeTab, setActiveTab] = useState<ActiveTab>("compare")
+  const [compareMode, setCompareMode] = useState<MomCompareMode>(() =>
+    readMomCompareMode(momTopNFamily),
+  )
+  const [rollingWindow, setRollingWindow] = useState<RollingWindowMonths>(() =>
+    readMomRollingWindow(momTopNFamily),
+  )
+  const [rollingAverageMethod, setRollingAverageMethod] =
+    useState<RollingAverageMethod>(() =>
+      readMomRollingAverageMethod(momTopNFamily),
+    )
   const [topN, setTopN] = useState(() => readMomTopN(momTopNFamily))
   const [monthA, setMonthA] = useState("")
   const [monthB, setMonthB] = useState("")
+  const [currentMonth, setCurrentMonth] = useState(() => currentCalendarMonth())
   const [selectedBudget, setSelectedBudget] = useState<string | null>(null)
+
+  const [averageStart, averageEnd] = useMemo(
+    () => rollingAverageFetchRange(currentMonth, rollingWindow),
+    [currentMonth, rollingWindow],
+  )
+
+  const {
+    isPending: isAveragePending,
+    isError: isAverageError,
+    isSuccess: isAverageSuccess,
+    data: averageData,
+    refetch: refetchAverage,
+  } = useNormalizedTransactions(averageStart, averageEnd, {
+    enabled: compareMode === "vs-average",
+  })
 
   const allRows = isSuccess ? (data?.data ?? []) : []
   const sliceRows = useMemo(() => allRows.filter(filter), [allRows, filter])
+
+  const averageRows = useMemo(() => {
+    if (compareMode !== "vs-average" || !isAverageSuccess) return []
+    return (averageData?.data ?? []).filter(filter)
+  }, [compareMode, isAverageSuccess, averageData, filter])
 
   const budgetChartData = useMemo(
     () =>
@@ -112,8 +213,33 @@ export function MomVarianceReportPage({
     [sliceRows, committedStart, committedEnd, useCashFlowLabels],
   )
 
+  const compareBudgetChartData = useMemo(() => {
+    if (compareMode === "vs-average") {
+      return buildBarChartData(averageRows, ["month", "budget"], {
+        start: averageStart,
+        end: averageEnd,
+        useCashFlowLabels,
+      })
+    }
+    return budgetChartData
+  }, [
+    compareMode,
+    averageRows,
+    averageStart,
+    averageEnd,
+    useCashFlowLabels,
+    budgetChartData,
+  ])
+
   const months = budgetChartData.months
+  const compareMonths = compareBudgetChartData.months
   const monthsSelectable = months.length >= 2
+  const averageMonthsSelectable =
+    compareMode === "vs-average" &&
+    currentMonth !== "" &&
+    rollingMonthsBefore(currentMonth, rollingWindow).some((month) =>
+      compareMonths.includes(month),
+    )
 
   useEffect(() => {
     const pair = defaultMonthPair(months)
@@ -122,8 +248,26 @@ export function MomVarianceReportPage({
     setSelectedBudget(null)
   }, [committedStart, committedEnd, months])
 
+  useEffect(() => {
+    if (compareMode !== "vs-average") return
+    if (compareMonths.length === 0) return
+    if (!compareMonths.includes(currentMonth)) {
+      setCurrentMonth(compareMonths[compareMonths.length - 1]!)
+    }
+  }, [compareMode, compareMonths, currentMonth])
+
   const categoryChartData = useMemo(() => {
     if (selectedBudget == null) return null
+
+    if (compareMode === "vs-average" && activeTab === "compare") {
+      return buildBarChartData(averageRows, ["month", "category"], {
+        start: averageStart,
+        end: averageEnd,
+        filter: { budget: selectedBudget },
+        useCashFlowLabels,
+      })
+    }
+
     return buildBarChartData(sliceRows, ["month", "category"], {
       start: committedStart,
       end: committedEnd,
@@ -131,11 +275,16 @@ export function MomVarianceReportPage({
       useCashFlowLabels,
     })
   }, [
+    selectedBudget,
+    compareMode,
+    activeTab,
+    averageRows,
+    averageStart,
+    averageEnd,
     sliceRows,
     committedStart,
     committedEnd,
     useCashFlowLabels,
-    selectedBudget,
   ])
 
   const trendChartData = useMemo(() => {
@@ -153,22 +302,38 @@ export function MomVarianceReportPage({
     return { deltaMonths, series }
   }, [budgetChartData, topN])
 
-  const compareChartData = useMemo(() => {
-    if (!monthsSelectable || !monthA || !monthB) {
-      return { sortedNames: [] as string[], deltas: new Map<string, number>() }
-    }
-
-    const rawDeltas = compareDelta(budgetChartData, monthA, monthB)
-    const { names: topNames } = rankStacksByAbsDelta(rawDeltas, topN)
-    const aggregated = aggregateOtherDeltas(rawDeltas, topNames)
-    const sortedNames = topNames.filter((name) => aggregated.has(name))
-
-    return { sortedNames, deltas: aggregated }
-  }, [budgetChartData, monthA, monthB, topN, monthsSelectable])
+  const compareChartData = useMemo(
+    () =>
+      buildCompareChartData(
+        compareBudgetChartData,
+        compareMode,
+        topN,
+        monthA,
+        monthB,
+        currentMonth,
+        rollingWindow,
+        rollingAverageMethod,
+        monthsSelectable,
+      ),
+    [
+      compareBudgetChartData,
+      compareMode,
+      topN,
+      monthA,
+      monthB,
+      currentMonth,
+      rollingWindow,
+      rollingAverageMethod,
+      monthsSelectable,
+    ],
+  )
 
   const categoryTrendChartData = useMemo(() => {
     if (!categoryChartData) {
-      return { deltaMonths: [] as string[], series: [] as { name: string; data: number[] }[] }
+      return {
+        deltaMonths: [] as string[],
+        series: [] as { name: string; data: number[] }[],
+      }
     }
     const windowMonths = sliceTrendWindowMonths(categoryChartData.months)
     const { deltaMonths, series: allSeries } = buildTrendDeltaSeries(
@@ -185,37 +350,62 @@ export function MomVarianceReportPage({
   }, [categoryChartData, topN])
 
   const categoryCompareChartData = useMemo(() => {
-    if (
-      !categoryChartData ||
-      !monthsSelectable ||
-      !monthA ||
-      !monthB
-    ) {
+    if (!categoryChartData) {
       return { sortedNames: [] as string[], deltas: new Map<string, number>() }
     }
 
-    const rawDeltas = compareDelta(categoryChartData, monthA, monthB)
-    const { names: topNames } = rankStacksByAbsDelta(rawDeltas, topN)
-    const aggregated = aggregateOtherDeltas(rawDeltas, topNames)
-    const sortedNames = topNames.filter((name) => aggregated.has(name))
-
-    return { sortedNames, deltas: aggregated }
-  }, [categoryChartData, monthA, monthB, topN, monthsSelectable])
+    return buildCompareChartData(
+      categoryChartData,
+      compareMode,
+      topN,
+      monthA,
+      monthB,
+      currentMonth,
+      rollingWindow,
+      rollingAverageMethod,
+      monthsSelectable,
+    )
+  }, [
+    categoryChartData,
+    compareMode,
+    topN,
+    monthA,
+    monthB,
+    currentMonth,
+    rollingWindow,
+    rollingAverageMethod,
+    monthsSelectable,
+  ])
 
   const displayTopNLabel =
     selectedBudget != null ? CATEGORIES_TOP_N_LABEL : topNLabel
 
-  const compareDisplayMessage = monthsSelectable
-    ? emptyMessage
-    : compareEmptyMessage
+  const compareDisplayMessage =
+    compareMode === "vs-average"
+      ? averageMonthsSelectable
+        ? emptyMessage
+        : compareAverageEmptyMessage
+      : monthsSelectable
+        ? emptyMessage
+        : compareEmptyMessage
 
-  const controlsDisabled = isPending || isError
+  const compareTitle =
+    compareMode === "vs-average" && compareAverageChartTitle
+      ? compareAverageChartTitle
+      : compareChartTitle
+
+  const compareLoading =
+    isPending || (compareMode === "vs-average" && isAveragePending)
+
+  const hasFetchError = isError || (compareMode === "vs-average" && isAverageError)
+
+  const controlsDisabled = compareLoading || hasFetchError
 
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold tracking-tight">{pageTitle}</h1>
 
-      {isError ? (
+      {hasFetchError ? (
         <div
           className="rounded-lg border border-destructive/50 bg-destructive/10 p-4"
           role="alert"
@@ -234,6 +424,9 @@ export function MomVarianceReportPage({
             className="mt-3"
             onClick={() => {
               void refetch()
+              if (compareMode === "vs-average") {
+                void refetchAverage()
+              }
             }}
           >
             Retry
@@ -251,58 +444,176 @@ export function MomVarianceReportPage({
             >
               <Button
                 type="button"
-                variant={activeTab === "trend" ? "default" : "outline"}
-                size="sm"
-                className="rounded-r-none border-0"
-                disabled={controlsDisabled}
-                onClick={() => setActiveTab("trend")}
-              >
-                {tabTrendLabel}
-              </Button>
-              <Button
-                type="button"
                 variant={activeTab === "compare" ? "default" : "outline"}
                 size="sm"
-                className="rounded-l-none border-0 border-l"
+                className="rounded-r-none border-0"
                 disabled={controlsDisabled}
                 onClick={() => setActiveTab("compare")}
               >
                 {tabCompareLabel}
               </Button>
+              <Button
+                type="button"
+                variant={activeTab === "trend" ? "default" : "outline"}
+                size="sm"
+                className="rounded-l-none border-0 border-l"
+                disabled={controlsDisabled}
+                onClick={() => setActiveTab("trend")}
+              >
+                {tabTrendLabel}
+              </Button>
             </div>
 
             {activeTab === "compare" ? (
               <>
-                <label className="flex items-center gap-2 font-medium">
-                  {monthALabel}
-                  <select
-                    className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
-                    value={monthA}
-                    disabled={controlsDisabled || !monthsSelectable}
-                    onChange={(e) => setMonthA(e.target.value)}
+                <div
+                  className="inline-flex rounded-md border shadow-xs"
+                  role="group"
+                  aria-label="Compare mode"
+                >
+                  <Button
+                    type="button"
+                    variant={
+                      compareMode === "vs-average" ? "default" : "outline"
+                    }
+                    size="sm"
+                    className="rounded-r-none border-0"
+                    disabled={controlsDisabled}
+                    onClick={() => {
+                      setCompareMode("vs-average")
+                      writeMomCompareMode(momTopNFamily, "vs-average")
+                    }}
                   >
-                    {months.map((month) => (
-                      <option key={month} value={month}>
-                        {month}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex items-center gap-2 font-medium">
-                  {monthBLabel}
-                  <select
-                    className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
-                    value={monthB}
-                    disabled={controlsDisabled || !monthsSelectable}
-                    onChange={(e) => setMonthB(e.target.value)}
+                    vs Average
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={
+                      compareMode === "month-pair" ? "default" : "outline"
+                    }
+                    size="sm"
+                    className="rounded-l-none border-0 border-l"
+                    disabled={controlsDisabled}
+                    onClick={() => {
+                      setCompareMode("month-pair")
+                      writeMomCompareMode(momTopNFamily, "month-pair")
+                    }}
                   >
-                    {months.map((month) => (
-                      <option key={month} value={month}>
-                        {month}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    vs Month
+                  </Button>
+                </div>
+
+                {compareMode === "vs-average" ? (
+                  <>
+                    <label className="flex items-center gap-2 font-medium">
+                      {currentMonthLabel}
+                      <select
+                        className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
+                        value={currentMonth}
+                        disabled={controlsDisabled || compareMonths.length === 0}
+                        onChange={(e) => setCurrentMonth(e.target.value)}
+                      >
+                        {compareMonths.map((month) => (
+                          <option key={month} value={month}>
+                            {month}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-2 font-medium">
+                      {averageWindowLabel}
+                      <select
+                        className="min-w-[72px] rounded-md border border-input bg-background px-2 py-1"
+                        value={rollingWindow}
+                        disabled={controlsDisabled}
+                        onChange={(e) => {
+                          const next = Number(
+                            e.target.value,
+                          ) as RollingWindowMonths
+                          setRollingWindow(next)
+                          writeMomRollingWindow(momTopNFamily, next)
+                        }}
+                      >
+                        {ROLLING_WINDOW_OPTIONS.map((months) => (
+                          <option key={months} value={months}>
+                            {months} mo
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div
+                      className="inline-flex rounded-md border shadow-xs"
+                      role="group"
+                      aria-label="Rolling average method"
+                    >
+                      <Button
+                        type="button"
+                        variant={
+                          rollingAverageMethod === "mean" ? "default" : "outline"
+                        }
+                        size="sm"
+                        className="rounded-r-none border-0"
+                        disabled={controlsDisabled}
+                        onClick={() => {
+                          setRollingAverageMethod("mean")
+                          writeMomRollingAverageMethod(momTopNFamily, "mean")
+                        }}
+                      >
+                        Mean
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={
+                          rollingAverageMethod === "median"
+                            ? "default"
+                            : "outline"
+                        }
+                        size="sm"
+                        className="rounded-l-none border-0 border-l"
+                        disabled={controlsDisabled}
+                        onClick={() => {
+                          setRollingAverageMethod("median")
+                          writeMomRollingAverageMethod(momTopNFamily, "median")
+                        }}
+                      >
+                        Median
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <label className="flex items-center gap-2 font-medium">
+                      {monthALabel}
+                      <select
+                        className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
+                        value={monthA}
+                        disabled={controlsDisabled || !monthsSelectable}
+                        onChange={(e) => setMonthA(e.target.value)}
+                      >
+                        {months.map((month) => (
+                          <option key={month} value={month}>
+                            {month}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-2 font-medium">
+                      {monthBLabel}
+                      <select
+                        className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
+                        value={monthB}
+                        disabled={controlsDisabled || !monthsSelectable}
+                        onChange={(e) => setMonthB(e.target.value)}
+                      >
+                        {months.map((month) => (
+                          <option key={month} value={month}>
+                            {month}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                )}
               </>
             ) : null}
 
@@ -344,16 +655,16 @@ export function MomVarianceReportPage({
             <MomCompareChart
               sortedNames={compareChartData.sortedNames}
               deltas={compareChartData.deltas}
-              loading={isPending}
+              loading={compareLoading}
               emptyMessage={compareDisplayMessage}
-              chartTitle={compareChartTitle}
+              chartTitle={compareTitle}
               interactionHint={interactionHintCompare}
               yAxisName={yAxisNameCompare}
               onSelect={setSelectedBudget}
             />
           )}
 
-          {selectedBudget != null && !isPending ? (
+          {selectedBudget != null && !compareLoading ? (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
                 <CardTitle className="text-base">

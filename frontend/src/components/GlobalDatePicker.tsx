@@ -12,9 +12,9 @@ import {
 } from "@/lib/dateRange"
 
 const PRESETS = [
-  { label: "Month to Date", getRange: monthToDate },
-  { label: "Year to Date", getRange: yearToDate },
-  { label: "Previous Month to Date", getRange: previousMonthToDate },
+  { label: "MTD", getRange: monthToDate },
+  { label: "Prev MTD", getRange: previousMonthToDate },
+  { label: "YTD", getRange: yearToDate },
 ] as const
 
 function todayString(): string {

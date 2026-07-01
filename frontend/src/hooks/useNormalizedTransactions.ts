@@ -38,11 +38,18 @@ async function fetchNormalizedTransactions(
   }
 }
 
-export function useNormalizedTransactions(start: string, end: string) {
+export function useNormalizedTransactions(
+  start: string,
+  end: string,
+  options?: { enabled?: boolean },
+) {
+  const rangeValid = Boolean(start && end && isValidRange(start, end))
+  const enabled = options?.enabled !== false && rangeValid
+
   return useQuery<NormalizedTransactionsResponse, Error>({
     queryKey: ["normalizedTransactions", start, end],
     queryFn: () => fetchNormalizedTransactions(start, end),
-    enabled: Boolean(start && end && isValidRange(start, end)),
+    enabled,
     staleTime: 1000 * 60 * 5,
   })
 }

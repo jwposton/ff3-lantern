@@ -1,6 +1,117 @@
 import type { BarChartData } from "@/lib/barChart"
+import type { DateRange } from "@/lib/dateRange"
+import type {
+  RollingAverageMethod,
+  RollingWindowMonths,
+} from "@/lib/momComparePrefs"
 
 const OTHER_LABEL = "Other"
+
+export function addMonths(month: string, delta: number): string {
+  let y = Number(month.slice(0, 4))
+  let m = Number(month.slice(5, 7))
+  m += delta
+  while (m < 1) {
+    m += 12
+    y -= 1
+  }
+  while (m > 12) {
+    m -= 12
+    y += 1
+  }
+  return `${y}-${String(m).padStart(2, "0")}`
+}
+
+export function currentCalendarMonth(now: Date = new Date()): string {
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, "0")
+  return `${y}-${m}`
+}
+
+export function lastDayOfMonth(month: string): string {
+  const y = Number(month.slice(0, 4))
+  const m = Number(month.slice(5, 7))
+  const day = new Date(y, m, 0).getDate()
+  return `${month}-${String(day).padStart(2, "0")}`
+}
+
+export function rollingMonthsBefore(
+  currentMonth: string,
+  count: number,
+): string[] {
+  const months: string[] = []
+  for (let i = count; i >= 1; i -= 1) {
+    months.push(addMonths(currentMonth, -i))
+  }
+  return months
+}
+
+export function rollingAverageFetchRange(
+  currentMonth: string,
+  windowMonths: RollingWindowMonths,
+  now: Date = new Date(),
+): DateRange {
+  const baselineStart = addMonths(currentMonth, -windowMonths)
+  const start = `${baselineStart}-01`
+  const monthEnd = lastDayOfMonth(currentMonth)
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+  const end = monthEnd <= today ? monthEnd : today
+  return [start, end]
+}
+
+export function medianOf(values: number[]): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  if (sorted.length % 2 === 1) {
+    return sorted[mid]!
+  }
+  return (sorted[mid - 1]! + sorted[mid]!) / 2
+}
+
+export function rollingBaselineAmount(
+  chartData: BarChartData,
+  stack: string,
+  baselineMonths: string[],
+  method: RollingAverageMethod,
+): number {
+  const values = baselineMonths.map(
+    (month) => chartData.data[month]?.[stack] ?? 0,
+  )
+  if (method === "median") {
+    return medianOf(values)
+  }
+  return values.reduce((total, value) => total + value, 0) / values.length
+}
+
+export function compareToRollingAverage(
+  chartData: BarChartData,
+  currentMonth: string,
+  windowMonths: RollingWindowMonths,
+  method: RollingAverageMethod = "mean",
+): Map<string, number> {
+  const baselineMonths = rollingMonthsBefore(currentMonth, windowMonths).filter(
+    (month) => chartData.months.includes(month),
+  )
+  const deltas = new Map<string, number>()
+
+  if (baselineMonths.length === 0) {
+    return deltas
+  }
+
+  for (const stack of chartData.stacks) {
+    const current = chartData.data[currentMonth]?.[stack] ?? 0
+    const baseline = rollingBaselineAmount(
+      chartData,
+      stack,
+      baselineMonths,
+      method,
+    )
+    deltas.set(stack, current - baseline)
+  }
+
+  return deltas
+}
 
 export function compareDelta(
   chartData: BarChartData,

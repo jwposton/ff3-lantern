@@ -56,3 +56,10 @@ The script runs `docker compose up -d --build`, waits up to 90s for HTTP 200 on 
 docker compose up -d --build backend
 curl -sf http://localhost:18001/health
 ```
+
+## Feature designs
+
+Planned capabilities captured outside GSD planning (formal phases live in the sibling FireflyReports repo):
+
+- [Loan & mortgage payment split automation](docs/features/loan-payment-splits.md) — detect lump payments, calculate principal/interest/escrow, apply splits to Firefly
+- [AI-assisted categorization & rules](docs/features/ai-categorization.md) — OpenRouter suggestions for uncategorized transactions; user-approved writes and Firefly rule creation

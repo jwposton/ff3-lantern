@@ -3,11 +3,16 @@ import { describe, expect, it } from "vitest"
 import type { BarChartData } from "@/lib/barChart"
 import {
   aggregateOtherDeltas,
+  addMonths,
   buildTrendDeltaSeries,
   compareDelta,
+  compareToRollingAverage,
   defaultMonthPair,
+  medianOf,
   rankStacksByAbsDelta,
   rankTrendStacksByActivity,
+  rollingAverageFetchRange,
+  rollingMonthsBefore,
   sliceTrendWindowMonths,
   trendDeltaMonths,
 } from "@/lib/momVariance"
@@ -237,5 +242,85 @@ describe("sign semantics", () => {
       },
     )
     expect(compareDelta(chart, "2024-01", "2024-02").get("Budget")).toBeLessThan(0)
+  })
+})
+
+describe("addMonths", () => {
+  it("steps backward across year boundary", () => {
+    expect(addMonths("2024-02", -3)).toBe("2023-11")
+  })
+
+  it("steps forward across year boundary", () => {
+    expect(addMonths("2024-11", 2)).toBe("2025-01")
+  })
+})
+
+describe("rollingMonthsBefore", () => {
+  it("returns N months immediately before current", () => {
+    expect(rollingMonthsBefore("2024-03", 3)).toEqual([
+      "2023-12",
+      "2024-01",
+      "2024-02",
+    ])
+  })
+})
+
+describe("rollingAverageFetchRange", () => {
+  it("covers baseline window through current month", () => {
+    const now = new Date(2024, 5, 15)
+    expect(rollingAverageFetchRange("2024-06", 6, now)).toEqual([
+      "2023-12-01",
+      "2024-06-15",
+    ])
+  })
+})
+
+describe("compareToRollingAverage", () => {
+  it("compares current month to mean of prior window months", () => {
+    const chart = makeChartData(
+      ["2024-01", "2024-02", "2024-03", "2024-04"],
+      ["Groceries"],
+      {
+        "2024-01": { Groceries: 100 },
+        "2024-02": { Groceries: 200 },
+        "2024-03": { Groceries: 300 },
+        "2024-04": { Groceries: 400 },
+      },
+    )
+    const deltas = compareToRollingAverage(chart, "2024-04", 3, "mean")
+    expect(deltas.get("Groceries")).toBe(200)
+  })
+
+  it("compares current month to median of prior window months", () => {
+    const chart = makeChartData(
+      ["2024-01", "2024-02", "2024-03", "2024-04", "2024-05"],
+      ["Fines"],
+      {
+        "2024-01": { Fines: 0 },
+        "2024-02": { Fines: 0 },
+        "2024-03": { Fines: 300 },
+        "2024-04": { Fines: 0 },
+        "2024-05": { Fines: 250 },
+      },
+    )
+    const deltas = compareToRollingAverage(chart, "2024-05", 4, "median")
+    expect(deltas.get("Fines")).toBe(250)
+  })
+
+  it("returns empty map when no baseline months exist in chart data", () => {
+    const chart = makeChartData(["2024-04"], ["Groceries"], {
+      "2024-04": { Groceries: 100 },
+    })
+    expect(compareToRollingAverage(chart, "2024-04", 3).size).toBe(0)
+  })
+})
+
+describe("medianOf", () => {
+  it("returns middle value for odd count", () => {
+    expect(medianOf([120, 300, 125])).toBe(125)
+  })
+
+  it("returns mean of two middles for even count", () => {
+    expect(medianOf([0, 0, 0, 300])).toBe(0)
   })
 })
