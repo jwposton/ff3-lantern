@@ -23,7 +23,7 @@ const NOUN_PROJECT_ATTRIBUTIONS = [
     href: "https://thenounproject.com/browse/icons/term/age-picture-diagram/",
     license: "CC BY 3.0",
     Icon: ComparisonGraphIcon,
-    usage: "Month-over-month report navigation",
+    usage: "Variance report navigation",
   },
 ] as const
 

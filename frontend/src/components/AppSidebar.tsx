@@ -55,7 +55,7 @@ const spendingNavItems = [
   },
   {
     to: "/reports/spending/mom",
-    label: "MoM",
+    label: "Variance",
     icon: ComparisonGraphIcon,
     end: false,
   },
@@ -82,7 +82,7 @@ const cashFlowNavItems = [
   },
   {
     to: "/reports/cash-flow/mom",
-    label: "MoM",
+    label: "Variance",
     icon: ComparisonGraphIcon,
     end: false,
   },

@@ -71,6 +71,6 @@ Navigation icons from [The Noun Project](https://thenounproject.com/) (CC BY 3.0
 | Icon | Creator | Used for |
 |------|---------|----------|
 | [Sankey Chart](https://thenounproject.com/browse/icons/term/sankey-chart/) | Kirby Wu | Sankey report nav |
-| [age picture diagram](https://thenounproject.com/browse/icons/term/age-picture-diagram/) | birdpeople | Month-over-month report nav |
+| [age picture diagram](https://thenounproject.com/browse/icons/term/age-picture-diagram/) | birdpeople | Variance report nav |
 
 Other sidebar icons are from [Lucide](https://lucide.dev/). See the in-app **About** page (`/about`) for live previews and links.
