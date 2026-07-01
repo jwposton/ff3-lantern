@@ -10,7 +10,14 @@ from pathlib import Path
 import httpx
 import pytest
 
-from categorization_apply import apply_category, build_apply_mutate_fn, validate_apply_ids
+from categorization_apply import (
+    apply_category,
+    apply_ignore,
+    build_apply_mutate_fn,
+    build_ignore_mutate_fn,
+    is_categorize_ignored,
+    validate_apply_ids,
+)
 from conftest import load_fixture
 from firefly_client import FireflyClient
 
@@ -32,6 +39,23 @@ def test_mutate_fn_adds_ai_tag():
     updated = mutate(attrs)
     tagged = updated["transactions"][0]
     assert "ai-categorized" in tagged.get("tags", [])
+
+
+def test_ignore_mutate_fn_adds_ignore_tag(monkeypatch):
+    monkeypatch.setenv("FF3ANALYTICS_CATEGORIZE_IGNORE_TAG", "skip-queue")
+    attrs = load_fixture("transactions_put_roundtrip.json")["data"]["attributes"]
+    mutate = build_ignore_mutate_fn("5001")
+    updated = mutate(attrs)
+    tagged = updated["transactions"][0]
+    assert "skip-queue" in tagged.get("tags", [])
+    assert updated["transactions"][1].get("tags") in (None, [])
+
+
+def test_is_categorize_ignored_detects_tag(monkeypatch):
+    monkeypatch.setenv("FF3ANALYTICS_CATEGORIZE_IGNORE_TAG", "categorize-ignore")
+    assert is_categorize_ignored({"tags": ["categorize-ignore"]})
+    assert is_categorize_ignored({"tags": "categorize-ignore,other"})
+    assert not is_categorize_ignored({"tags": ["other"]})
 
 
 def test_mutate_fn_raises_when_journal_missing():

@@ -328,3 +328,30 @@ def test_meta_openrouter_configured(client, firefly_env, monkeypatch):
         assert body["default_model"] == "anthropic/claude-3-haiku"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_ignore_route_success(client, firefly_env, monkeypatch):
+    from main import app
+    from routes import categorize as cat_mod
+
+    ignored: list[tuple[str, str]] = []
+
+    async def _apply_ignore(_client, group_id, transaction_journal_id):
+        ignored.append((group_id, transaction_journal_id))
+        return {"ok": True}
+
+    class _StubClient:
+        pass
+
+    monkeypatch.setattr(cat_mod, "apply_ignore", _apply_ignore)
+    app.dependency_overrides[cat_mod.get_firefly_client] = lambda: _StubClient()
+    try:
+        response = client.post(
+            "/api/categorize/100/ignore",
+            json={"transaction_journal_id": "1001"},
+        )
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        assert ignored == [("100", "1001")]
+    finally:
+        app.dependency_overrides.clear()

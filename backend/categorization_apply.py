@@ -15,17 +15,32 @@ def _ai_tag_name() -> str:
     return os.environ.get("FF3ANALYTICS_AI_TAG", "ai-categorized").strip() or "ai-categorized"
 
 
-def _merge_tags(split: dict[str, Any], tag: str) -> None:
-    """Merge tag onto a Firefly transaction split."""
+def categorize_ignore_tag() -> str:
+    return (
+        os.environ.get("FF3ANALYTICS_CATEGORIZE_IGNORE_TAG", "categorize-ignore").strip()
+        or "categorize-ignore"
+    )
+
+
+def parse_split_tags(split: dict[str, Any]) -> list[str]:
+    """Normalize Firefly split tags to a list of strings."""
     existing = split.get("tags")
     if existing is None:
-        tags: list[str] = []
-    elif isinstance(existing, str):
-        tags = [part.strip() for part in existing.split(",") if part.strip()]
-    elif isinstance(existing, list):
-        tags = [str(t) for t in existing]
-    else:
-        tags = []
+        return []
+    if isinstance(existing, str):
+        return [part.strip() for part in existing.split(",") if part.strip()]
+    if isinstance(existing, list):
+        return [str(t) for t in existing]
+    return []
+
+
+def is_categorize_ignored(split: dict[str, Any]) -> bool:
+    return categorize_ignore_tag() in parse_split_tags(split)
+
+
+def _merge_tags(split: dict[str, Any], tag: str) -> None:
+    """Merge tag onto a Firefly transaction split."""
+    tags = parse_split_tags(split)
     if tag not in tags:
         tags.append(tag)
     split["tags"] = tags
@@ -55,6 +70,45 @@ def build_apply_mutate_fn(
         return updated
 
     return mutate
+
+
+def build_ignore_mutate_fn(transaction_journal_id: str) -> Any:
+    """Return mutate_fn that tags one split with the categorize-ignore tag."""
+
+    tag = categorize_ignore_tag()
+
+    def mutate(attrs: dict[str, Any]) -> dict[str, Any]:
+        updated = deepcopy(attrs)
+        found = False
+        for split in updated.get("transactions", []):
+            if str(split.get("transaction_journal_id")) == str(transaction_journal_id):
+                _merge_tags(split, tag)
+                found = True
+        if not found:
+            raise ValueError(
+                f"transaction_journal_id {transaction_journal_id} not found in journal"
+            )
+        return updated
+
+    return mutate
+
+
+async def apply_ignore(
+    client: FireflyClient,
+    group_id: str,
+    transaction_journal_id: str,
+) -> dict[str, Any]:
+    """Tag a split so it is excluded from the categorize pending queue."""
+    mutate = build_ignore_mutate_fn(transaction_journal_id)
+    result = await client.update_transaction(group_id, mutate)
+    await sidecar_db.log_audit(
+        "categorize_ignore",
+        journal_id=group_id,
+        details_json=json.dumps(
+            {"transaction_journal_id": transaction_journal_id, "tag": categorize_ignore_tag()}
+        ),
+    )
+    return result
 
 
 async def apply_category(

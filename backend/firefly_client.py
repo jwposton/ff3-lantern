@@ -433,6 +433,7 @@ class FireflyClient:
                                 or parent_description,
                                 "transaction_journal_id": str(tjid) if tjid is not None else None,
                                 "notes": split.get("notes") or parent_notes,
+                                "tags": split.get("tags"),
                             }
                         )
                 pagination = payload.get("meta", {}).get("pagination", {})

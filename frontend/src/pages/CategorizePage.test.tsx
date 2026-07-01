@@ -89,6 +89,11 @@ function mockFetch(handlers: Record<string, () => unknown>) {
         status: 200,
       })
     }
+    if (url.includes("/ignore") && method === "POST") {
+      return new Response(JSON.stringify(handlers.ignore?.() ?? { ok: true, journal_id: "100" }), {
+        status: 200,
+      })
+    }
     if (url.includes("/api/categorize/rules/preview") && method === "POST") {
       return new Response(JSON.stringify(handlers.rulePreview?.() ?? { data: {} }), {
         status: 200,
@@ -327,7 +332,7 @@ describe("CategorizePage interactions", () => {
     })
   })
 
-  it("skip removes card without apply call", async () => {
+  it("ignore tags transaction and removes card", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch")
 
     render(
@@ -340,16 +345,18 @@ describe("CategorizePage interactions", () => {
       expect(screen.getByText("AMZN MKTP")).toBeTruthy()
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Skip" }))
+    fireEvent.click(screen.getByRole("button", { name: "Ignore" }))
 
     await waitFor(() => {
       expect(screen.queryByText("AMZN MKTP")).toBeNull()
     })
 
-    const applyCalls = fetchSpy.mock.calls.filter(([url]) =>
-      String(url).includes("/apply"),
-    )
-    expect(applyCalls).toHaveLength(0)
+    const ignoreCalls = fetchSpy.mock.calls.filter(([url, init]) => {
+      return String(url).includes("/ignore") && init?.method === "POST"
+    })
+    expect(ignoreCalls).toHaveLength(1)
+    const body = JSON.parse(String(ignoreCalls[0][1]?.body))
+    expect(body.transaction_journal_id).toBe("1001")
   })
 
   it("approve sends selected category_id to apply endpoint", async () => {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.10] - 2026-07-01
+
+### Added
+
+- **Categorize ignore** — Ignore button tags a transaction with `categorize-ignore` (configurable via `FF3ANALYTICS_CATEGORIZE_IGNORE_TAG`) and removes it from the pending queue without assigning category or budget
+
 ## [1.1.9] - 2026-07-01
 
 ### Fixed
@@ -193,7 +199,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.9...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.10...HEAD
+[1.1.10]: https://github.com/jwposton/FF3Analytics/compare/v1.1.9...v1.1.10
 [1.1.9]: https://github.com/jwposton/FF3Analytics/compare/v1.1.8...v1.1.9
 [1.1.8]: https://github.com/jwposton/FF3Analytics/compare/v1.1.7...v1.1.8
 [1.1.7]: https://github.com/jwposton/FF3Analytics/compare/v1.1.6...v1.1.7

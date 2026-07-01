@@ -102,6 +102,26 @@ def test_deposit_excluded_from_categorize_queue():
     )
 
 
+def test_ignore_tag_excluded_from_categorize_queue(monkeypatch):
+    monkeypatch.setenv("FF3ANALYTICS_CATEGORIZE_IGNORE_TAG", "categorize-ignore")
+    assert not _is_categorize_queue_row(
+        {
+            "type": "withdrawal",
+            "category_name": None,
+            "budget_name": None,
+            "tags": ["categorize-ignore"],
+        }
+    )
+    assert _is_categorize_queue_row(
+        {
+            "type": "withdrawal",
+            "category_name": None,
+            "budget_name": None,
+            "tags": ["other"],
+        }
+    )
+
+
 def test_cc_payment_transfer_excluded_via_pseudo_label():
     assert not is_uncategorized_for_queue(
         {

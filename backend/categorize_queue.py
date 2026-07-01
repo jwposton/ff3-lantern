@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from firefly_client import FireflyClient
+from categorization_apply import is_categorize_ignored
 from transaction_normalization import description_fingerprint, is_uncategorized_for_queue
 
 _PENDING_FIELDS = (
@@ -26,6 +27,8 @@ def _to_pending_row(flat: dict[str, Any]) -> dict[str, Any]:
 
 def _is_categorize_queue_row(flat: dict[str, Any]) -> bool:
     """Withdrawals missing category and/or budget — deposits are excluded."""
+    if is_categorize_ignored(flat):
+        return False
     if (flat.get("type") or "").lower() != "withdrawal":
         return False
     return is_uncategorized_for_queue(flat)

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from categorize_queue import build_grouped_pending_queue, build_pending_queue
-from categorization_apply import apply_category, validate_apply_ids
+from categorization_apply import apply_category, apply_ignore, validate_apply_ids
 from categorization_models import RuleDraft
 from categorization_rules import (
     DuplicateRuleError,
@@ -159,6 +159,10 @@ class ApplyRequest(BaseModel):
     budget_id: str | None = None
 
 
+class IgnoreRequest(BaseModel):
+    transaction_journal_id: str
+
+
 @router.post("/categorize/{journal_id}/apply")
 async def post_categorize_apply(
     journal_id: str,
@@ -183,6 +187,24 @@ async def post_categorize_apply(
         raise HTTPException(
             status_code=502,
             detail=f"Firefly apply failed: {exc}",
+        ) from exc
+    return {"ok": True, "journal_id": journal_id}
+
+
+@router.post("/categorize/{journal_id}/ignore")
+async def post_categorize_ignore(
+    journal_id: str,
+    body: IgnoreRequest,
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    try:
+        await apply_ignore(client, journal_id, body.transaction_journal_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Firefly ignore failed: {exc}",
         ) from exc
     return {"ok": True, "journal_id": journal_id}
 

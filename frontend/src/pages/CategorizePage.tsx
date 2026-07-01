@@ -13,6 +13,7 @@ import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
 import {
   applyCategorization,
   createRule,
+  ignoreCategorization,
   previewRule,
   suggestCategorizations,
   SUGGEST_CHUNK_SIZE,
@@ -144,8 +145,9 @@ function TransactionCard({
   onApprove,
   onPreview,
   onCreateRule,
-  onSkip,
+  onIgnore,
   groupJournalIds,
+  ignoringId,
 }: {
   row: PendingRow
   state: CardState | undefined
@@ -174,8 +176,9 @@ function TransactionCard({
   onApprove: (row: PendingRow) => void
   onPreview: (journalId: string) => void
   onCreateRule: (row: PendingRow, groupJournalIds: string[]) => void
-  onSkip: (journalId: string) => void
+  onIgnore: (row: PendingRow) => void
   groupJournalIds: string[]
+  ignoringId: string | null
 }) {
   const mode = state?.mode ?? "direct"
   const previewReady = state?.preview != null && !state.previewError
@@ -428,11 +431,12 @@ function TransactionCard({
             <Button
               type="button"
               variant="outline"
+              disabled={ignoringId === row.journal_id}
               onClick={() => {
-                onSkip(row.journal_id)
+                onIgnore(row)
               }}
             >
-              Skip
+              Ignore
             </Button>
           </div>
         )}
@@ -464,6 +468,7 @@ export function CategorizePage() {
   const [suggestProgress, setSuggestProgress] = useState({ done: 0, total: 0 })
   const [suggestError, setSuggestError] = useState<string | null>(null)
   const [approvingId, setApprovingId] = useState<string | null>(null)
+  const [ignoringId, setIgnoringId] = useState<string | null>(null)
   const [previewingId, setPreviewingId] = useState<string | null>(null)
   const [creatingRuleId, setCreatingRuleId] = useState<string | null>(null)
   const [approveErrors, setApproveErrors] = useState<Record<string, string>>({})
@@ -674,8 +679,28 @@ export function CategorizePage() {
     }
   }
 
-  function handleSkip(journalId: string) {
-    dismissJournalIds([journalId])
+  async function handleIgnore(row: PendingRow) {
+    setIgnoringId(row.journal_id)
+    setApproveErrors((prev) => {
+      const next = { ...prev }
+      delete next[row.journal_id]
+      return next
+    })
+    try {
+      await ignoreCategorization(row.journal_id, {
+        transaction_journal_id: row.transaction_journal_id,
+      })
+      dismissJournalIds([row.journal_id])
+      await invalidateAfterApply()
+    } catch (err) {
+      setApproveErrors((prev) => ({
+        ...prev,
+        [row.journal_id]:
+          err instanceof Error ? err.message : "Ignore failed. Try again.",
+      }))
+    } finally {
+      setIgnoringId(null)
+    }
   }
 
   function updateCategory(journalId: string, categoryId: string) {
@@ -916,7 +941,8 @@ export function CategorizePage() {
                   onApprove={handleApprove}
                   onPreview={handlePreview}
                   onCreateRule={handleCreateRule}
-                  onSkip={handleSkip}
+                  onIgnore={handleIgnore}
+                  ignoringId={ignoringId}
                 />
               )
             }
@@ -965,7 +991,8 @@ export function CategorizePage() {
                         onApprove={handleApprove}
                         onPreview={handlePreview}
                         onCreateRule={handleCreateRule}
-                        onSkip={handleSkip}
+                        onIgnore={handleIgnore}
+                  ignoringId={ignoringId}
                       />
                     ))}
                   </div>

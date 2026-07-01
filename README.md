@@ -56,6 +56,7 @@ Used by AI categorization and loan split features (v1.1+). See [Automations](#au
 | `OPENROUTER_MODEL` | No | `openai/gpt-4o-mini` | Model id sent to OpenRouter for categorization |
 | `FF3ANALYTICS_RULE_GROUP` | No | `FF3Analytics AI` | Firefly rule group for user-approved AI rules (created automatically if missing) |
 | `FF3ANALYTICS_AI_TAG` | No | `ai-categorized` | Tag applied on direct apply and AI-created rules |
+| `FF3ANALYTICS_CATEGORIZE_IGNORE_TAG` | No | `categorize-ignore` | Tag applied when you **Ignore** a transaction on the Categorize page (excludes it from the queue) |
 | `FF3ANALYTICS_LOAN_SPLITS_SINCE` | No | — | Forward-only start date for loan split queue (`YYYY-MM-DD`) |
 | `FF3ANALYTICS_LOAN_TAG` | No | `loan-split` | Tag applied after loan split apply |
 
@@ -75,6 +76,7 @@ FF3Analytics **proposes** categorizations and loan splits; **you approve** every
 - **No autonomous writes** — OpenRouter and rule engines only suggest; apply/create endpoints run after user action.
 - When `OPENROUTER_API_KEY` is missing, the categorize queue still loads but **Suggest** is hidden (read-only).
 - Direct apply updates one transaction (`PUT` via Firefly API) and tags it with `FF3ANALYTICS_AI_TAG`.
+- **Ignore** tags a transaction with `FF3ANALYTICS_CATEGORIZE_IGNORE_TAG` so it leaves the pending queue without category/budget (e.g. reconciliation or opening-balance rows).
 - **Rule graduation:** edit title and `description_contains`, run **Preview matches** to see test-hit counts, then **Create rule**. Rules are created in `FF3ANALYTICS_RULE_GROUP` with category, optional budget, and the AI tag action.
 - **Backfill is opt-in, default off** — a checkbox applies the rule to existing transactions in the selected date range via a separate trigger call only after you check it.
 - Loan splits apply forward from `FF3ANALYTICS_LOAN_SPLITS_SINCE`; loan profiles live in Firefly account notes (no sidecar profile DB).

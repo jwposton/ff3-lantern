@@ -166,6 +166,21 @@ export async function applyCategorization(
   return (await res.json()) as { ok: boolean; journal_id: string }
 }
 
+export async function ignoreCategorization(
+  journalId: string,
+  body: { transaction_journal_id: string },
+): Promise<{ ok: boolean; journal_id: string }> {
+  const res = await fetch(`/api/categorize/${journalId}/ignore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    throw new Error(`Ignore failed (${res.status})`)
+  }
+  return (await res.json()) as { ok: boolean; journal_id: string }
+}
+
 export async function previewRule(body: {
   start: string
   end: string
