@@ -8,6 +8,8 @@ import { SpendingSankeyPage } from "@/pages/SpendingSankeyPage"
 import { CashFlowBarPage } from "@/pages/CashFlowBarPage"
 import { CashFlowLinePage } from "@/pages/CashFlowLinePage"
 import { CashFlowSankeyPage } from "@/pages/CashFlowSankeyPage"
+import { CashFlowMomPage } from "@/pages/CashFlowMomPage"
+import { SpendingMomPage } from "@/pages/SpendingMomPage"
 import { TransactionExplorerPage } from "@/pages/TransactionExplorerPage"
 
 export const router = createBrowserRouter([
@@ -33,6 +35,10 @@ export const router = createBrowserRouter([
         element: <SpendingSankeyPage />,
       },
       {
+        path: "reports/spending/mom",
+        element: <SpendingMomPage />,
+      },
+      {
         path: "reports/cash-flow",
         element: <CashFlowBarPage />,
       },
@@ -43,6 +49,10 @@ export const router = createBrowserRouter([
       {
         path: "reports/cash-flow/sankey",
         element: <CashFlowSankeyPage />,
+      },
+      {
+        path: "reports/cash-flow/mom",
+        element: <CashFlowMomPage />,
       },
     ],
   },

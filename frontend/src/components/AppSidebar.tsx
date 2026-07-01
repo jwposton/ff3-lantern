@@ -1,6 +1,7 @@
 import {
   BarChart3,
   GitBranch,
+  GitCompare,
   LayoutDashboard,
   Table,
   TrendingUp,
@@ -48,6 +49,12 @@ const spendingNavItems = [
     icon: GitBranch,
     end: false,
   },
+  {
+    to: "/reports/spending/mom",
+    label: "MoM",
+    icon: GitCompare,
+    end: false,
+  },
 ] as const
 
 const cashFlowNavItems = [
@@ -67,6 +74,12 @@ const cashFlowNavItems = [
     to: "/reports/cash-flow/sankey",
     label: "Sankey",
     icon: GitBranch,
+    end: false,
+  },
+  {
+    to: "/reports/cash-flow/mom",
+    label: "MoM",
+    icon: GitCompare,
     end: false,
   },
 ] as const

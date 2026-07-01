@@ -5,7 +5,6 @@ import { isBankAccount } from "@/lib/accounts"
 import {
   creditCardPaymentTransfer,
   creditCardPaymentTransferNoBudget,
-  creditCardPaymentTransferNoBudget,
   creditCardWithdrawal,
   mainCheckingWithdrawal,
 } from "@/test/fixtures/omniRows"
