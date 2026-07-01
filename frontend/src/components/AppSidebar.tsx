@@ -1,8 +1,10 @@
 import {
   BarChart3,
   Info,
+  Landmark,
   LayoutDashboard,
   Table,
+  Tags,
   TrendingUp,
   type LucideIcon,
 } from "lucide-react"
@@ -11,6 +13,7 @@ import { NavLink } from "react-router-dom"
 import { AppVersionBadge } from "@/components/AppVersionBadge"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
 import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
+import { useManageQueueCounts } from "@/hooks/useManageQueueCounts"
 
 import {
   Sidebar,
@@ -21,6 +24,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
@@ -89,6 +93,25 @@ const cashFlowNavItems = [
   },
 ] as const
 
+const manageNavItems = [
+  {
+    to: "/manage/categorize",
+    label: "Categorize",
+    icon: Tags,
+    end: true,
+  },
+  {
+    to: "/manage/loans",
+    label: "Loans",
+    icon: Landmark,
+    end: true,
+  },
+] as const
+
+function formatBadgeCount(count: number): string {
+  return count > 99 ? "99+" : String(count)
+}
+
 function NavItems({
   items,
 }: {
@@ -117,7 +140,45 @@ function NavItems({
   )
 }
 
+function ManageNavItems({
+  categorizeCount,
+  loanSplitCount,
+}: {
+  categorizeCount: number
+  loanSplitCount: number
+}) {
+  const badgeCounts: Record<string, number> = {
+    "/manage/categorize": categorizeCount,
+    "/manage/loans": loanSplitCount,
+  }
+
+  return (
+    <>
+      {manageNavItems.map(({ to, label, icon: Icon, end }) => {
+        const badgeCount = badgeCounts[to] ?? 0
+        return (
+          <SidebarMenuItem key={to} className="group/menu-item relative">
+            <NavLink to={to} end={end} className="contents">
+              {({ isActive }) => (
+                <SidebarMenuButton isActive={isActive} tooltip={label}>
+                  <Icon />
+                  <span>{label}</span>
+                </SidebarMenuButton>
+              )}
+            </NavLink>
+            {badgeCount > 0 ? (
+              <SidebarMenuBadge>{formatBadgeCount(badgeCount)}</SidebarMenuBadge>
+            ) : null}
+          </SidebarMenuItem>
+        )
+      })}
+    </>
+  )
+}
+
 export function AppSidebar() {
+  const { categorizeCount, loanSplitCount } = useManageQueueCounts()
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
@@ -151,6 +212,17 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <NavItems items={cashFlowNavItems} />
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Manage</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <ManageNavItems
+                categorizeCount={categorizeCount}
+                loanSplitCount={loanSplitCount}
+              />
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
