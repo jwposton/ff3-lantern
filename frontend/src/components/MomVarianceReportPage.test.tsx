@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { creditCardPaymentTransfer } from "@/test/fixtures/omniRows"
+import { creditCardPaymentTransfer, mainCheckingWithdrawal } from "@/test/fixtures/omniRows"
 
 import { MomVarianceReportPage } from "./MomVarianceReportPage"
 
@@ -22,19 +22,41 @@ vi.mock("@/components/MomTrendChart", () => ({
     chartTitle,
     loading,
     series,
+    onSelect,
+    embedded,
   }: {
     chartTitle: string
     loading: boolean
     series: { name: string; data: number[] }[]
-  }) =>
-    loading ? (
-      <div data-testid="mom-trend-loading" />
-    ) : (
+    onSelect?: (name: string) => void
+    embedded?: boolean
+  }) => {
+    if (loading) {
+      return <div data-testid="mom-trend-loading" />
+    }
+    if (embedded) {
+      return (
+        <div data-testid="mom-trend-chart-embedded">
+          <span data-testid="embedded-series-count">{series.length}</span>
+        </div>
+      )
+    }
+    return (
       <div data-testid="mom-trend-chart-mock">
         <span>{chartTitle}</span>
         <span data-testid="series-count">{series.length}</span>
+        {onSelect ? (
+          <button
+            type="button"
+            data-testid="trend-drill-trigger"
+            onClick={() => onSelect("Groceries")}
+          >
+            Drill budget
+          </button>
+        ) : null}
       </div>
-    ),
+    )
+  },
 }))
 
 vi.mock("@/components/MomCompareChart", () => ({
@@ -43,22 +65,47 @@ vi.mock("@/components/MomCompareChart", () => ({
     loading,
     sortedNames,
     emptyMessage,
+    onSelect,
+    embedded,
   }: {
     chartTitle: string
     loading: boolean
     sortedNames: string[]
     emptyMessage: string
-  }) =>
-    loading ? (
-      <div data-testid="mom-compare-loading" />
-    ) : sortedNames.length === 0 ? (
-      <div data-testid="mom-compare-empty">{emptyMessage}</div>
-    ) : (
+    onSelect?: (name: string) => void
+    embedded?: boolean
+  }) => {
+    if (loading) {
+      return <div data-testid="mom-compare-loading" />
+    }
+    if (embedded) {
+      return (
+        <div data-testid="mom-compare-chart-embedded">
+          <span data-testid="embedded-compare-names-count">
+            {sortedNames.length}
+          </span>
+        </div>
+      )
+    }
+    if (sortedNames.length === 0) {
+      return <div data-testid="mom-compare-empty">{emptyMessage}</div>
+    }
+    return (
       <div data-testid="mom-compare-chart-mock">
         <span>{chartTitle}</span>
         <span data-testid="compare-names-count">{sortedNames.length}</span>
+        {onSelect ? (
+          <button
+            type="button"
+            data-testid="compare-drill-trigger"
+            onClick={() => onSelect("Groceries")}
+          >
+            Drill budget
+          </button>
+        ) : null}
       </div>
-    ),
+    )
+  },
 }))
 
 const pageProps = {
@@ -79,6 +126,51 @@ const pageProps = {
 }
 
 const alwaysTrue = () => true
+
+const groceriesRows = [
+  {
+    ...mainCheckingWithdrawal,
+    budget: "Groceries",
+    category: "Food",
+    date: "2024-01-15",
+    amount: "100.00",
+  },
+  {
+    ...mainCheckingWithdrawal,
+    budget: "Groceries",
+    category: "Food",
+    date: "2024-02-15",
+    amount: "150.00",
+  },
+  {
+    ...mainCheckingWithdrawal,
+    budget: "Groceries",
+    category: "Household",
+    date: "2024-01-20",
+    amount: "50.00",
+  },
+  {
+    ...mainCheckingWithdrawal,
+    budget: "Groceries",
+    category: "Household",
+    date: "2024-02-20",
+    amount: "30.00",
+  },
+  {
+    ...mainCheckingWithdrawal,
+    budget: "Transport",
+    category: "Fuel",
+    date: "2024-01-10",
+    amount: "40.00",
+  },
+  {
+    ...mainCheckingWithdrawal,
+    budget: "Transport",
+    category: "Fuel",
+    date: "2024-02-10",
+    amount: "60.00",
+  },
+]
 
 describe("MomVarianceReportPage", () => {
   afterEach(() => {
@@ -178,5 +270,107 @@ describe("MomVarianceReportPage", () => {
         "Select a range spanning at least two months to compare months",
       ),
     ).toBeTruthy()
+  })
+
+  describe("drilldown", () => {
+    beforeEach(() => {
+      mockUseNormalizedTransactions.mockReturnValue({
+        isPending: false,
+        isError: false,
+        isSuccess: true,
+        data: { data: groceriesRows },
+        refetch: vi.fn(),
+      })
+    })
+
+    it("opens category drilldown card when budget selected on Trend tab", () => {
+      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+
+      fireEvent.click(screen.getByTestId("trend-drill-trigger"))
+
+      expect(screen.getByText("Groceries breakdown")).toBeTruthy()
+      expect(screen.getByTestId("mom-trend-chart-embedded")).toBeTruthy()
+      expect(screen.getByTestId("embedded-series-count").textContent).not.toBe(
+        "0",
+      )
+      expect(screen.getByText("Categories shown:")).toBeTruthy()
+    })
+
+    it("opens category drilldown from Compare tab with compare chart type", () => {
+      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+
+      fireEvent.click(screen.getByRole("button", { name: "Compare" }))
+      fireEvent.click(screen.getByTestId("compare-drill-trigger"))
+
+      expect(screen.getByText("Groceries breakdown")).toBeTruthy()
+      expect(screen.getByTestId("mom-compare-chart-embedded")).toBeTruthy()
+    })
+
+    it("hides drilldown when Clear is clicked", () => {
+      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+
+      fireEvent.click(screen.getByTestId("trend-drill-trigger"))
+      expect(screen.getByText("Groceries breakdown")).toBeTruthy()
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Clear MoM drilldown" }),
+      )
+
+      expect(screen.queryByText("Groceries breakdown")).toBeNull()
+      expect(screen.getByText("Budgets shown:")).toBeTruthy()
+    })
+
+    it("clears drill when Top-N slider changes", () => {
+      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+
+      fireEvent.click(screen.getByTestId("trend-drill-trigger"))
+      expect(screen.getByText("Groceries breakdown")).toBeTruthy()
+
+      fireEvent.change(screen.getByRole("slider"), { target: { value: "12" } })
+
+      expect(screen.queryByText("Groceries breakdown")).toBeNull()
+    })
+
+    it("preserves selectedBudget when switching tabs while drilled", () => {
+      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+
+      fireEvent.click(screen.getByTestId("trend-drill-trigger"))
+      expect(screen.getByTestId("mom-trend-chart-embedded")).toBeTruthy()
+
+      fireEvent.click(screen.getByRole("button", { name: "Compare" }))
+
+      expect(screen.getByText("Groceries breakdown")).toBeTruthy()
+      expect(screen.queryByTestId("mom-trend-chart-embedded")).toBeNull()
+      expect(screen.getByTestId("mom-compare-chart-embedded")).toBeTruthy()
+    })
+
+    it("clears drill when committed date range changes", () => {
+      const { rerender } = render(
+        <MomVarianceReportPage filter={alwaysTrue} {...pageProps} />,
+      )
+
+      fireEvent.click(screen.getByTestId("trend-drill-trigger"))
+      expect(screen.getByText("Groceries breakdown")).toBeTruthy()
+
+      mockUseDateRange.mockReturnValue({
+        committedRange: { start: "2024-04-01", end: "2024-06-30" },
+      })
+      rerender(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+
+      expect(screen.queryByText("Groceries breakdown")).toBeNull()
+    })
+
+    it("keeps drill when month A/B changes on Compare tab", () => {
+      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+
+      fireEvent.click(screen.getByRole("button", { name: "Compare" }))
+      fireEvent.click(screen.getByTestId("compare-drill-trigger"))
+      expect(screen.getByText("Groceries breakdown")).toBeTruthy()
+
+      const selects = screen.getAllByRole("combobox")
+      fireEvent.change(selects[0]!, { target: { value: "2024-01" } })
+
+      expect(screen.getByText("Groceries breakdown")).toBeTruthy()
+    })
   })
 })
