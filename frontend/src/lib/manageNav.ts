@@ -21,3 +21,15 @@ export function buildSpendingBarPath(
   }
   return `/reports/spending?${params.toString()}`
 }
+
+export function buildCashFlowBarPath(
+  start: string,
+  end: string,
+  budget?: string,
+): string {
+  const params = new URLSearchParams({ start, end })
+  if (budget != null && budget !== "") {
+    params.set("budget", budget)
+  }
+  return `/reports/cash-flow?${params.toString()}`
+}

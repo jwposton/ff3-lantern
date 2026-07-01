@@ -43,6 +43,22 @@ export function isCashFlowOutflow(row: OmniRow): boolean {
   return false
 }
 
+/** Bank inflows: deposits and transfers into checking/savings from non-bank sources. */
+export function isCashFlowInflow(row: OmniRow): boolean {
+  if (isCreditCard(row.source_type, row.source_role)) return false
+
+  const sourceIsBank = isBankAccount(row.source_type, row.source_role)
+  const destIsBank = isBankAccount(row.destination_type, row.destination_role)
+
+  if (row.type === "deposit") {
+    return !sourceIsBank && destIsBank
+  }
+  if (row.type === "transfer") {
+    return !sourceIsBank && destIsBank
+  }
+  return false
+}
+
 /** @deprecated Use isCashFlowOutflow — kept for legacy trend helpers. */
 export function isTrendCashOutflow(row: OmniRow): boolean {
   return isCashFlowOutflow(row)
@@ -63,6 +79,54 @@ export function spendingWithdrawalTotal(rows: OmniRow[]): number {
     if (amount == null) return sum
     return sum + parseFloat(amount)
   }, 0)
+}
+
+function sumRowAmounts(rows: OmniRow[], predicate: (row: OmniRow) => boolean): number {
+  return rows.reduce((sum, row) => {
+    if (!predicate(row)) return sum
+    const amount = row.amount
+    if (amount == null) return sum
+    return sum + parseFloat(amount)
+  }, 0)
+}
+
+export function spendingExpenseTotal(rows: OmniRow[]): number {
+  return sumRowAmounts(rows, isSpendingExpense)
+}
+
+export function cashFlowInflowTotal(rows: OmniRow[]): number {
+  return sumRowAmounts(rows, isCashFlowInflow)
+}
+
+export function cashFlowOutflowTotal(rows: OmniRow[]): number {
+  return sumRowAmounts(rows, isCashFlowOutflow)
+}
+
+export function netCashFlowTotal(rows: OmniRow[]): number {
+  return cashFlowInflowTotal(rows) - cashFlowOutflowTotal(rows)
+}
+
+export type MonthCashFlowKpi = {
+  netCashFlow: number
+  income: number
+  cashOutflow: number
+  spending: number
+}
+
+export function monthCashFlowKpi(rows: OmniRow[]): MonthCashFlowKpi {
+  return {
+    netCashFlow: netCashFlowTotal(rows),
+    income: cashFlowInflowTotal(rows),
+    cashOutflow: cashFlowOutflowTotal(rows),
+    spending: spendingExpenseTotal(rows),
+  }
+}
+
+export function formatSignedCurrency(value: number): string {
+  const abs = formatCurrency(Math.abs(value))
+  if (value > 0) return `+${abs}`
+  if (value < 0) return `-${abs}`
+  return abs
 }
 
 export type TopCategoryResult = {

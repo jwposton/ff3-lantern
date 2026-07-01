@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.11] - 2026-07-01
+
+### Added
+
+- **Dashboard cash flow KPIs** — Income, net cash flow (bank in/out), and total spending (incl. credit card) for the current month and the selected date range
+- **Dashboard selected-period pies** — Spending by budget and cash flow by budget charts follow the global date filter; pie drilldown routes to spending or cash flow reports
+
+### Changed
+
+- **Dashboard layout** — Split into **This month** (cash flow KPIs, spending pie, budget vs 12-month average) and **Selected period** (cash flow KPIs and budget pies for the global date range)
+- **Dashboard tile headers** — Title and date-range subtitle on separate rows with consistent styling across KPI and chart cards
+
 ## [1.1.10] - 2026-07-01
 
 ### Added
@@ -199,7 +211,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.10...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.11...HEAD
+[1.1.11]: https://github.com/jwposton/FF3Analytics/compare/v1.1.10...v1.1.11
 [1.1.10]: https://github.com/jwposton/FF3Analytics/compare/v1.1.9...v1.1.10
 [1.1.9]: https://github.com/jwposton/FF3Analytics/compare/v1.1.8...v1.1.9
 [1.1.8]: https://github.com/jwposton/FF3Analytics/compare/v1.1.7...v1.1.8

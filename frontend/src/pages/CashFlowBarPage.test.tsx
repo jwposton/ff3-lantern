@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { MemoryRouter } from "react-router-dom"
 
 import { isCashFlowOutflow } from "@/lib/spending"
 import {
@@ -68,7 +69,11 @@ describe("CashFlowBarPage", () => {
   })
 
   it("uses isCashFlowOutflow filter and cash outflow copy", () => {
-    render(<CashFlowBarPage />)
+    render(
+      <MemoryRouter>
+        <CashFlowBarPage />
+      </MemoryRouter>,
+    )
 
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
       "Cash Flow",
@@ -94,7 +99,11 @@ describe("CashFlowBarPage", () => {
       refetch: vi.fn(),
     })
 
-    render(<CashFlowBarPage />)
+    render(
+      <MemoryRouter>
+        <CashFlowBarPage />
+      </MemoryRouter>,
+    )
 
     expect(screen.getByTestId("chart-has-data")).toBeTruthy()
     expect(screen.queryByTestId("empty-message")).toBeNull()

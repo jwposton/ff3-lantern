@@ -1,13 +1,22 @@
-import { useCallback, useMemo } from "react"
+import { useCallback, useMemo, type ReactNode } from "react"
 import { useNavigate } from "react-router-dom"
 
 import { BudgetCurrentVsAverageChart } from "@/components/BudgetCurrentVsAverageChart"
 import { BudgetSpendPieChart } from "@/components/BudgetSpendPieChart"
+import { CashFlowKpiCard, MonthlyCashFlowKpiCard } from "@/components/MonthlyCashFlowKpiCard"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
-import { buildBarChartData, stackTotalsAcrossMonths } from "@/lib/barChart"
+import { buildBarChartData } from "@/lib/barChart"
 import {
+  budgetVsAverageTileTitle,
+  cashFlowByBudgetTileTitle,
+  formatCalendarMonthLabel,
+  formatDashboardDateRange,
+  monthlyCashFlowTileTitle,
+  spendingByBudgetTileTitle,
+} from "@/lib/dashboardTileLabels"
+import { buildBudgetPieSlices, filterRowsInCalendarMonth } from "@/lib/dashboardKpis"
+import {
+  buildCashFlowBarPath,
   buildCategorizeQueuePath,
   buildSpendingBarPath,
   isUncategorizedDisplayName,
@@ -17,17 +26,17 @@ import {
   type RollingWindowMonths,
 } from "@/lib/momComparePrefs"
 import {
-  aggregateOtherAmounts,
   aggregateOtherBaselines,
   currentCalendarMonth,
   currentVsRollingBaseline,
+  lastDayOfMonth,
   rankStacksByAmount,
 } from "@/lib/momVariance"
 import {
-  formatCurrency,
+  isCashFlowOutflow,
+  isSpendingExpense,
   isSpendingWithdrawal,
-  spendingWithdrawalTotal,
-  topCategoryBySpend,
+  monthCashFlowKpi,
 } from "@/lib/spending"
 import type { OmniRow } from "@/types/NormalizedTransaction"
 
@@ -48,20 +57,25 @@ type DashboardTilesProps = {
   onRetry: () => void
 }
 
-function formatPercent(ratio: number): string {
-  return `${(ratio * 100).toFixed(1)}%`
-}
-
-function KpiSkeleton() {
+function DashboardSection({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string
+  subtitle: string
+  children: ReactNode
+}) {
   return (
-    <Card>
-      <CardHeader>
-        <Skeleton className="h-4 w-24" />
-      </CardHeader>
-      <CardContent>
-        <Skeleton className="h-8 w-32" />
-      </CardContent>
-    </Card>
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          {title}
+        </h2>
+        <p className="text-sm text-muted-foreground">{subtitle}</p>
+      </div>
+      {children}
+    </section>
   )
 }
 
@@ -79,46 +93,91 @@ export function DashboardTiles({
 }: DashboardTilesProps) {
   const navigate = useNavigate()
 
-  const handleBudgetSelect = useCallback(
-    (name: string) => {
-      if (isUncategorizedDisplayName(name)) {
-        navigate(buildCategorizeQueuePath(rangeStart, rangeEnd))
-        return
-      }
-      navigate(buildSpendingBarPath(rangeStart, rangeEnd, name))
-    },
-    [navigate, rangeStart, rangeEnd],
+  const currentMonth = useMemo(() => currentCalendarMonth(), [])
+  const currentMonthStart = `${currentMonth}-01`
+  const currentMonthEnd = useMemo(
+    () => lastDayOfMonth(currentMonth),
+    [currentMonth],
+  )
+  const rangeLabel = useMemo(
+    () => formatDashboardDateRange(rangeStart, rangeEnd),
+    [rangeStart, rangeEnd],
+  )
+  const currentMonthLabel = useMemo(
+    () => formatCalendarMonthLabel(currentMonth),
+    [currentMonth],
   )
 
-  const spendingRows = useMemo(
-    () => rangeRows.filter(isSpendingWithdrawal),
-    [rangeRows],
+  const makeBudgetDrillHandler = useCallback(
+    (start: string, end: string) => (name: string) => {
+      if (isUncategorizedDisplayName(name)) {
+        navigate(buildCategorizeQueuePath(start, end))
+        return
+      }
+      navigate(buildSpendingBarPath(start, end, name))
+    },
+    [navigate],
   )
+
+  const makeCashFlowDrillHandler = useCallback(
+    (start: string, end: string) => (name: string) => {
+      if (isUncategorizedDisplayName(name)) {
+        navigate(buildCategorizeQueuePath(start, end))
+        return
+      }
+      navigate(buildCashFlowBarPath(start, end, name))
+    },
+    [navigate],
+  )
+
   const averageSpendingRows = useMemo(
     () => averageRows.filter(isSpendingWithdrawal),
     [averageRows],
   )
-
-  const currentMonth = useMemo(() => currentCalendarMonth(), [])
+  const currentMonthRows = useMemo(
+    () => filterRowsInCalendarMonth(averageRows, currentMonth),
+    [averageRows, currentMonth],
+  )
+  const monthCashFlow = useMemo(
+    () => monthCashFlowKpi(currentMonthRows),
+    [currentMonthRows],
+  )
+  const periodCashFlow = useMemo(
+    () => monthCashFlowKpi(rangeRows),
+    [rangeRows],
+  )
   const rollingMethod = useMemo(
     () => readMomRollingAverageMethod("spending"),
     [],
   )
 
-  const pieSlices = useMemo(() => {
-    if (spendingRows.length === 0) return []
-    const chartData = buildBarChartData(spendingRows, ["month", "budget"], {
-      start: rangeStart,
-      end: rangeEnd,
-    })
-    const totals = stackTotalsAcrossMonths(chartData)
-    const { names } = rankStacksByAmount(totals, BUDGET_PIE_TOP_N)
-    const aggregated = aggregateOtherAmounts(totals, names)
-    return names
-      .filter((name) => aggregated.has(name))
-      .map((name) => ({ name, value: aggregated.get(name) ?? 0 }))
-      .filter((slice) => slice.value > 0)
-  }, [spendingRows, rangeStart, rangeEnd])
+  const currentMonthSpendingPieSlices = useMemo(
+    () =>
+      buildBudgetPieSlices(averageRows, currentMonthStart, currentMonthEnd, {
+        rowFilter: isSpendingExpense,
+        topN: BUDGET_PIE_TOP_N,
+      }),
+    [averageRows, currentMonthStart, currentMonthEnd],
+  )
+
+  const periodSpendingPieSlices = useMemo(
+    () =>
+      buildBudgetPieSlices(rangeRows, rangeStart, rangeEnd, {
+        rowFilter: isSpendingExpense,
+        topN: BUDGET_PIE_TOP_N,
+      }),
+    [rangeRows, rangeStart, rangeEnd],
+  )
+
+  const periodCashFlowPieSlices = useMemo(
+    () =>
+      buildBudgetPieSlices(rangeRows, rangeStart, rangeEnd, {
+        rowFilter: isCashFlowOutflow,
+        useCashFlowLabels: true,
+        topN: BUDGET_PIE_TOP_N,
+      }),
+    [rangeRows, rangeStart, rangeEnd],
+  )
 
   const barChartState = useMemo(() => {
     const chartData = buildBarChartData(
@@ -172,65 +231,71 @@ export function DashboardTiles({
     )
   }
 
-  const total = spendingWithdrawalTotal(spendingRows)
-  const top = topCategoryBySpend(spendingRows)
-
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-      {isRangeLoading ? (
-        <KpiSkeleton />
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Total spending
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-[32px] font-bold leading-tight tracking-tight">
-              {formatCurrency(total)}
-            </p>
-          </CardContent>
-        </Card>
-      )}
+    <div className="space-y-8">
+      <DashboardSection title="This month" subtitle={currentMonthLabel}>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <MonthlyCashFlowKpiCard
+            currentMonth={currentMonth}
+            kpi={monthCashFlow}
+            loading={isAverageLoading}
+          />
 
-      {isRangeLoading ? (
-        <KpiSkeleton />
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Top category
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            <p className="text-[32px] font-bold leading-tight tracking-tight">
-              {top.name}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {formatCurrency(top.amount)} · {formatPercent(top.percentOfTotal)}{" "}
-              of total
-            </p>
-          </CardContent>
-        </Card>
-      )}
+          <BudgetSpendPieChart
+            slices={currentMonthSpendingPieSlices}
+            loading={isAverageLoading}
+            emptyMessage="No spending this month"
+            chartTitle={spendingByBudgetTileTitle()}
+            chartSubtitle={currentMonthLabel}
+            chartTestId="spending-pie-current-month"
+            onSliceSelect={makeBudgetDrillHandler(
+              currentMonthStart,
+              currentMonthEnd,
+            )}
+          />
 
-      <BudgetSpendPieChart
-        slices={pieSlices}
-        loading={isRangeLoading}
-        emptyMessage="No spending in this date range"
-        chartTitle="Spending by budget"
-        onSliceSelect={handleBudgetSelect}
-      />
+          <BudgetCurrentVsAverageChart
+            sortedNames={barChartState.sortedNames}
+            values={barChartState.values}
+            loading={isAverageLoading}
+            emptyMessage="Not enough history for a rolling average comparison"
+            chartTitle={budgetVsAverageTileTitle()}
+            chartSubtitle={currentMonthLabel}
+            onSelect={makeBudgetDrillHandler(currentMonthStart, currentMonthEnd)}
+          />
+        </div>
+      </DashboardSection>
 
-      <BudgetCurrentVsAverageChart
-        sortedNames={barChartState.sortedNames}
-        values={barChartState.values}
-        loading={isAverageLoading}
-        emptyMessage="Not enough history for a rolling average comparison"
-        chartTitle="Current month vs 12-month average"
-        onSelect={handleBudgetSelect}
-      />
+      <DashboardSection title="Selected period" subtitle={rangeLabel}>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <CashFlowKpiCard
+            title={monthlyCashFlowTileTitle()}
+            subtitle={rangeLabel}
+            kpi={periodCashFlow}
+            loading={isRangeLoading}
+          />
+
+          <BudgetSpendPieChart
+            slices={periodSpendingPieSlices}
+            loading={isRangeLoading}
+            emptyMessage="No spending in this date range"
+            chartTitle={spendingByBudgetTileTitle()}
+            chartSubtitle={rangeLabel}
+            chartTestId="spending-pie-selected-period"
+            onSliceSelect={makeBudgetDrillHandler(rangeStart, rangeEnd)}
+          />
+
+          <BudgetSpendPieChart
+            slices={periodCashFlowPieSlices}
+            loading={isRangeLoading}
+            emptyMessage="No cash outflow in this date range"
+            chartTitle={cashFlowByBudgetTileTitle()}
+            chartSubtitle={rangeLabel}
+            chartTestId="cash-flow-pie-selected-period"
+            onSliceSelect={makeCashFlowDrillHandler(rangeStart, rangeEnd)}
+          />
+        </div>
+      </DashboardSection>
     </div>
   )
 }

@@ -2,7 +2,8 @@ import { useCallback, useMemo } from "react"
 import ReactECharts from "echarts-for-react"
 import type { EChartsOption } from "echarts"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
+import { DashboardTileHeader } from "@/components/DashboardTileHeader"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CHART_COLORS } from "@/lib/chartColors"
 import { truncateLegendLabel } from "@/lib/chartLegend"
@@ -25,6 +26,8 @@ type BudgetSpendPieChartProps = {
   loading: boolean
   emptyMessage: string
   chartTitle?: string
+  chartSubtitle?: string
+  chartTestId?: string
   onSliceSelect?: (name: string) => void
 }
 
@@ -73,6 +76,8 @@ export function BudgetSpendPieChart({
   loading,
   emptyMessage,
   chartTitle = "Spending by budget",
+  chartSubtitle,
+  chartTestId = "budget-spend-pie-chart",
   onSliceSelect,
 }: BudgetSpendPieChartProps) {
   const isEmpty = !loading && slices.length === 0
@@ -161,9 +166,7 @@ export function BudgetSpendPieChart({
   if (loading) {
     return (
       <Card>
-        <CardHeader>
-          <Skeleton className="h-5 w-40" />
-        </CardHeader>
+        <DashboardTileHeader title={chartTitle} subtitle={chartSubtitle} />
         <CardContent>
           <Skeleton className="h-[480px] w-full" />
         </CardContent>
@@ -173,9 +176,7 @@ export function BudgetSpendPieChart({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{chartTitle}</CardTitle>
-      </CardHeader>
+      <DashboardTileHeader title={chartTitle} subtitle={chartSubtitle} />
       <CardContent>
         {isEmpty ? (
           <div className="flex h-[480px] items-center justify-center text-center text-sm text-muted-foreground">
@@ -193,7 +194,7 @@ export function BudgetSpendPieChart({
             onEvents={onEvents}
             notMerge
             lazyUpdate
-            data-testid="budget-spend-pie-chart"
+            data-testid={chartTestId}
           />
         )}
       </CardContent>

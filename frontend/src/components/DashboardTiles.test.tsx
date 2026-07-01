@@ -2,7 +2,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
 
-import { spendingRowsForTotal } from "@/test/fixtures/omniRows"
+import {
+  creditCardPaymentTransfer,
+  creditCardWithdrawal,
+  mainCheckingWithdrawal,
+  salaryDeposit,
+  spendingRowsForTotal,
+} from "@/test/fixtures/omniRows"
 
 import { DashboardTiles } from "./DashboardTiles"
 
@@ -19,13 +25,18 @@ vi.mock("react-router-dom", async (importOriginal) => {
 vi.mock("@/components/BudgetSpendPieChart", () => ({
   BudgetSpendPieChart: ({
     chartTitle,
+    chartSubtitle,
+    chartTestId,
     onSliceSelect,
   }: {
     chartTitle?: string
+    chartSubtitle?: string
+    chartTestId?: string
     onSliceSelect?: (name: string) => void
   }) => (
-    <div data-testid="budget-spend-pie-chart">
-      {chartTitle}
+    <div data-testid={chartTestId ?? "budget-spend-pie-chart"}>
+      <span>{chartTitle}</span>
+      <span>{chartSubtitle}</span>
       {onSliceSelect ? (
         <>
           <button
@@ -51,13 +62,16 @@ vi.mock("@/components/BudgetSpendPieChart", () => ({
 vi.mock("@/components/BudgetCurrentVsAverageChart", () => ({
   BudgetCurrentVsAverageChart: ({
     chartTitle,
+    chartSubtitle,
     onSelect,
   }: {
     chartTitle?: string
+    chartSubtitle?: string
     onSelect?: (name: string) => void
   }) => (
     <div data-testid="budget-current-vs-average-chart">
-      {chartTitle}
+      <span>{chartTitle}</span>
+      <span>{chartSubtitle}</span>
       {onSelect ? (
         <button
           type="button"
@@ -71,13 +85,23 @@ vi.mock("@/components/BudgetCurrentVsAverageChart", () => ({
   ),
 }))
 
+const JANUARY_CASH_FLOW_ROWS = [
+  salaryDeposit,
+  mainCheckingWithdrawal,
+  creditCardWithdrawal,
+  creditCardPaymentTransfer,
+]
+
 describe("DashboardTiles", () => {
   afterEach(() => {
     cleanup()
     mockNavigate.mockReset()
+    vi.useRealTimers()
   })
 
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2024-01-15T12:00:00"))
     mockNavigate.mockReset()
   })
 
@@ -98,7 +122,8 @@ describe("DashboardTiles", () => {
         />
       </MemoryRouter>,
     )
-    expect(screen.queryByText("Total spending")).toBeNull()
+    expect(screen.getAllByText("Monthly cash flow").length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText("5,000.00")).toBeNull()
     expect(screen.queryByText("Unable to load transactions")).toBeNull()
   })
 
@@ -132,7 +157,7 @@ describe("DashboardTiles", () => {
           rangeRows={spendingRowsForTotal}
           rangeStart="2024-01-01"
           rangeEnd="2024-01-31"
-          averageRows={spendingRowsForTotal}
+          averageRows={JANUARY_CASH_FLOW_ROWS}
           averageStart="2023-01-01"
           averageEnd="2024-01-31"
           isRangeLoading={false}
@@ -142,22 +167,33 @@ describe("DashboardTiles", () => {
         />
       </MemoryRouter>,
     )
-    expect(screen.getByText("Total spending")).toBeTruthy()
-    expect(screen.getByText("75.50")).toBeTruthy()
-    expect(screen.getByText("Food")).toBeTruthy()
-    expect(screen.getByText("Top category")).toBeTruthy()
-    expect(screen.getByTestId("budget-spend-pie-chart")).toBeTruthy()
+    expect(screen.getByText("This month")).toBeTruthy()
+    expect(screen.getByText("Selected period")).toBeTruthy()
+    expect(screen.getAllByText("Monthly cash flow").length).toBe(2)
+    expect(screen.getAllByText("January 2024").length).toBeGreaterThanOrEqual(4)
+    expect(screen.getAllByText("Income").length).toBe(2)
+    expect(screen.getAllByText("Net cash flow").length).toBe(2)
+    expect(screen.getAllByText("Total spending").length).toBe(2)
+    expect(screen.getByText("5,000.00")).toBeTruthy()
+    expect(screen.getByText("+4,724.50")).toBeTruthy()
+    expect(screen.getAllByText("175.50").length).toBe(2)
+    expect(screen.getAllByText("Spending by budget").length).toBe(2)
+    expect(screen.getByText("Cash flow by budget")).toBeTruthy()
+    expect(screen.getByText("Budget vs 12-month average")).toBeTruthy()
+    expect(screen.getByTestId("spending-pie-current-month")).toBeTruthy()
+    expect(screen.getByTestId("spending-pie-selected-period")).toBeTruthy()
+    expect(screen.getByTestId("cash-flow-pie-selected-period")).toBeTruthy()
     expect(screen.getByTestId("budget-current-vs-average-chart")).toBeTruthy()
   })
 
-  it("navigates to spending bar with budget when pie slice is selected", () => {
+  it("navigates to spending bar for selected period when period pie slice is selected", () => {
     render(
       <MemoryRouter>
         <DashboardTiles
           rangeRows={spendingRowsForTotal}
-          rangeStart="2024-01-01"
-          rangeEnd="2024-01-31"
-          averageRows={spendingRowsForTotal}
+          rangeStart="2024-06-01"
+          rangeEnd="2024-06-30"
+          averageRows={JANUARY_CASH_FLOW_ROWS}
           averageStart="2023-01-01"
           averageEnd="2024-01-31"
           isRangeLoading={false}
@@ -168,7 +204,31 @@ describe("DashboardTiles", () => {
       </MemoryRouter>,
     )
 
-    fireEvent.click(screen.getByTestId("pie-drill-budget"))
+    fireEvent.click(screen.getAllByTestId("pie-drill-budget")[1]!)
+    expect(mockNavigate).toHaveBeenCalledWith(
+      "/reports/spending?start=2024-06-01&end=2024-06-30&budget=Food",
+    )
+  })
+
+  it("navigates to spending bar for current month when current-month pie slice is selected", () => {
+    render(
+      <MemoryRouter>
+        <DashboardTiles
+          rangeRows={spendingRowsForTotal}
+          rangeStart="2024-06-01"
+          rangeEnd="2024-06-30"
+          averageRows={JANUARY_CASH_FLOW_ROWS}
+          averageStart="2023-01-01"
+          averageEnd="2024-01-31"
+          isRangeLoading={false}
+          isAverageLoading={false}
+          isError={false}
+          onRetry={() => {}}
+        />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getAllByTestId("pie-drill-budget")[0]!)
     expect(mockNavigate).toHaveBeenCalledWith(
       "/reports/spending?start=2024-01-01&end=2024-01-31&budget=Food",
     )
@@ -181,7 +241,7 @@ describe("DashboardTiles", () => {
           rangeRows={spendingRowsForTotal}
           rangeStart="2024-01-01"
           rangeEnd="2024-01-31"
-          averageRows={spendingRowsForTotal}
+          averageRows={JANUARY_CASH_FLOW_ROWS}
           averageStart="2023-01-01"
           averageEnd="2024-01-31"
           isRangeLoading={false}
@@ -192,7 +252,7 @@ describe("DashboardTiles", () => {
       </MemoryRouter>,
     )
 
-    fireEvent.click(screen.getByTestId("pie-drill-uncategorized"))
+    fireEvent.click(screen.getAllByTestId("pie-drill-uncategorized")[1]!)
     expect(mockNavigate).toHaveBeenCalledWith(
       "/manage/categorize?start=2024-01-01&end=2024-01-31",
     )
@@ -205,7 +265,7 @@ describe("DashboardTiles", () => {
           rangeRows={spendingRowsForTotal}
           rangeStart="2024-01-01"
           rangeEnd="2024-01-31"
-          averageRows={spendingRowsForTotal}
+          averageRows={JANUARY_CASH_FLOW_ROWS}
           averageStart="2023-01-01"
           averageEnd="2024-01-31"
           isRangeLoading={false}

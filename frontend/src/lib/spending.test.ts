@@ -11,9 +11,15 @@ import {
   spendingRowsForTotal,
 } from "@/test/fixtures/omniRows"
 import {
+  cashFlowInflowTotal,
+  cashFlowOutflowTotal,
+  isCashFlowInflow,
   isCashFlowOutflow,
   isSpendingExpense,
   isSpendingWithdrawal,
+  monthCashFlowKpi,
+  netCashFlowTotal,
+  spendingExpenseTotal,
   spendingWithdrawalTotal,
   topCategoryBySpend,
 } from "@/lib/spending"
@@ -68,6 +74,50 @@ describe("isCashFlowOutflow", () => {
 
   it("excludes salary deposits (inflows)", () => {
     expect(isCashFlowOutflow(salaryDeposit)).toBe(false)
+  })
+})
+
+describe("isCashFlowInflow", () => {
+  it("includes salary deposits to bank accounts", () => {
+    expect(isCashFlowInflow(salaryDeposit)).toBe(true)
+  })
+
+  it("excludes bank withdrawals", () => {
+    expect(isCashFlowInflow(mainCheckingWithdrawal)).toBe(false)
+  })
+
+  it("excludes bank-to-bank transfers", () => {
+    expect(isCashFlowInflow(savingsTransfer)).toBe(false)
+  })
+
+  it("excludes credit card purchases", () => {
+    expect(isCashFlowInflow(creditCardWithdrawal)).toBe(false)
+  })
+})
+
+describe("monthCashFlowKpi", () => {
+  const januaryRows = [
+    salaryDeposit,
+    mainCheckingWithdrawal,
+    creditCardWithdrawal,
+    creditCardPaymentTransfer,
+  ]
+
+  it("computes net cash flow as bank inflows minus outflows", () => {
+    expect(cashFlowInflowTotal(januaryRows)).toBeCloseTo(5000, 2)
+    expect(cashFlowOutflowTotal(januaryRows)).toBeCloseTo(275.5, 2)
+    expect(netCashFlowTotal(januaryRows)).toBeCloseTo(4724.5, 2)
+  })
+
+  it("reports spending with credit card purchases and income separately", () => {
+    const kpi = monthCashFlowKpi(januaryRows)
+    expect(kpi.spending).toBeCloseTo(175.5, 2)
+    expect(kpi.income).toBeCloseTo(5000, 2)
+    expect(kpi.netCashFlow).toBeCloseTo(4724.5, 2)
+  })
+
+  it("spendingExpenseTotal includes credit card purchases", () => {
+    expect(spendingExpenseTotal(januaryRows)).toBeCloseTo(175.5, 2)
   })
 })
 

@@ -2,7 +2,8 @@ import { useCallback, useMemo } from "react"
 import ReactECharts from "echarts-for-react"
 import type { EChartsOption } from "echarts"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
+import { DashboardTileHeader } from "@/components/DashboardTileHeader"
 import { Skeleton } from "@/components/ui/skeleton"
 import { compareChartHeight } from "@/components/MomCompareChart"
 import type { CurrentVsBaseline } from "@/lib/momVariance"
@@ -19,6 +20,7 @@ type BudgetCurrentVsAverageChartProps = {
   loading: boolean
   emptyMessage: string
   chartTitle?: string
+  chartSubtitle?: string
   currentSeriesLabel?: string
   averageSeriesLabel?: string
   yAxisName?: string
@@ -51,6 +53,7 @@ export function BudgetCurrentVsAverageChart({
   loading,
   emptyMessage,
   chartTitle = "Current month vs 12-month average",
+  chartSubtitle,
   currentSeriesLabel = "Current month",
   averageSeriesLabel = "12-mo average",
   yAxisName = "Spending",
@@ -133,9 +136,7 @@ export function BudgetCurrentVsAverageChart({
   if (loading) {
     return (
       <Card>
-        <CardHeader>
-          <Skeleton className="h-5 w-56" />
-        </CardHeader>
+        <DashboardTileHeader title={chartTitle} subtitle={chartSubtitle} />
         <CardContent>
           <Skeleton className="h-[480px] w-full" />
         </CardContent>
@@ -145,9 +146,7 @@ export function BudgetCurrentVsAverageChart({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{chartTitle}</CardTitle>
-      </CardHeader>
+      <DashboardTileHeader title={chartTitle} subtitle={chartSubtitle} />
       <CardContent>
         {isEmpty ? (
           <div
