@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from categorize_queue import build_pending_queue
+from categorization_suggest import suggest_batch
 from firefly_client import FireflyClient
 
 router = APIRouter()
@@ -78,3 +81,46 @@ async def get_categorize_meta(
         "budgets": budgets,
         "default_model": default_model or "openai/gpt-4o-mini",
     }
+
+
+class SuggestRequest(BaseModel):
+    journal_ids: list[str] | None = None
+    start: str | None = None
+    end: str | None = None
+    limit: int = Field(default=50, ge=1, le=100)
+    refresh: bool = False
+
+
+@router.post("/categorize/suggest")
+async def post_categorize_suggest(
+    body: SuggestRequest,
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    if not _is_set("OPENROUTER_API_KEY"):
+        raise HTTPException(
+            status_code=503,
+            detail="OPENROUTER_API_KEY is not configured; suggest is unavailable.",
+        )
+    if not body.start or not body.end:
+        raise HTTPException(
+            status_code=422,
+            detail="start and end dates are required for suggest.",
+        )
+    _parse_date_range(body.start, body.end)
+    try:
+        data = await suggest_batch(
+            client,
+            start=body.start,
+            end=body.end,
+            journal_ids=body.journal_ids,
+            limit=body.limit,
+            refresh=body.refresh,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Suggest failed: {exc}",
+        ) from exc
+    return {"data": data}
