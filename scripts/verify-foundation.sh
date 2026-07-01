@@ -72,7 +72,7 @@ wait_for_health "$FRONTEND_HEALTH" "frontend"
 
 FRONTEND_API="http://localhost:5174/api/normalized_transactions"
 echo "Checking proxied API ($FRONTEND_API)..."
-api_code="$(curl -sf -o /dev/null -w '%{http_code}' "$FRONTEND_API" || echo "000")"
+api_code="$(curl -s -o /dev/null -w '%{http_code}' "$FRONTEND_API")"
 if [[ "$api_code" != "422" ]]; then
   echo "ERROR: proxied API expected HTTP 422 (missing query params), got $api_code" >&2
   exit 1
