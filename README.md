@@ -1,38 +1,117 @@
 # FF3Analytics
 
-Self-hosted analytics UI for a personal Firefly III instance. Planning and GSD artifacts live in the sibling FireflyReports repo; application code lives here.
+Self-hosted analytics UI for a personal [Firefly III](https://www.firefly-iii.org/) instance. Pick a date range and explore spending trends, Sankey flows, month-over-month variance, and transaction drilldowns.
 
 ## Prerequisites
 
-- Docker and Docker Compose v2
-- Optional: [jq](https://jqlang.github.io/jq/) for JSON checks in `scripts/verify-foundation.sh` (script falls back to `python3` if `jq` is missing)
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose v2
+- A running Firefly III instance with API access
+- Optional: [jq](https://jqlang.github.io/jq/) for JSON checks in `scripts/verify-foundation.sh` (falls back to `python3`)
 
 ## Ports (host)
 
-| Service  | Host port | Container | Image name              |
-|----------|-----------|-----------|-------------------------|
-| Backend  | 18001     | 8000      | `ff3analytics-backend`  |
-| Frontend | 5174      | 5173      | `ff3analytics-frontend` |
+| Service  | Host port | Container | Notes |
+|----------|-----------|-----------|-------|
+| Backend  | 18001     | 8000      | Direct API access (optional; CORS-restricted) |
+| Frontend | 5174      | 80        | Production nginx static SPA + `/api` proxy |
 
-These differ from FireflyReports (`18000` / `5173`) so both stacks can run during migration.
+## Configuration
 
-## Environment
+Copy `.env.example` to `.env` and fill in values. **Never commit `.env`** — the Firefly token stays server-side only.
 
-1. Copy `.env.example` to `.env`
-2. Set `FIREFLY_BASE_URL` and `FIREFLY_API_TOKEN` when the backend needs Firefly access (Phase 2+)
-3. Do not commit `.env`
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `FIREFLY_BASE_URL` | Yes | — | Base URL of your Firefly III instance (trailing slash optional) |
+| `FIREFLY_API_TOKEN` | Yes | — | Personal access token from Firefly III (see below) |
+| `CORS_ALLOWED_ORIGINS` | No | localhost dev fallback | Comma-separated browser origins allowed to call the API directly on `:18001` |
+| `GITHUB_OWNER` | No | `jwposton` | GitHub org/user for ghcr.io image pulls |
+| `FF3ANALYTICS_TAG` | No | `latest` | Image tag when pulling pre-built images from ghcr.io |
 
-## Quick start
+### Firefly personal access token
 
-From the repo root:
+1. Sign in to Firefly III as a user with access to the data you want to analyze.
+2. Open **Profile** (top-right) → **OAuth** → **Personal access tokens**.
+3. Create a token with a descriptive name (e.g. `ff3analytics`).
+4. Copy the token immediately — Firefly shows it only once.
+5. Paste into `.env` as `FIREFLY_API_TOKEN`.
+
+Set `FIREFLY_BASE_URL` to your Firefly instance URL, e.g. `https://firefly.example.com`.
+
+**Production deep links:** Sankey and transaction links use `firefly_base_url` returned by the API at runtime from `FIREFLY_BASE_URL`. No frontend build-time `VITE_FIREFLY_BASE_URL` is required in production.
+
+## Quick start (standalone)
+
+Works on a LAN or VPN with no reverse proxy — one URL serves the UI and proxied API.
 
 ```bash
+cp .env.example .env
+# edit .env with FIREFLY_BASE_URL and FIREFLY_API_TOKEN
+
 docker compose up -d --build
 curl -sf http://localhost:18001/health
 curl -sf http://localhost:5174/health
 ```
 
-Open http://localhost:5174 in a browser — you should see the FF3Analytics smoke page with a green **Backend healthy** badge when the stack is up.
+Open http://localhost:5174 in a browser.
+
+The frontend container serves a static build and proxies `/api` and `/health` to the backend. HTTPS is not required for VPN-only access; use HTTP on the host port.
+
+## Local development (Vite hot reload)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+This overlay swaps the production nginx image for the Vite dev server on port 5174.
+
+## Release deployment (pre-built images)
+
+Multi-arch images (`linux/amd64`, `linux/arm64`) publish to GitHub Container Registry when a `v*` tag is pushed (see `.github/workflows/publish.yml`):
+
+```text
+ghcr.io/<your-github-user>/ff3analytics-backend:1.0.0
+ghcr.io/<your-github-user>/ff3analytics-frontend:1.0.0
+```
+
+Pull and run without a local build:
+
+```bash
+cp .env.example .env
+# edit .env
+
+export GITHUB_OWNER=your-github-user
+export FF3ANALYTICS_TAG=1.0.0   # or latest
+
+docker compose pull
+docker compose up -d
+```
+
+After the first publish, set each package to **Public** under GitHub → Packages if anonymous pulls fail.
+
+Ensure the repository has **Actions → Workflow permissions → Read and write packages** enabled for `GITHUB_TOKEN`.
+
+## Behind a reverse proxy (nginx, SWAG, Caddy)
+
+The same images work behind an external reverse proxy with TLS and optional auth (e.g. Authelia).
+
+**Option A — path split at the edge (recommended when you already run SWAG/nginx):**
+
+```nginx
+location /api/ {
+    proxy_pass http://backend:8000;
+}
+location / {
+    proxy_pass http://frontend:80;
+}
+```
+
+**Option B — single upstream to frontend:** point the edge proxy at the frontend container only; in-container nginx proxies `/api` to the backend.
+
+In both cases:
+
+- Terminate TLS at the edge proxy, not inside the app containers.
+- Set `CORS_ALLOWED_ORIGINS=https://analytics.example.com` in `.env` if browsers may hit the backend directly on `:18001`.
+- Do not publish backend/frontend ports to the public internet unless intentional.
 
 ## Backend tests
 
@@ -48,21 +127,40 @@ pytest tests/ -q
 bash scripts/verify-foundation.sh
 ```
 
-The script runs `docker compose up -d --build`, waits up to 90s for HTTP 200 on direct backend health (`http://localhost:18001/health`) and proxied frontend health (`http://localhost:5174/health`), asserts JSON `status` is `ok`, ensures responses do not leak `FIREFLY_API_TOKEN`, then runs `docker compose down` on exit.
+Runs prod-default `docker compose up -d --build`, waits for backend health (`:18001/health`) and proxied frontend health (`:5174/health`), checks proxied API returns 422 without query params, verifies SPA deep links, ensures responses do not leak `FIREFLY_API_TOKEN`, then tears down.
 
-## Backend only
+## Troubleshooting
 
-```bash
-docker compose up -d --build backend
-curl -sf http://localhost:18001/health
-```
+### CORS errors in the browser
+
+- Symptom: API calls fail from the browser with CORS policy errors when using direct backend access on `:18001`.
+- Fix: Add your browser origin to `CORS_ALLOWED_ORIGINS` in `.env`, e.g. `https://analytics.example.com,http://localhost:5174`. Restart the backend container.
+
+### Empty charts or no data
+
+- Confirm `FIREFLY_API_TOKEN` is set and valid (regenerate in Firefly if unsure).
+- Confirm `FIREFLY_BASE_URL` has no typo and matches your Firefly instance URL.
+- Widen the date range — some reports need transactions in the selected period.
+- Check backend logs: `docker compose logs backend`.
+
+### Health check failures
+
+- Backend: `curl -sf http://localhost:18001/health` should return `{"status":"ok",...}`.
+- Frontend (proxied): `curl -sf http://localhost:5174/health` should return the same JSON via nginx.
+- If containers fail to start: `docker compose logs` and confirm ports 18001 and 5174 are free.
+
+### Token misconfiguration
+
+- `FIREFLY_API_TOKEN` must be the raw token string, not wrapped in quotes with extra whitespace.
+- `FIREFLY_BASE_URL` should be the Firefly **web** URL (e.g. `https://firefly.example.com`), not the API path.
+- Never commit `.env` or paste tokens into issue trackers.
 
 ## Feature designs
 
-Planned capabilities captured outside GSD planning (formal phases live in the sibling FireflyReports repo):
+Planned capabilities documented outside the core app:
 
-- [Loan & mortgage payment split automation](docs/features/loan-payment-splits.md) — detect lump payments, calculate principal/interest/escrow, apply splits to Firefly
-- [AI-assisted categorization & rules](docs/features/ai-categorization.md) — OpenRouter suggestions for uncategorized transactions; user-approved writes and Firefly rule creation
+- [Loan & mortgage payment split automation](docs/features/loan-payment-splits.md)
+- [AI-assisted categorization & rules](docs/features/ai-categorization.md)
 
 ## Icon attributions
 
