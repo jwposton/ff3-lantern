@@ -221,7 +221,8 @@ export async function triggerRule(
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    throw new Error(`Rule trigger failed (${res.status})`)
+    const payload = (await res.json().catch(() => ({}))) as { detail?: unknown }
+    throw new Error(apiErrorDetail(payload, `Rule trigger failed (${res.status})`))
   }
   return (await res.json()) as { ok: boolean; rule_id: string }
 }

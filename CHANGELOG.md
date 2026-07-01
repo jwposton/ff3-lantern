@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Categorize rule mode** — Switching to rule mode without running Suggest no longer crashes when rule trigger fields are uninitialized
+- **Categorize rule backfill** — Firefly 6.5+ rule trigger sends an empty JSON body so backfill no longer fails with HTTP 415 (Content-Type required)
 
 ### Changed
 

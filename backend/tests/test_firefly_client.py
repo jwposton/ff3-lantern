@@ -322,11 +322,17 @@ def test_create_rule_posts_active_body():
 
 
 def test_trigger_rule_posts_date_range():
-    seen: list[tuple[str, str]] = []
+    seen: list[tuple[str, str, bytes]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/rules/12/trigger" and request.method == "POST":
-            seen.append((request.url.params.get("start", ""), request.url.params.get("end", "")))
+            seen.append(
+                (
+                    request.url.params.get("start", ""),
+                    request.url.params.get("end", ""),
+                    request.content,
+                )
+            )
             return httpx.Response(204)
         return httpx.Response(404)
 
@@ -336,7 +342,7 @@ def test_trigger_rule_posts_date_range():
         api_token="tok",
     )
     result = asyncio.run(client.trigger_rule("12", "2024-01-01", "2024-01-31"))
-    assert seen == [("2024-01-01", "2024-01-31")]
+    assert seen == [("2024-01-01", "2024-01-31", b"{}")]
     assert result == {"ok": True}
 
 

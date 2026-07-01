@@ -266,6 +266,9 @@ class FireflyClient:
             response = await client.post(
                 f"/api/v1/rules/{rule_id}/trigger",
                 params={"start": start, "end": end},
+                # Firefly 6.5+ rejects POST without Content-Type (415) even when
+                # dates are passed as query params per the OpenAPI spec.
+                json={},
             )
             if response.status_code not in (200, 201, 204):
                 raise RuntimeError(
