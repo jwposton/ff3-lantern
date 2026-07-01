@@ -9,3 +9,15 @@ export function buildCategorizeQueuePath(start: string, end: string): string {
   const params = new URLSearchParams({ start, end })
   return `/manage/categorize?${params.toString()}`
 }
+
+export function buildSpendingBarPath(
+  start: string,
+  end: string,
+  budget?: string,
+): string {
+  const params = new URLSearchParams({ start, end })
+  if (budget != null && budget !== "") {
+    params.set("budget", budget)
+  }
+  return `/reports/spending?${params.toString()}`
+}

@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import ReactECharts from "echarts-for-react"
 import type { EChartsOption } from "echarts"
 
@@ -21,6 +21,7 @@ type BudgetCurrentVsAverageChartProps = {
   currentSeriesLabel?: string
   averageSeriesLabel?: string
   yAxisName?: string
+  onSelect?: (name: string) => void
 }
 
 function tooltipValue(value: unknown): number {
@@ -52,6 +53,7 @@ export function BudgetCurrentVsAverageChart({
   currentSeriesLabel = "Current month",
   averageSeriesLabel = "12-mo average",
   yAxisName = "Spending",
+  onSelect,
 }: BudgetCurrentVsAverageChartProps) {
   const isEmpty = !loading && sortedNames.length === 0
   const chartHeight = compareChartHeight(sortedNames.length)
@@ -111,6 +113,21 @@ export function BudgetCurrentVsAverageChart({
     yAxisName,
   ])
 
+  const handleChartClick = useCallback(
+    (params: { name?: string; seriesName?: string }) => {
+      const name = params.name ?? params.seriesName
+      if (name && onSelect) {
+        onSelect(name)
+      }
+    },
+    [onSelect],
+  )
+
+  const onEvents = useMemo(() => {
+    if (!onSelect) return undefined
+    return { click: handleChartClick }
+  }, [handleChartClick, onSelect])
+
   if (loading) {
     return (
       <Card>
@@ -141,7 +158,12 @@ export function BudgetCurrentVsAverageChart({
           <ReactECharts
             option={option}
             opts={CHART_OPTS}
-            style={{ height: chartHeight, width: "100%" }}
+            style={{
+              height: chartHeight,
+              width: "100%",
+              cursor: onSelect ? "pointer" : undefined,
+            }}
+            onEvents={onEvents}
             notMerge
             lazyUpdate
             data-testid="budget-current-vs-average-chart"

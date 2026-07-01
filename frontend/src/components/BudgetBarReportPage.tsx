@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 
 import { BudgetReportDrilldown } from "@/components/BudgetReportDrilldown"
 import { SpendingBarChart } from "@/components/SpendingBarChart"
@@ -27,14 +28,29 @@ export function BudgetBarReportPage({
 }: BudgetBarReportPageProps) {
   const { committedRange } = useDateRange()
   const { start: committedStart, end: committedEnd } = committedRange
+  const [searchParams, setSearchParams] = useSearchParams()
   const { isPending, isError, isSuccess, data, refetch } =
     useNormalizedTransactions(committedStart, committedEnd)
 
   const [selectedBudget, setSelectedBudget] = useState<string | null>(null)
+  const prevRangeRef = useRef({ start: committedStart, end: committedEnd })
 
   useEffect(() => {
+    setSelectedBudget(searchParams.get("budget"))
+  }, [searchParams])
+
+  useEffect(() => {
+    const prev = prevRangeRef.current
+    if (prev.start === committedStart && prev.end === committedEnd) return
+    prevRangeRef.current = { start: committedStart, end: committedEnd }
+
     setSelectedBudget(null)
-  }, [committedStart, committedEnd])
+    if (searchParams.has("budget")) {
+      const next = new URLSearchParams(searchParams)
+      next.delete("budget")
+      setSearchParams(next, { replace: true })
+    }
+  }, [committedStart, committedEnd, searchParams, setSearchParams])
 
   const allRows = isSuccess ? (data?.data ?? []) : []
 

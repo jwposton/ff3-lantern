@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   buildCategorizeQueuePath,
+  buildSpendingBarPath,
   isUncategorizedDisplayName,
 } from "./manageNav"
 
@@ -16,6 +17,20 @@ describe("manageNav", () => {
     it("URL-encodes date params", () => {
       expect(buildCategorizeQueuePath("2024-06-01", "2024-06-30")).toBe(
         "/manage/categorize?start=2024-06-01&end=2024-06-30",
+      )
+    })
+  })
+
+  describe("buildSpendingBarPath", () => {
+    it("includes start and end query params", () => {
+      expect(buildSpendingBarPath("2024-01-01", "2024-01-31")).toBe(
+        "/reports/spending?start=2024-01-01&end=2024-01-31",
+      )
+    })
+
+    it("includes budget when provided", () => {
+      expect(buildSpendingBarPath("2024-01-01", "2024-01-31", "Groceries")).toBe(
+        "/reports/spending?start=2024-01-01&end=2024-01-31&budget=Groceries",
       )
     })
   })
