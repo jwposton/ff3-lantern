@@ -38,9 +38,14 @@ describe("topN:", () => {
     expect(readSankeyTopN()).toBe(25)
   })
 
-  it("clamps low values to 5", () => {
+  it("clamps low values to 10", () => {
     writeSankeyTopN(3)
-    expect(readSankeyTopN()).toBe(5)
+    expect(readSankeyTopN()).toBe(10)
+  })
+
+  it("clamps stored value 8 to 10 on read", () => {
+    storage.set(STORAGE_KEY, "8")
+    expect(readSankeyTopN()).toBe(10)
   })
 
   it("uses ff3-spending-sankey-top-n storage key", () => {

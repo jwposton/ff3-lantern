@@ -148,7 +148,7 @@ describe("SpendingSankeyPage", () => {
     render(<SpendingSankeyPage />)
 
     expect(screen.getByText("Categories shown:")).toBeTruthy()
-    expect(screen.getByRole("slider").getAttribute("min")).toBe("5")
+    expect(screen.getByRole("slider").getAttribute("min")).toBe("10")
     expect(screen.getByRole("slider").getAttribute("max")).toBe("25")
   })
 
@@ -157,7 +157,7 @@ describe("SpendingSankeyPage", () => {
 
     expect(mockSankeyReportPageProps).toHaveBeenCalled()
     const props = mockSankeyReportPageProps.mock.calls[0][0]
-    expect(props.topN).toBeGreaterThanOrEqual(5)
+    expect(props.topN).toBeGreaterThanOrEqual(10)
     expect(props.topN).toBeLessThanOrEqual(25)
   })
 })

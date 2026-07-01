@@ -3,6 +3,7 @@ import { useState } from "react"
 import { SankeyReportPage } from "@/components/SankeyReportPage"
 import { buildSpendingSankeyData } from "@/lib/sankey"
 import { readSankeyTopN, writeSankeyTopN } from "@/lib/sankeyTopN"
+import { TOP_N_MAX, TOP_N_MIN } from "@/lib/topNConstants"
 import { isSpendingExpense } from "@/lib/spending"
 
 export function SpendingSankeyPage() {
@@ -27,8 +28,8 @@ export function SpendingSankeyPage() {
             Categories shown:
             <input
               type="range"
-              min={5}
-              max={25}
+              min={TOP_N_MIN}
+              max={TOP_N_MAX}
               value={topN}
               onChange={(e) => {
                 const n = Number(e.target.value)

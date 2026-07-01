@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button"
+import { TOP_N_MAX, TOP_N_MIN } from "@/lib/topNConstants"
 import type { TrendChartType } from "@/lib/trendsChartType"
 import type { TrendViewMode } from "@/lib/trendsViewMode"
 
@@ -84,8 +85,8 @@ export function TrendsControls({
           <span className="whitespace-nowrap">Top categories: {topN}</span>
           <input
             type="range"
-            min={3}
-            max={15}
+            min={TOP_N_MIN}
+            max={TOP_N_MAX}
             value={topN}
             disabled={disabled}
             aria-label="Number of top categories to show"
