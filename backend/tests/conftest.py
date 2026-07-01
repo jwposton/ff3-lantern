@@ -81,6 +81,15 @@ def client_with_mock_firefly(monkeypatch, mock_firefly_transport, firefly_env):
 
 
 @pytest.fixture(autouse=True)
+def _clear_firefly_reference_cache():
+    import firefly_reference_cache
+
+    firefly_reference_cache.clear()
+    yield
+    firefly_reference_cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def _clear_firefly_env_between_tests(monkeypatch):
     """Avoid env leakage across tests that import main.app at module level."""
     for key in ("FIREFLY_BASE_URL", "FIREFLY_API_TOKEN"):

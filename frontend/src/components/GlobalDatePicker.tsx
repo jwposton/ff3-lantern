@@ -1,8 +1,17 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
+import { RefreshCw } from "lucide-react"
+import { useQueryClient } from "@tanstack/react-query"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useDateRange } from "@/context/DateRangeContext"
+import { clearReferenceCache } from "@/lib/cacheApi"
 import {
   isValidRange,
   monthToDate,
@@ -10,6 +19,7 @@ import {
   validateDateString,
   yearToDate,
 } from "@/lib/dateRange"
+import { invalidateReportCaches } from "@/lib/reportCache"
 
 const PRESETS = [
   { label: "MTD", getRange: monthToDate },
@@ -27,6 +37,8 @@ function todayString(): string {
 
 export function GlobalDatePicker() {
   const { draftRange, committedRange, setDraftRange, applyRange } = useDateRange()
+  const queryClient = useQueryClient()
+  const [clearing, setClearing] = useState(false)
   const today = todayString()
 
   const applyDisabled = useMemo(() => {
@@ -91,6 +103,37 @@ export function GlobalDatePicker() {
       >
         Apply
       </Button>
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="px-2"
+              disabled={clearing}
+              aria-label="Clear reference cache"
+              onClick={async () => {
+                setClearing(true)
+                try {
+                  await clearReferenceCache()
+                  await invalidateReportCaches(queryClient)
+                } finally {
+                  setClearing(false)
+                }
+              }}
+            >
+              <RefreshCw
+                className={`size-4 ${clearing ? "animate-spin" : ""}`}
+                aria-hidden
+              />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            Clear cached accounts, categories, and budgets from Firefly
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   )
 }

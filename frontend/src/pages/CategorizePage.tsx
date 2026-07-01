@@ -47,18 +47,32 @@ type CardState = {
 
 function hasRuleTrigger(state: CardState | undefined): boolean {
   return Boolean(
-    state?.ruleDescriptionContains.trim() || state?.ruleDestinationAccount.trim(),
+    (state?.ruleDescriptionContains ?? "").trim() ||
+      (state?.ruleDestinationAccount ?? "").trim(),
   )
 }
 
 function ruleDraftFromState(state: CardState): RuleDraft {
   const txType = state.ruleTransactionType
   return {
-    title: state.ruleTitle,
-    description_contains: state.ruleDescriptionContains,
-    destination_account: state.ruleDestinationAccount.trim() || null,
+    title: state.ruleTitle ?? "",
+    description_contains: state.ruleDescriptionContains ?? "",
+    destination_account: (state.ruleDestinationAccount ?? "").trim() || null,
     transaction_type:
       txType === "withdrawal" || txType === "deposit" ? txType : null,
+  }
+}
+
+function ensureCardState(
+  existing: CardState | undefined,
+  row: PendingRow,
+  overrides: Partial<CardState> = {},
+): CardState {
+  const defaults = defaultCardState(existing?.suggestion, row)
+  return {
+    ...defaults,
+    ...existing,
+    ...overrides,
   }
 }
 
@@ -634,23 +648,29 @@ export function CategorizePage() {
   }
 
   function updateCategory(journalId: string, categoryId: string) {
+    const row = visibleRows.find((r) => r.journal_id === journalId)
+    if (!row) return
     setCardState((prev) => ({
       ...prev,
-      [journalId]: { ...prev[journalId], categoryId },
+      [journalId]: ensureCardState(prev[journalId], row, { categoryId }),
     }))
   }
 
   function updateBudget(journalId: string, budgetId: string) {
+    const row = visibleRows.find((r) => r.journal_id === journalId)
+    if (!row) return
     setCardState((prev) => ({
       ...prev,
-      [journalId]: { ...prev[journalId], budgetId },
+      [journalId]: ensureCardState(prev[journalId], row, { budgetId }),
     }))
   }
 
   function updateMode(journalId: string, mode: ApplyMode) {
+    const row = visibleRows.find((r) => r.journal_id === journalId)
+    if (!row) return
     setCardState((prev) => ({
       ...prev,
-      [journalId]: { ...prev[journalId], mode },
+      [journalId]: ensureCardState(prev[journalId], row, { mode }),
     }))
   }
 

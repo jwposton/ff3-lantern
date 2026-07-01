@@ -30,6 +30,7 @@ Copy `.env.example` to `.env` and fill in values. **Never commit `.env`** — th
 | `FF3ANALYTICS_TAG` | No | `latest` | Image tag when pulling pre-built images from ghcr.io |
 | `FF3ANALYTICS_DATA_PATH` | No | `./data` | Host directory bind-mounted for the SQLite sidecar (`ff3analytics.db` at `{path}/ff3analytics.db`) |
 | `PUID` / `PGID` | No | `1000` / `1000` | UID/GID the backend container runs as; sidecar files are created with this ownership |
+| `FIREFLY_REFERENCE_CACHE_TTL_SECONDS` | No | `7200` (2h) | In-process cache TTL for Firefly accounts, categories, and budgets |
 
 The backend image sets `FF3ANALYTICS_DATA_DIR=/data` internally; compose only configures the host bind mount via `FF3ANALYTICS_DATA_PATH`.
 

@@ -3,5 +3,9 @@ import type { QueryClient } from "@tanstack/react-query"
 export async function invalidateReportCaches(
   queryClient: QueryClient,
 ): Promise<void> {
-  await queryClient.invalidateQueries({ queryKey: ["normalizedTransactions"] })
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["normalizedTransactions"] }),
+    queryClient.invalidateQueries({ queryKey: ["categorizeMeta"] }),
+    queryClient.invalidateQueries({ queryKey: ["loanMeta"] }),
+  ])
 }

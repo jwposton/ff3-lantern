@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 import sidecar_db
 from api_normalized_transactions import router as api_router
+from routes.cache import router as cache_router
 from routes.categorize import router as categorize_router
 from routes.loans import router as loans_router
 from cors import parse_cors_origins
@@ -22,6 +23,7 @@ app = FastAPI(title="FF3Analytics API", version="1.0.2", lifespan=lifespan)
 app.include_router(api_router, prefix="/api")
 app.include_router(categorize_router, prefix="/api")
 app.include_router(loans_router, prefix="/api")
+app.include_router(cache_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

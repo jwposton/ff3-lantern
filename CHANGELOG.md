@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Firefly reference data cache** — In-process 2h TTL cache for accounts, categories, and budgets; reduces repeated Firefly API calls on transaction and meta endpoints (`FIREFLY_REFERENCE_CACHE_TTL_SECONDS` override)
+- **Clear reference cache** — Refresh icon in the global date bar calls `POST /api/cache/clear` and refreshes normalized transactions, categorize meta, and loan meta
 - **Dashboard budget pie chart legend** — Fixed vertical legend listing all slices (top 15 + Other) with budget name and % share; complements exterior labels on larger slices
+
+### Fixed
+
+- **Categorize rule mode** — Switching to rule mode without running Suggest no longer crashes when rule trigger fields are uninitialized
 
 ### Changed
 

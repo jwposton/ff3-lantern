@@ -9,6 +9,8 @@ from typing import Any, Callable
 
 import httpx
 
+import firefly_reference_cache
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,7 +82,6 @@ class FireflyClient:
         self.api_token = api_token or os.environ.get("FIREFLY_API_TOKEN", "")
         if not self.base_url or not self.api_token:
             raise ValueError("Missing FIREFLY_BASE_URL or FIREFLY_API_TOKEN in environment.")
-        self._accounts: dict[str, dict[str, Any]] | None = None
         self._transport = transport
         self._owns_client = transport is None
 
@@ -106,8 +107,9 @@ class FireflyClient:
         )
 
     async def fetch_accounts(self) -> dict[str, dict[str, Any]]:
-        if self._accounts is not None:
-            return self._accounts
+        cached = firefly_reference_cache.get("accounts")
+        if cached is not None:
+            return cached
         accounts: dict[str, dict[str, Any]] = {}
         page = 1
         async with self._build_client() as client:
@@ -135,7 +137,7 @@ class FireflyClient:
                 if current >= total_pages:
                     break
                 page += 1
-        self._accounts = accounts
+        firefly_reference_cache.set("accounts", accounts)
         return accounts
 
     async def _fetch_paginated_list(
@@ -167,22 +169,32 @@ class FireflyClient:
         return items
 
     async def fetch_categories(self) -> list[dict[str, Any]]:
-        return await self._fetch_paginated_list(
+        cached = firefly_reference_cache.get("categories")
+        if cached is not None:
+            return cached
+        categories = await self._fetch_paginated_list(
             "/api/v1/categories",
             map_item=lambda entry: {
                 "id": str(entry.get("id")),
                 "name": entry.get("attributes", {}).get("name"),
             },
         )
+        firefly_reference_cache.set("categories", categories)
+        return categories
 
     async def fetch_budgets(self) -> list[dict[str, Any]]:
-        return await self._fetch_paginated_list(
+        cached = firefly_reference_cache.get("budgets")
+        if cached is not None:
+            return cached
+        budgets = await self._fetch_paginated_list(
             "/api/v1/budgets",
             map_item=lambda entry: {
                 "id": str(entry.get("id")),
                 "name": entry.get("attributes", {}).get("name"),
             },
         )
+        firefly_reference_cache.set("budgets", budgets)
+        return budgets
 
     async def fetch_rules(self) -> list[dict[str, Any]]:
         return await self._fetch_paginated_list(

@@ -149,6 +149,37 @@ describe("categorize api hooks", () => {
       ),
     ).toBe(true)
   })
+
+  it("rule mode renders without prior suggest", async () => {
+    mockFetch({
+      pending: () => ({
+        data: [PENDING_ROW],
+        meta: { count: 1, ...RANGE, limit: 50 },
+      }),
+      meta: () => ({
+        openrouter_configured: true,
+        categories: [{ id: "1", name: "Shopping" }],
+        budgets: [],
+        default_model: "openai/gpt-4o-mini",
+      }),
+      normalized: () => ({ data: [], firefly_base_url: "https://firefly.example" }),
+    })
+
+    render(
+      <TestProviders>
+        <CategorizePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("AMZN MKTP")).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Rule mode" }))
+
+    expect(screen.getByRole("button", { name: "Preview matches" })).toBeTruthy()
+    expect(screen.getByDisplayValue("Amazon")).toBeTruthy()
+  })
 })
 
 describe("CategorizePage degraded or empty", () => {
