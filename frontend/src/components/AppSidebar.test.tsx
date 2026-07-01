@@ -165,7 +165,7 @@ describe("AppSidebar Manage section", () => {
       expect(screen.getByText("Manage")).toBeTruthy()
     })
     expect(document.querySelector('a[href="/manage/categorize"]')).toBeTruthy()
-    expect(document.querySelector('a[href="/manage/loans"]')).toBeTruthy()
+    expect(document.querySelector('a[href="/manage/loans/queue"]')).toBeTruthy()
   })
 
   it("shows badge with pending count when mock fetch returns nonzero", async () => {

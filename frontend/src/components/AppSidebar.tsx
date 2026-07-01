@@ -101,7 +101,7 @@ const manageNavItems = [
     end: true,
   },
   {
-    to: "/manage/loans",
+    to: "/manage/loans/queue",
     label: "Loans",
     icon: Landmark,
     end: true,
@@ -149,7 +149,7 @@ function ManageNavItems({
 }) {
   const badgeCounts: Record<string, number> = {
     "/manage/categorize": categorizeCount,
-    "/manage/loans": loanSplitCount,
+    "/manage/loans/queue": loanSplitCount,
   }
 
   return (
