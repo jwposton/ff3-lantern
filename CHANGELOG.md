@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-07-01
+
+### Changed
+
+- **Backend container user** — Runs as configurable `PUID`/`PGID` (default `1000:1000`); SQLite sidecar files are created with matching ownership
+- **SQLite sidecar storage** — Host bind mount via `FF3ANALYTICS_DATA_PATH` (default `./data`) replaces the named Docker volume
+- **Compose data path** — `FF3ANALYTICS_DATA_DIR` is fixed at `/data` in `docker-compose.yml` (not set via `.env`) so it cannot drift from the bind mount target
+
+### Fixed
+
+- **v1.1.0 sidecar permissions** — Backend image ran as root, so bind-mounted `ff3analytics.db` was created `root:root`
+
 ## [1.1.0] - 2026-07-01
 
 Firefly write automations: AI categorization and loan payment splits, with a Manage section in the sidebar.
@@ -85,7 +97,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/jwposton/FF3Analytics/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/jwposton/FF3Analytics/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/jwposton/FF3Analytics/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/jwposton/FF3Analytics/compare/v1.0.0...v1.0.1

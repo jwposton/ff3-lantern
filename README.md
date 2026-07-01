@@ -28,6 +28,10 @@ Copy `.env.example` to `.env` and fill in values. **Never commit `.env`** — th
 | `CORS_ALLOWED_ORIGINS` | No | localhost dev fallback | Comma-separated browser origins allowed to call the API directly on `:18001` |
 | `GITHUB_OWNER` | No | `jwposton` | GitHub org/user for ghcr.io image pulls |
 | `FF3ANALYTICS_TAG` | No | `latest` | Image tag when pulling pre-built images from ghcr.io |
+| `FF3ANALYTICS_DATA_PATH` | No | `./data` | Host directory bind-mounted for the SQLite sidecar (`ff3analytics.db` at `{path}/ff3analytics.db`) |
+| `PUID` / `PGID` | No | `1000` / `1000` | UID/GID the backend container runs as; sidecar files are created with this ownership |
+
+Compose mounts that host path to `/data` inside the backend container (fixed in `docker-compose.yml`, not configurable via `.env`).
 
 ### Firefly personal access token
 
@@ -50,7 +54,6 @@ Used by AI categorization and loan split features (v1.1+). See [Automations](#au
 | `OPENROUTER_API_KEY` | No | — | OpenRouter API key for AI suggest; when empty, queue is read-only |
 | `OPENROUTER_MODEL` | No | `openai/gpt-4o-mini` | Model id sent to OpenRouter for categorization |
 | `FF3ANALYTICS_RULE_GROUP` | No | `FF3Analytics AI` | Firefly rule group title for user-approved AI rules |
-| `FF3ANALYTICS_DATA_DIR` | No | `./data` | SQLite sidecar path (suggestion cache + audit log) |
 | `FF3ANALYTICS_AI_TAG` | No | `ai-categorized` | Tag applied on direct apply and AI-created rules |
 | `FF3ANALYTICS_LOAN_SPLITS_SINCE` | No | — | Forward-only start date for loan split queue (`YYYY-MM-DD`) |
 | `FF3ANALYTICS_LOAN_TAG` | No | `loan-split` | Tag applied after loan split apply |
@@ -91,6 +94,9 @@ Works on a LAN or VPN with no reverse proxy — one URL serves the UI and proxie
 ```bash
 cp .env.example .env
 # edit .env with FIREFLY_BASE_URL and FIREFLY_API_TOKEN
+
+mkdir -p data
+chown "${PUID:-1000}:${PGID:-1000}" data   # match PUID/PGID in .env if you change them
 
 docker compose up -d --build
 curl -sf http://localhost:18001/health

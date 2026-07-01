@@ -4,6 +4,7 @@ services:
     container_name: ff3analytics-backend
     build: ./backend
     restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
     ports:
       - "18001:8000"
     env_file:
@@ -13,10 +14,11 @@ services:
       FIREFLY_BASE_URL: ${FIREFLY_BASE_URL:-}
       FIREFLY_API_TOKEN: ${FIREFLY_API_TOKEN:-}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # Fixed at /data — must match the bind mount target below (not set via .env).
       FF3ANALYTICS_DATA_DIR: /data
     volumes:
-      # Persistent SQLite sidecar (AI cache + audit log)
-      - ff3analytics-data:/data
+      # Host path: FF3ANALYTICS_DATA_PATH. Pre-create with matching PUID/PGID.
+      - ${FF3ANALYTICS_DATA_PATH:-./data}:/data
 
   frontend:
     image: ghcr.io/${GITHUB_OWNER:-jwposton}/ff3analytics-frontend:${FF3ANALYTICS_TAG:-latest}
@@ -27,6 +29,3 @@ services:
       - "5174:80"
     depends_on:
       - backend
-
-volumes:
-  ff3analytics-data:
