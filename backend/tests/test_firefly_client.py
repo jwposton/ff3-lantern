@@ -213,3 +213,96 @@ def test_includes_transfer_type():
     flat = asyncio.run(client.fetch_splits("2024-01-01", "2024-01-31"))
     assert any(row["type"] == "transfer" for row in flat)
     assert any(row.get("destination_role") == "Credit card" for row in flat)
+
+
+def test_fetch_categories_returns_id_and_name():
+    payload = {
+        "data": [
+            {"type": "categories", "id": "5", "attributes": {"name": "Food"}},
+            {"type": "categories", "id": "6", "attributes": {"name": "Travel"}},
+        ],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/categories"):
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    categories = asyncio.run(client.fetch_categories())
+    assert len(categories) == 2
+    assert categories[0] == {"id": "5", "name": "Food"}
+    assert categories[1] == {"id": "6", "name": "Travel"}
+
+
+def test_fetch_budgets_returns_id_and_name():
+    payload = {
+        "data": [
+            {"type": "budgets", "id": "10", "attributes": {"name": "Essentials"}},
+        ],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/budgets"):
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    budgets = asyncio.run(client.fetch_budgets())
+    assert budgets == [{"id": "10", "name": "Essentials"}]
+
+
+def test_fetch_rules_returns_id_and_title():
+    payload = {
+        "data": [
+            {"type": "rules", "id": "7", "attributes": {"title": "Auto categorize groceries"}},
+        ],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/rules"):
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    rules = asyncio.run(client.fetch_rules())
+    assert rules == [{"id": "7", "title": "Auto categorize groceries"}]
+
+
+def test_fetch_account_returns_notes():
+    payload = {
+        "data": {
+            "type": "accounts",
+            "id": "42",
+            "attributes": {"name": "Mortgage", "notes": "loan profile here"},
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/accounts/42":
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    account = asyncio.run(client.fetch_account("42"))
+    assert account["id"] == "42"
+    assert account["attributes"]["notes"] == "loan profile here"
