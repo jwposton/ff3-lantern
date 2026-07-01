@@ -137,11 +137,14 @@ class FireflyClient:
                     attrs = entry.get("attributes", {})
                     parent_category = attrs.get("category_name")
                     parent_budget = attrs.get("budget_name")
+                    parent_description = attrs.get("description")
+                    parent_notes = attrs.get("notes")
                     for split in attrs.get("transactions", []):
                         source_id = str(split.get("source_id") or "")
                         dest_id = str(split.get("destination_id") or "")
                         source_acct = accounts.get(source_id, {})
                         dest_acct = accounts.get(dest_id, {})
+                        tjid = split.get("transaction_journal_id")
                         flat.append(
                             {
                                 "journal_id": journal_id,
@@ -157,6 +160,10 @@ class FireflyClient:
                                 "source_name": split.get("source_name"),
                                 "source_role": source_acct.get("role"),
                                 "source_type": source_acct.get("type"),
+                                "description": split.get("description")
+                                or parent_description,
+                                "transaction_journal_id": str(tjid) if tjid is not None else None,
+                                "notes": split.get("notes") or parent_notes,
                             }
                         )
                 pagination = payload.get("meta", {}).get("pagination", {})
