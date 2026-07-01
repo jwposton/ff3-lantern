@@ -92,6 +92,36 @@ def test_cors_default_localhost_origins(monkeypatch, caplog):
     importlib.reload(main)
 
 
+def test_cors_preflight_post_allowed(cors_client):
+    response = cors_client.options(
+        "/api/normalized_transactions",
+        headers={
+            "Origin": "http://localhost:5174",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert response.status_code == 200
+    allow_methods = response.headers.get("access-control-allow-methods", "")
+    assert "POST" in allow_methods
+
+
+def test_cors_preflight_put_allowed(cors_client):
+    response = cors_client.options(
+        "/health",
+        headers={
+            "Origin": "https://analytics.example.com",
+            "Access-Control-Request-Method": "PUT",
+        },
+    )
+    assert response.status_code == 200
+    assert (
+        response.headers.get("access-control-allow-origin")
+        == "https://analytics.example.com"
+    )
+    allow_methods = response.headers.get("access-control-allow-methods", "")
+    assert "PUT" in allow_methods
+
+
 def test_cors_never_wildcard(cors_client):
     response = cors_client.get(
         "/health",
