@@ -7,15 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-07-01
+
 ### Added
 
 - **Favicon** — Custom FF3Analytics icon (three-bar chart motif using app chart colors)
 
 ### Changed
 
-- **Dashboard budget pie chart** — Full pie with exterior labels (hidden below 5% share), taller layout, and canvas renderer
-- **Dashboard budget bar chart** — Legend and grid spacing tweaks
-- **Dashboard budget charts** — Show top 15 budgets instead of 20
+- **Dashboard budget pie chart** — Solid full pie (top 15 + Other), taller layout, exterior labels on slices ≥5% share, no scroll legend
+- **Dashboard budget bar chart** — Top 15 budgets, tooltip-only values, legend and grid spacing tweaks
 
 ## [1.1.6] - 2026-07-01
 
@@ -157,7 +158,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.6...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.7...HEAD
+[1.1.7]: https://github.com/jwposton/FF3Analytics/compare/v1.1.6...v1.1.7
 [1.1.6]: https://github.com/jwposton/FF3Analytics/compare/v1.1.5...v1.1.6
 [1.1.5]: https://github.com/jwposton/FF3Analytics/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/jwposton/FF3Analytics/compare/v1.1.3...v1.1.4
