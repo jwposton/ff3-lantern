@@ -25,7 +25,8 @@ FF3Analytics should **detect** matching lump payments, **calculate** principal/i
 - Auto-import from bank (SimpleFin continues as today)
 - ARM / variable-rate modeling beyond manual profile updates
 - Penny-perfect splits without optional statement override
-- Historical backfill (optional later; forward-only at launch is acceptable)
+- Historical backfill of past unsplit payments (forward-only from launch)
+- Multi-line escrow breakdown (tax / insurance / HOA as separate splits — deferred; v1 uses one escrow expense account)
 
 ## Architecture
 
@@ -139,7 +140,7 @@ principal           = payment_amount - monthly_interest - escrow
 | Current balance | Principal component `destination_account_id` (liability) |
 | Annual rate, start date, original principal | Firefly liability account fields |
 | Payment amount | Matched transaction (or `expected_amount`) |
-| Escrow | Loan profile config (not derivable from amortization) |
+| Escrow | Loan profile config — **single `escrow_amount` + one expense destination** in v1 (not split into tax / insurance / HOA lines) |
 | Per-component destination accounts | Loan profile `split.components[]` (Firefly account id + name) |
 
 **Sanity checks:**
@@ -167,7 +168,7 @@ A payment of `$X` from checking becomes one journal with multiple splits. Each c
 | Principal | `$XXX.XX` | `transfer` | Checking → `Lending Tree Acct XXXXYY` |
 | Interest | `$xx.xx` | `withdrawal` | Checking → `Lending Tree Interest Acct XXXXYY` |
 
-With escrow, add a third withdrawal split to the configured escrow expense account.
+With escrow, add a third withdrawal split to the configured **single** escrow expense account (one line, one amount — not tax/insurance/HOA breakdown in v1).
 
 | Component | Firefly type | Typical destination account type |
 |-----------|-------------|-----------------------------------|
@@ -274,9 +275,9 @@ Stored in the **principal liability account** notes as JSON (the account used fo
 
 | Surface | Purpose |
 |---------|---------|
-| `/manage/loans` or sidebar **Loans** | List liability accounts with profiles |
-| Loan profile editor | Match fingerprint (generic payee), expected amount; **per-component account picker** (principal / interest / escrow) |
-| Split queue | Pending matches with proposed breakdown; Apply / Edit / Dismiss |
+| Sidebar **Loans** → `/manage/loans` | List liability accounts with profiles; **badge** shows pending split count |
+| Loan profile editor | Match fingerprint (generic payee), expected amount, **single escrow amount**; per-component account picker (principal / interest / escrow) |
+| **Split queue** (tab or `/manage/loans/queue`) | Primary pending-work surface; poll Firefly on open |
 | Loan detail (optional) | Amortization schedule chart/table |
 
 ## API sketch (for implementation)
@@ -304,7 +305,7 @@ Query `pending` over a date range (default: current month + previous month).
 ### Flow 2 — Monthly split (recurring)
 
 1. Bank import creates lump transfer in Firefly
-2. User opens Split queue (or dashboard badge)
+2. User opens **Split queue** via sidebar **Loans** (badge shows pending count)
 3. Sees: “Loan Provider — $427.18” with proposed lines, e.g. `$400.00 → Lending Tree Acct XXXXYY`, `$27.18 → Lending Tree Interest Acct XXXXYY`
 4. Clicks **Apply** → Firefly journal rewritten with splits to configured accounts
 5. Analytics immediately reflect correct categories on next fetch
@@ -322,9 +323,13 @@ Query `pending` over a date range (default: current month + previous month).
 | **B** | Matcher + amortization calc; preview API (no write) |
 | **C** | Split queue UI + apply to Firefly |
 | **D** | Amortization schedule on loan detail page |
-| **E** | Auto-queue on fetch / webhook; optional auto-apply for high confidence |
+| **E** | Optional auto-apply for high confidence (deferred; v1 requires explicit Apply) |
 
 Start with **A + B + C** (assist mode). Semi-auto and schedule are follow-ons.
+
+**Queue refresh (v1):** Poll Firefly when user opens the split queue (or Loans page); no webhooks, no cron. Match only **forward** from feature launch — no historical backfill tool in v1.
+
+**Slice B gate:** Live Firefly fixture test must confirm liability balance semantics (pre- vs post-payment) before slice **C** (apply writes) ships.
 
 ## Edge cases
 
@@ -353,13 +358,19 @@ Once splits exist in Firefly, the existing OMNI pipeline needs no special cases:
 - Validate account ids and amounts server-side before PATCH
 - Never log full token or raw account notes in production logs
 
-## Open questions (resolve during GSD planning)
+## Resolved decisions
 
-1. Escrow: single expense account vs split into tax / insurance categories?
-2. Forward-only vs one-time historical backfill tool?
-3. Dashboard widget vs dedicated queue page for pending splits?
-4. Webhook from Firefly vs poll on page load / cron?
-5. Confirm Firefly liability balance semantics (pre-payment vs post-payment) with a live fixture test
+Captured 2026-06-30 during design review.
+
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | Escrow modeling | **Single escrow expense account** in v1 — one `escrow_amount` + one destination; multi-component tax/insurance/HOA split deferred |
+| 2 | Historical backfill | **Forward-only** from launch — no queue for past unsplit lump payments in v1 |
+| 3 | Pending split discovery UX | **Dedicated split queue page** + **sidebar badge** on Loans; no dashboard widget in v1 |
+| 4 | Queue refresh mechanism | **Poll when opening split queue** (or Loans page); no Firefly webhooks or cron in v1 |
+| 5 | Liability balance semantics | **Fixture test gates slice C** — verify pre- vs post-payment balance with live Firefly before apply writes ship |
+
+**Approval invariant:** Same as AI categorize — user must explicitly **Apply** each split; no silent Firefly writes.
 
 ## References
 

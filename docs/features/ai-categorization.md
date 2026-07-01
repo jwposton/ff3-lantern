@@ -57,7 +57,7 @@ Existing analytics pipeline reads updated rows on next fetch
 |---------|--------|
 | Transactions, categories, budgets, rules | Firefly III |
 | OpenRouter API key, model selection, prompt templates | FF3Analytics backend (env + config) |
-| Suggestion cache / review queue state | FF3Analytics (ephemeral or SQLite; see below) |
+| Suggestion cache / review queue state | FF3Analytics SQLite sidecar (see [Resolved decisions](#resolved-decisions)) |
 | Review / apply UX | FF3Analytics frontend |
 
 **No Firefly-side config blob** is required for this feature (unlike loan profiles). Optional: store user preferences (default model, auto-suggest on load) in a small FF3Analytics config file or env.
@@ -91,23 +91,26 @@ Optional date window: default **last 90 days** + user-selected range; cap batch 
 Use when the payee looks **one-off** or the user only wants to fix this row.
 
 - `PUT /api/v1/transactions/{journal_id}` with full split payload
-- Set `category_name` / `category_id` (and optionally `budget_name` / `budget_id`) on the relevant split line(s)
+- Set `category_name` / `category_id` (and `budget_name` / `budget_id` when AI suggested and user kept it) on the relevant split line(s)
+- Add tag **`ai-categorized`** on the journal (create tag in Firefly if missing)
 - Set `apply_rules: false` on update to avoid double-processing while editing
 - Include every split's `transaction_journal_id` (same constraint as loan splits)
+- **User must click Approve** — no silent or batch auto-apply
 
 ### Mode B — Create Firefly rule (recurring pattern)
 
 Use when the same description fragment appears on **multiple** uncategorized rows, or the model confidence is high that it will recur.
 
+- **User must explicitly approve every rule** — FF3Analytics never creates or activates rules without a confirm click on the rule draft (title, triggers, actions). No background rule creation.
 - `POST /api/v1/rules` with:
   - `trigger`: `store-journal` (runs on new/edited transactions)
   - `triggers`: e.g. `description_contains: "AMZN MKTP"` (+ optional `transaction_type: withdrawal`)
-  - `actions`: `set_category` (and optionally `set_budget`, `add_tag`)
-  - `rule_group_title`: e.g. `FF3Analytics AI` (create group if missing)
-- After user approval, optionally **`POST /api/v1/rules/{id}/trigger`** over a date range to backfill matching uncategorized rows
-- Before create, **`GET /api/v1/rules/{id}/test`** (or pre-create dry-run via duplicate trigger logic) to show how many existing rows would match
+  - `actions`: `set_category`; `set_budget` when AI suggested and user kept it in the draft; **`add_tag: ai-categorized`** always
+  - `rule_group_title`: from `FF3ANALYTICS_RULE_GROUP` env (default `FF3Analytics AI`; create group if missing)
+- After user approval, **optional** backfill via **`POST /api/v1/rules/{id}/trigger`** — checkbox **default OFF**; user opts in after seeing test-hit count
+- Before create, preview match count against cached splits (or **`GET /api/v1/rules/{id}/test`** post-create for verification)
 
-**User choice:** Review UI shows AI recommendation (`direct` vs `rule`) but user can override. Approving a rule does not require approving every matching row individually — but the test-hit count must be visible first.
+**User choice:** Review UI shows AI recommendation (`direct` vs `rule`) but user can override. Rule path still requires one explicit **Create rule** approval — user does not approve each future matching row individually, but must review the full rule draft and test-hit summary first.
 
 ### When AI should prefer a rule
 
@@ -128,8 +131,10 @@ Use when the same description fragment appears on **multiple** uncategorized row
 | Env var | Purpose |
 |---------|---------|
 | `OPENROUTER_API_KEY` | Server-side only; never exposed to frontend |
-| `OPENROUTER_MODEL` | Default model slug (e.g. `anthropic/claude-sonnet-4`, `openai/gpt-4o-mini`) |
+| `OPENROUTER_MODEL` | Default `openai/gpt-4o-mini`; override via env for harder merchants |
 | `OPENROUTER_BASE_URL` | Optional override (default `https://openrouter.ai/api/v1`) |
+| `FF3ANALYTICS_RULE_GROUP` | Firefly rule group title (default `FF3Analytics AI`) |
+| `FF3ANALYTICS_AI_TAG` | Tag applied on AI writes (default `ai-categorized`) |
 
 Add to `.env.example`; document in README. Feature disabled gracefully when key missing (queue shows "AI not configured").
 
@@ -204,7 +209,7 @@ Validate response server-side: category ∈ allowed list, budget ∈ allowed lis
 
 - Debounce: user clicks **Suggest** (or **Refresh suggestions**), not on every page load by default
 - Cap concurrent OpenRouter calls (e.g. 3) with queue progress UI
-- Store last suggestion per `journal_id` + model in local cache to avoid re-billing on revisit
+- Store last suggestion per `journal_id` + model in **SQLite** to avoid re-billing on revisit or container restart
 - Optional setting: max spend / max rows per session
 
 ## Review queue UX
@@ -245,8 +250,8 @@ Each item shows:
 2. User edits trigger substring (e.g. trim to `AMZN MKTP`)
 3. UI calls rule **test** endpoint → "Would match 8 transactions (3 uncategorized)"
 4. User clicks **Create rule** → `POST /api/v1/rules`
-5. Optional: **Apply rule to existing** → `POST /rules/{id}/trigger` for date range
-6. Matching uncategorized items cleared from queue
+5. Optional (checkbox **unchecked by default**): **Apply rule to existing** → `POST /rules/{id}/trigger` for date range
+6. Matching uncategorized items cleared from queue (and future imports tagged via rule)
 
 **Flow 3 — Dismiss**
 
@@ -331,9 +336,11 @@ Query `pending` with `start`, `end`, `limit`, `group_by_fingerprint=true`.
 | **C** | Direct apply (PUT transaction) with approval |
 | **D** | Rule preview + create + optional trigger backfill |
 | **E** | Fingerprint grouping, similar-example context, duplicate-rule detection |
-| **F** | Budget suggestions; optional auto-suggest on cron |
+| **F** | Auto-suggest on cron (deferred; v1 is poll + manual Suggest only) |
 
 Start with **A + B + C** (manual suggest + direct apply). Rule creation (**D**) is the high-leverage follow-on for recurring imports.
+
+**Queue refresh (v1):** Poll Firefly on categorize page load for pending rows; AI runs only when user clicks **Suggest** (no webhooks, no auto-suggest on load).
 
 ## Edge cases
 
@@ -365,15 +372,21 @@ Once categories are applied in Firefly:
 - User must explicitly click Approve — no silent writes
 - Audit log (local): `{ timestamp, journal_id, action, category_id, rule_id?, model }`
 
-## Open questions (resolve during GSD planning)
+## Resolved decisions
 
-1. Store suggestion cache in SQLite vs in-memory (restart loss)?
-2. Default model: quality vs cost (`gpt-4o-mini` vs Sonnet)?
-3. Should rule create also set budget, or category-only v1?
-4. Backfill on rule create: opt-in checkbox default on or off?
-5. Integrate with Firefly's native "webhooks" for new imports vs poll on page load?
-6. Allow proposer to create **tag** actions (`add_tag: ai-categorized`) for audit trail in Firefly?
-7. Shared rule group name — `FF3Analytics AI` vs user-configurable?
+Captured 2026-06-30 during design review.
+
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | Suggestion cache storage | **SQLite** sidecar in FF3Analytics — persists suggestions + audit log across restarts |
+| 2 | Default OpenRouter model | **`openai/gpt-4o-mini`** — upgrade via `OPENROUTER_MODEL` env when needed |
+| 3 | Rule actions (after user approval) | **`set_category` + `set_budget` when AI suggested and user kept it** in the rule draft; never auto-create rules |
+| 4 | Backfill on rule create | **Opt-in, default OFF** — show test-hit count; user checks box to trigger |
+| 5 | Discover new uncategorized rows | **Poll on categorize page load** + **manual Suggest**; no Firefly webhooks in v1 |
+| 6 | Audit tag in Firefly | **Always** — `add_tag: ai-categorized` on direct apply and on every AI-created rule |
+| 7 | Rule group name | Default **`FF3Analytics AI`**, overridable via **`FF3ANALYTICS_RULE_GROUP`** env |
+
+**Approval invariant:** Every write to Firefly (transaction update or rule create) requires an explicit user **Approve** / **Create rule** click. AI proposes only; FF3Analytics never writes autonomously.
 
 ## References
 
