@@ -54,9 +54,22 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _ensure_data_dir(data_dir: Path) -> None:
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError as exc:
+        hint = (
+            f"Cannot create or write data directory at {data_dir.resolve()!s}. "
+            "Docker images use /data (bind-mount FF3ANALYTICS_DATA_PATH on the host). "
+            "Pre-create the host directory with chown matching PUID/PGID (default 1000:1000). "
+            "For local uvicorn outside Docker, set FF3ANALYTICS_DATA_DIR=./data."
+        )
+        raise PermissionError(hint) from exc
+
+
 async def init_db() -> None:
     data_dir = get_data_dir()
-    data_dir.mkdir(parents=True, exist_ok=True)
+    _ensure_data_dir(data_dir)
     async with aiosqlite.connect(get_db_path()) as db:
         await db.executescript(_SCHEMA)
         await db.commit()
@@ -65,7 +78,7 @@ async def init_db() -> None:
 async def is_writable() -> bool:
     try:
         data_dir = get_data_dir()
-        data_dir.mkdir(parents=True, exist_ok=True)
+        _ensure_data_dir(data_dir)
         probe = data_dir / ".write_probe"
         probe.write_text("ok")
         probe.unlink(missing_ok=True)

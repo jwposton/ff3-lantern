@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-07-01
+
+### Changed
+
+- **Sidecar data path** — Backend image sets `FF3ANALYTICS_DATA_DIR=/data`; deploys only configure the host bind mount (`FF3ANALYTICS_DATA_PATH`)
+- **Frontend nginx** — Re-resolves `backend` via Docker DNS on each proxy request (no stale IP after backend recreate)
+- **Compose** — Backend healthcheck; frontend starts after backend is healthy
+
+### Fixed
+
+- **Pull-only deploy crash** — Backend without `FF3ANALYTICS_DATA_DIR` defaulted to `./data` in `/app` and failed with permission denied instead of using the `/data` volume
+- **502 after upgrade** — nginx proxied to a cached backend container IP after `docker compose up`
+
 ## [1.1.1] - 2026-07-01
 
 ### Changed
@@ -97,7 +110,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/jwposton/FF3Analytics/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/jwposton/FF3Analytics/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/jwposton/FF3Analytics/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/jwposton/FF3Analytics/compare/v1.0.1...v1.0.2

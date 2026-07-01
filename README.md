@@ -31,7 +31,7 @@ Copy `.env.example` to `.env` and fill in values. **Never commit `.env`** — th
 | `FF3ANALYTICS_DATA_PATH` | No | `./data` | Host directory bind-mounted for the SQLite sidecar (`ff3analytics.db` at `{path}/ff3analytics.db`) |
 | `PUID` / `PGID` | No | `1000` / `1000` | UID/GID the backend container runs as; sidecar files are created with this ownership |
 
-Compose mounts that host path to `/data` inside the backend container (fixed in `docker-compose.yml`, not configurable via `.env`).
+The backend image sets `FF3ANALYTICS_DATA_DIR=/data` internally; compose only configures the host bind mount via `FF3ANALYTICS_DATA_PATH`.
 
 ### Firefly personal access token
 
@@ -169,8 +169,10 @@ In both cases:
 ```bash
 cd backend
 pip install -r requirements.txt -r requirements-dev.txt
-pytest tests/ -q
+FF3ANALYTICS_DATA_DIR=./data pytest tests/ -q
 ```
+
+Local `uvicorn` (outside Docker) also uses `./data` unless you set `FF3ANALYTICS_DATA_DIR`.
 
 ## Verification
 
