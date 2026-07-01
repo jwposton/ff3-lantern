@@ -1,0 +1,12 @@
+# Local dev with Vite hot reload:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5174:5173"
+    environment:
+      VITE_BACKEND_URL: http://backend:8000
