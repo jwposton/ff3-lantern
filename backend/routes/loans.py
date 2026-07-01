@@ -4,14 +4,34 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from firefly_client import FireflyClient
 from loan_profile_validate import validate_profile
 from loan_profiles import parse_loan_profile_from_notes, write_loan_profile
+from loan_splits_queue import build_pending_loan_splits
 
 router = APIRouter()
+
+
+def _parse_date_range(start: str, end: str) -> tuple[str, str]:
+    from datetime import datetime
+
+    try:
+        start_dt = datetime.strptime(start, "%Y-%m-%d").date()
+        end_dt = datetime.strptime(end, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail="Dates must be in YYYY-MM-DD format."
+        ) from None
+    if start_dt > end_dt:
+        raise HTTPException(status_code=422, detail="start must be on or before end.")
+    if (end_dt - start_dt).days > 1095:
+        raise HTTPException(
+            status_code=422, detail="Date range cannot exceed 3 years."
+        )
+    return start, end
 
 
 def get_firefly_client() -> FireflyClient:
@@ -136,3 +156,20 @@ async def put_loan(
             detail=f"Failed to save loan profile: {exc}",
         ) from exc
     return {"ok": True, "profile": validated}
+
+
+@router.get("/loan-splits/pending")
+async def get_loan_splits_pending(
+    start: str = Query(..., description="Start date YYYY-MM-DD"),
+    end: str = Query(..., description="End date YYYY-MM-DD"),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    _parse_date_range(start, end)
+    try:
+        data, meta = await build_pending_loan_splits(client, start, end)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to build loan splits queue: {exc}",
+        ) from exc
+    return {"data": data, "meta": meta}

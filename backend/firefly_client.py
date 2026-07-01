@@ -202,6 +202,22 @@ class FireflyClient:
         journal = await self.fetch_transaction(group_id)
         attrs = journal.get("attributes", {})
         updated_attrs = mutate_fn(deepcopy(attrs))
+        original_ids = {
+            str(t.get("transaction_journal_id"))
+            for t in attrs.get("transactions", [])
+            if t.get("transaction_journal_id") is not None
+        }
+        put_txns = updated_attrs.get("transactions", [])
+        put_ids = {
+            str(t.get("transaction_journal_id"))
+            for t in put_txns
+            if t.get("transaction_journal_id") is not None
+        }
+        if original_ids and original_ids != put_ids:
+            raise ValueError(
+                "mutate_fn must preserve all transaction_journal_id values; "
+                f"expected {original_ids}, got {put_ids}"
+            )
         put_body = {
             "apply_rules": False,
             "transactions": updated_attrs.get("transactions", []),
@@ -281,6 +297,8 @@ class FireflyClient:
                                 "journal_id": journal_id,
                                 "type": split.get("type"),
                                 "amount": split.get("amount"),
+                                "source_id": source_id,
+                                "destination_id": dest_id,
                                 "category_name": split.get("category_name")
                                 or parent_category,
                                 "budget_name": split.get("budget_name") or parent_budget,
