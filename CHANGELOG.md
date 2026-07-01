@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-07-01
+
+### Changed
+
+- **CI:** Native split-matrix Docker builds (`ubuntu-latest` amd64 + `ubuntu-24.04-arm` arm64) without QEMU emulation; manifests merged via `buildx imagetools`
+
 ## [1.0.1] - 2026-07-01
 
 ### Added
@@ -36,6 +42,7 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/jwposton/FF3Analytics/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/jwposton/FF3Analytics/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jwposton/FF3Analytics/releases/tag/v1.0.0

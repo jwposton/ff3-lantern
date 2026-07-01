@@ -25,12 +25,21 @@ jobs:
         run: cd backend && pytest -q
 
   build-backend:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     needs: test-backend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -39,32 +48,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/metadata-action@v5
-        id: meta
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/ff3analytics-backend
-          tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest
+      - name: Resolve per-arch tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "value=${GITHUB_REF#refs/tags/v}-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=latest-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: docker/build-push-action@v6
         with:
           context: ./backend
           file: ./backend/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ghcr.io/${{ github.repository_owner }}/ff3analytics-backend:${{ steps.tag.outputs.value }}
+          cache-from: type=gha,scope=backend-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=backend-${{ matrix.arch }}
 
-  build-frontend:
+  merge-backend:
     runs-on: ubuntu-latest
-    needs: test-backend
+    needs: build-backend
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -73,21 +79,95 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/metadata-action@v5
-        id: meta
+      - name: Resolve release version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "value=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge backend multi-arch manifest
+        run: |
+          owner="${{ github.repository_owner }}"
+          version="${{ steps.version.outputs.value }}"
+          docker buildx imagetools create \
+            -t "ghcr.io/${owner}/ff3analytics-backend:${version}" \
+            -t "ghcr.io/${owner}/ff3analytics-backend:latest" \
+            "ghcr.io/${owner}/ff3analytics-backend:${version}-amd64" \
+            "ghcr.io/${owner}/ff3analytics-backend:${version}-arm64"
+
+  build-frontend:
+    runs-on: ${{ matrix.runner }}
+    needs: test-backend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
         with:
-          images: ghcr.io/${{ github.repository_owner }}/ff3analytics-frontend
-          tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve per-arch tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "value=${GITHUB_REF#refs/tags/v}-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=latest-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: docker/build-push-action@v6
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ghcr.io/${{ github.repository_owner }}/ff3analytics-frontend:${{ steps.tag.outputs.value }}
+          cache-from: type=gha,scope=frontend-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=frontend-${{ matrix.arch }}
+
+  merge-frontend:
+    runs-on: ubuntu-latest
+    needs: build-frontend
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve release version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "value=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge frontend multi-arch manifest
+        run: |
+          owner="${{ github.repository_owner }}"
+          version="${{ steps.version.outputs.value }}"
+          docker buildx imagetools create \
+            -t "ghcr.io/${owner}/ff3analytics-frontend:${version}" \
+            -t "ghcr.io/${owner}/ff3analytics-frontend:latest" \
+            "ghcr.io/${owner}/ff3analytics-frontend:${version}-amd64" \
+            "ghcr.io/${owner}/ff3analytics-frontend:${version}-arm64"
