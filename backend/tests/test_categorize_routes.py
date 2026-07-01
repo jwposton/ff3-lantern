@@ -194,6 +194,118 @@ def test_meta_openrouter_flag(client, firefly_env, monkeypatch):
         app.dependency_overrides.clear()
 
 
+def test_rules_preview_returns_counts(client, firefly_env, monkeypatch):
+    from main import app
+    from routes import categorize as cat_mod
+
+    async def _preview(*_args, **_kwargs):
+        return {"total": 5, "uncategorized_count": 2, "categorized_count": 3}
+
+    class _StubClient:
+        pass
+
+    app.dependency_overrides[cat_mod.get_firefly_client] = lambda: _StubClient()
+    monkeypatch.setattr(cat_mod, "preview_rule_matches", _preview)
+    try:
+        response = client.post(
+            "/api/categorize/rules/preview",
+            json={
+                "start": "2024-06-01",
+                "end": "2024-06-30",
+                "rule": {
+                    "title": "Amazon",
+                    "description_contains": "AMZN",
+                    "transaction_type": "withdrawal",
+                },
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["uncategorized_count"] == 2
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_rules_create_returns_rule_id(client, firefly_env, monkeypatch):
+    from main import app
+    from routes import categorize as cat_mod
+
+    async def _create(*_args, **_kwargs):
+        return {"id": "88", "title": "Amazon"}
+
+    app.dependency_overrides[cat_mod.get_firefly_client] = lambda: object()
+    monkeypatch.setattr(cat_mod, "create_approved_rule", _create)
+    try:
+        response = client.post(
+            "/api/categorize/rules",
+            json={
+                "start": "2024-06-01",
+                "end": "2024-06-30",
+                "category_id": "1",
+                "rule": {
+                    "title": "Amazon",
+                    "description_contains": "AMZN",
+                    "transaction_type": None,
+                },
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["rule_id"] == "88"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_rules_create_duplicate_409(client, firefly_env, monkeypatch):
+    from categorization_rules import DuplicateRuleError
+    from main import app
+    from routes import categorize as cat_mod
+
+    async def _create(*_args, **_kwargs):
+        raise DuplicateRuleError([{"id": "7", "title": "Existing"}])
+
+    app.dependency_overrides[cat_mod.get_firefly_client] = lambda: object()
+    monkeypatch.setattr(cat_mod, "create_approved_rule", _create)
+    try:
+        response = client.post(
+            "/api/categorize/rules",
+            json={
+                "start": "2024-06-01",
+                "end": "2024-06-30",
+                "category_id": "1",
+                "rule": {
+                    "title": "Amazon",
+                    "description_contains": "AMZN",
+                    "transaction_type": None,
+                },
+            },
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"]["existing_rules"][0]["id"] == "7"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_rules_trigger_endpoint(client, firefly_env, monkeypatch):
+    from main import app
+    from routes import categorize as cat_mod
+
+    triggered: list[str] = []
+
+    async def _trigger(_client, rule_id, start, end):
+        triggered.append(rule_id)
+
+    app.dependency_overrides[cat_mod.get_firefly_client] = lambda: object()
+    monkeypatch.setattr(cat_mod, "trigger_backfill", _trigger)
+    try:
+        response = client.post(
+            "/api/categorize/rules/55/trigger",
+            json={"start": "2024-06-01", "end": "2024-06-30"},
+        )
+        assert response.status_code == 200
+        assert triggered == ["55"]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_meta_openrouter_configured(client, firefly_env, monkeypatch):
     from main import app
     from routes import categorize as cat_mod

@@ -163,8 +163,47 @@ class FireflyClient:
             map_item=lambda entry: {
                 "id": str(entry.get("id")),
                 "title": entry.get("attributes", {}).get("title"),
+                "triggers": entry.get("attributes", {}).get("triggers") or [],
             },
         )
+
+    async def fetch_rule_groups(self) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            "/api/v1/rule-groups",
+            map_item=lambda entry: {
+                "id": str(entry.get("id")),
+                "title": entry.get("attributes", {}).get("title"),
+            },
+        )
+
+    async def create_rule(self, rule_body: dict[str, Any]) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.post("/api/v1/rules", json=rule_body)
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            payload = response.json()
+            data = payload.get("data", {})
+            attrs = data.get("attributes", {})
+            return {
+                "id": str(data.get("id")),
+                "title": attrs.get("title"),
+            }
+
+    async def trigger_rule(
+        self, rule_id: str, start: str, end: str
+    ) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.post(
+                f"/api/v1/rules/{rule_id}/trigger",
+                json={"start": start, "end": end},
+            )
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            return response.json()
 
     async def fetch_account(self, account_id: str) -> dict[str, Any]:
         async with self._build_client() as client:

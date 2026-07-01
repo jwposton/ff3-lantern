@@ -11,6 +11,13 @@ from pydantic import BaseModel, Field
 
 from categorize_queue import build_grouped_pending_queue, build_pending_queue
 from categorization_apply import apply_category, validate_apply_ids
+from categorization_models import RuleDraft
+from categorization_rules import (
+    DuplicateRuleError,
+    create_approved_rule,
+    preview_rule_matches,
+    trigger_backfill,
+)
 from categorization_suggest import suggest_batch
 from firefly_client import FireflyClient
 
@@ -178,3 +185,87 @@ async def post_categorize_apply(
             detail=f"Firefly apply failed: {exc}",
         ) from exc
     return {"ok": True, "journal_id": journal_id}
+
+
+class RulePreviewRequest(BaseModel):
+    start: str
+    end: str
+    rule: RuleDraft
+
+
+class RuleCreateRequest(BaseModel):
+    start: str
+    end: str
+    rule: RuleDraft
+    category_id: str
+    budget_id: str | None = None
+
+
+class RuleTriggerRequest(BaseModel):
+    start: str
+    end: str
+
+
+@router.post("/categorize/rules/preview")
+async def post_categorize_rules_preview(
+    body: RulePreviewRequest,
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    _parse_date_range(body.start, body.end)
+    try:
+        counts = await preview_rule_matches(
+            client, body.start, body.end, body.rule
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Rule preview failed: {exc}",
+        ) from exc
+    return {"data": counts}
+
+
+@router.post("/categorize/rules")
+async def post_categorize_rules_create(
+    body: RuleCreateRequest,
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    _parse_date_range(body.start, body.end)
+    try:
+        created = await create_approved_rule(
+            client,
+            body.rule,
+            body.category_id,
+            body.budget_id,
+        )
+    except DuplicateRuleError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "Duplicate rule", "existing_rules": exc.conflicts},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Rule create failed: {exc}",
+        ) from exc
+    return {"data": {"rule_id": created["id"], "title": created.get("title")}}
+
+
+@router.post("/categorize/rules/{rule_id}/trigger")
+async def post_categorize_rules_trigger(
+    rule_id: str,
+    body: RuleTriggerRequest,
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    _parse_date_range(body.start, body.end)
+    try:
+        await trigger_backfill(client, rule_id, body.start, body.end)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Rule trigger failed: {exc}",
+        ) from exc
+    return {"ok": True, "rule_id": rule_id}
