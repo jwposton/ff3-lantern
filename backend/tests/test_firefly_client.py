@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -106,6 +107,25 @@ def test_split_journal_produces_two_rows():
     )
     flat = asyncio.run(client.fetch_splits("2024-01-01", "2024-01-31"))
     assert len(flat) == 2
+    journal_ids = {row["transaction_journal_id"] for row in flat}
+    assert journal_ids == {"2001", "2002"}
+
+
+def test_withdrawal_fixture_includes_description_and_transaction_journal_id():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/accounts"):
+            return httpx.Response(200, json=load_fixture("accounts.json"))
+        return httpx.Response(200, json=load_fixture("transactions_withdrawal.json"))
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    flat = asyncio.run(client.fetch_splits("2024-01-01", "2024-01-31"))
+    assert len(flat) == 1
+    assert flat[0]["description"] == "Weekly groceries"
+    assert flat[0]["transaction_journal_id"] == "1001"
 
 
 def test_cc_withdrawal_source_role_is_credit_card():
@@ -194,3 +214,172 @@ def test_includes_transfer_type():
     flat = asyncio.run(client.fetch_splits("2024-01-01", "2024-01-31"))
     assert any(row["type"] == "transfer" for row in flat)
     assert any(row.get("destination_role") == "Credit card" for row in flat)
+
+
+def test_fetch_categories_returns_id_and_name():
+    payload = {
+        "data": [
+            {"type": "categories", "id": "5", "attributes": {"name": "Food"}},
+            {"type": "categories", "id": "6", "attributes": {"name": "Travel"}},
+        ],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/categories"):
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    categories = asyncio.run(client.fetch_categories())
+    assert len(categories) == 2
+    assert categories[0] == {"id": "5", "name": "Food"}
+    assert categories[1] == {"id": "6", "name": "Travel"}
+
+
+def test_fetch_budgets_returns_id_and_name():
+    payload = {
+        "data": [
+            {"type": "budgets", "id": "10", "attributes": {"name": "Essentials"}},
+        ],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/budgets"):
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    budgets = asyncio.run(client.fetch_budgets())
+    assert budgets == [{"id": "10", "name": "Essentials"}]
+
+
+def test_fetch_rules_returns_id_and_title():
+    payload = {
+        "data": [
+            {"type": "rules", "id": "7", "attributes": {"title": "Auto categorize groceries"}},
+        ],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/rules"):
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    rules = asyncio.run(client.fetch_rules())
+    assert rules == [{"id": "7", "title": "Auto categorize groceries", "triggers": []}]
+
+
+def test_create_rule_posts_active_body():
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/rules" and request.method == "POST":
+            seen.append(json.loads(request.content.decode()))
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "12",
+                        "attributes": {"title": seen[-1]["title"]},
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    body = {
+        "rule_group_title": "FF3Analytics AI",
+        "title": "Amazon",
+        "trigger": "store-journal",
+        "active": True,
+        "triggers": [{"type": "description_contains", "value": "AMZN"}],
+        "actions": [{"type": "set_category", "value": "Shopping"}],
+    }
+    result = asyncio.run(client.create_rule(body))
+    assert result == {"id": "12", "title": "Amazon"}
+    assert seen[0]["active"] is True
+
+
+def test_trigger_rule_posts_date_range():
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/rules/12/trigger" and request.method == "POST":
+            seen.append(json.loads(request.content.decode()))
+            return httpx.Response(200, json={"message": "triggered"})
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    asyncio.run(client.trigger_rule("12", "2024-01-01", "2024-01-31"))
+    assert seen == [{"start": "2024-01-01", "end": "2024-01-31"}]
+
+
+def test_fetch_rule_groups_returns_id_and_title():
+    payload = {
+        "data": [
+            {"type": "rule_groups", "id": "3", "attributes": {"title": "FF3Analytics AI"}},
+        ],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/rule-groups"):
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    groups = asyncio.run(client.fetch_rule_groups())
+    assert groups == [{"id": "3", "title": "FF3Analytics AI"}]
+
+
+def test_fetch_account_returns_notes():
+    payload = {
+        "data": {
+            "type": "accounts",
+            "id": "42",
+            "attributes": {"name": "Mortgage", "notes": "loan profile here"},
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/accounts/42":
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    account = asyncio.run(client.fetch_account("42"))
+    assert account["id"] == "42"
+    assert account["attributes"]["notes"] == "loan profile here"

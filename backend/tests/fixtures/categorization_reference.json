@@ -1,0 +1,66 @@
+{
+  "categories": ["Groceries", "Dining", "Shopping", "Entertainment", "Utilities", "Income", "Gas", "Healthcare"],
+  "budgets": ["Food", "Fun", "Household", "Transport"],
+  "examples": [
+    {
+      "description": "AMZN MKTP US*AB12",
+      "destination_name": "Amazon",
+      "type": "withdrawal",
+      "category": "Shopping",
+      "budget": "Household"
+    },
+    {
+      "description": "NETFLIX.COM",
+      "destination_name": "Netflix",
+      "type": "withdrawal",
+      "category": "Entertainment",
+      "budget": "Fun"
+    },
+    {
+      "description": "SAFEWAY #1234",
+      "destination_name": "Safeway",
+      "type": "withdrawal",
+      "category": "Groceries",
+      "budget": "Food"
+    },
+    {
+      "description": "SHELL OIL",
+      "destination_name": "Shell",
+      "type": "withdrawal",
+      "category": "Gas",
+      "budget": "Transport"
+    },
+    {
+      "description": "PAYPAL *MERCHANT",
+      "destination_name": "PayPal",
+      "type": "withdrawal",
+      "category": "Shopping",
+      "budget": "Household"
+    },
+    {
+      "description": "POS PURCHASE",
+      "destination_name": "Unknown",
+      "type": "withdrawal",
+      "category": "Shopping",
+      "budget": null
+    },
+    {
+      "description": "ACME CORP PAYROLL",
+      "destination_name": "Checking",
+      "type": "deposit",
+      "category": "Income",
+      "budget": null
+    },
+    {
+      "description": "INTEREST PAYMENT",
+      "destination_name": "Savings",
+      "type": "deposit",
+      "category": "Income",
+      "budget": null
+    }
+  ],
+  "near_miss": {
+    "invalid_category": "Grocery",
+    "valid_category": "Groceries"
+  }
+}

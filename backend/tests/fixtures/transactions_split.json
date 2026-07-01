@@ -16,7 +16,9 @@
             "destination_name": "Grocery Store",
             "date": "2024-01-10T08:00:00+00:00",
             "category_name": null,
-            "budget_name": null
+            "budget_name": null,
+            "transaction_journal_id": "2001",
+            "description": "Split part A"
           },
           {
             "type": "withdrawal",
@@ -27,7 +29,9 @@
             "destination_name": "Grocery Store",
             "date": "2024-01-10T08:00:00+00:00",
             "category_name": null,
-            "budget_name": null
+            "budget_name": null,
+            "transaction_journal_id": "2002",
+            "description": "Split part B"
           }
         ]
       }

@@ -1,0 +1,9 @@
+{
+  "assumption": "pre_payment",
+  "example_balance": "50000.00",
+  "example_rate_percent": "6.5",
+  "example_payment": "427.18",
+  "expected_interest": "270.83",
+  "expected_principal": "156.35",
+  "notes": "Use liability current_balance as pre-payment principal for interest calculation when matched payment is already posted."
+}

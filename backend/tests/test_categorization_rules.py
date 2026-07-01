@@ -1,0 +1,204 @@
+"""Tests for rule preview, create, and trigger logic."""
+
+from __future__ import annotations
+
+import ast
+import json
+from pathlib import Path
+
+import httpx
+import pytest
+
+from categorization_models import RuleDraft
+from categorization_rules import (
+    DuplicateRuleError,
+    build_firefly_rule_body,
+    create_approved_rule,
+    find_duplicate_rules,
+    preview_rule_matches,
+    trigger_backfill,
+)
+from firefly_client import FireflyClient
+
+
+def test_build_firefly_rule_body_includes_active_and_tag(monkeypatch):
+    monkeypatch.setenv("FF3ANALYTICS_RULE_GROUP", "Test Group")
+    monkeypatch.setenv("FF3ANALYTICS_AI_TAG", "ai-tagged")
+    draft = RuleDraft(
+        title="Amazon",
+        description_contains="AMZN MKTP",
+        transaction_type="withdrawal",
+    )
+    body = build_firefly_rule_body(draft, "Shopping", "Discretionary")
+    assert body["active"] is True
+    assert body["trigger"] == "store-journal"
+    assert body["rule_group_title"] == "Test Group"
+    assert body["triggers"] == [
+        {"type": "description_contains", "value": "AMZN MKTP"},
+        {"type": "transaction_type", "value": "withdrawal"},
+    ]
+    assert body["actions"] == [
+        {"type": "set_category", "value": "Shopping"},
+        {"type": "set_budget", "value": "Discretionary"},
+        {"type": "add_tag", "value": "ai-tagged"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_matches_counts():
+    splits = [
+        {
+            "type": "withdrawal",
+            "description": "AMZN MKTP US",
+            "category_name": None,
+        },
+        {
+            "type": "withdrawal",
+            "description": "amzn mktp order",
+            "category_name": "Shopping",
+        },
+        {
+            "type": "withdrawal",
+            "description": "SAFEWAY",
+            "category_name": None,
+        },
+    ]
+
+    class _Client:
+        async def fetch_splits(self, start, end):
+            return splits
+
+    draft = RuleDraft(
+        title="Amazon",
+        description_contains="AMZN",
+        transaction_type="withdrawal",
+    )
+    result = await preview_rule_matches(_Client(), "2024-01-01", "2024-01-31", draft)
+    assert result == {"total": 2, "uncategorized_count": 1, "categorized_count": 1}
+
+
+@pytest.mark.asyncio
+async def test_find_duplicate_rules_ignores_short_title_substring_of_needle():
+    """Existing short titles must not block when only title-in-needle would match."""
+    class _Client:
+        async def fetch_rules(self):
+            return [
+                {
+                    "id": "9",
+                    "title": "Pay",
+                    "triggers": [],
+                }
+            ]
+
+    draft = RuleDraft(
+        title="Vendor payment",
+        description_contains="Payment to Vendor",
+        transaction_type=None,
+    )
+    conflicts = await find_duplicate_rules(_Client(), draft)
+    assert conflicts == []
+
+
+@pytest.mark.asyncio
+async def test_find_duplicate_rules_by_trigger():
+    class _Client:
+        async def fetch_rules(self):
+            return [
+                {
+                    "id": "5",
+                    "title": "Grocery rule",
+                    "triggers": [
+                        {"type": "description_contains", "value": "AMZN MKTP"}
+                    ],
+                }
+            ]
+
+    draft = RuleDraft(
+        title="New Amazon",
+        description_contains="amzn mktp",
+        transaction_type=None,
+    )
+    conflicts = await find_duplicate_rules(_Client(), draft)
+    assert len(conflicts) == 1
+    assert conflicts[0]["id"] == "5"
+
+
+@pytest.mark.asyncio
+async def test_create_approved_rule_posts_and_audits(monkeypatch, tmp_path):
+    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    posted: list[dict] = []
+
+    class _Client:
+        async def fetch_categories(self):
+            return [{"id": "1", "name": "Shopping"}]
+
+        async def fetch_budgets(self):
+            return [{"id": "2", "name": "Fun"}]
+
+        async def fetch_rules(self):
+            return []
+
+        async def create_rule(self, body):
+            posted.append(body)
+            return {"id": "99", "title": body["title"]}
+
+    draft = RuleDraft(
+        title="Amazon",
+        description_contains="AMZN",
+        transaction_type="withdrawal",
+    )
+    created = await create_approved_rule(_Client(), draft, "1", "2")
+    assert created["id"] == "99"
+    assert posted[0]["active"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_duplicate_raises():
+    class _Client:
+        async def fetch_categories(self):
+            return [{"id": "1", "name": "Shopping"}]
+
+        async def fetch_budgets(self):
+            return []
+
+        async def fetch_rules(self):
+            return [{"id": "7", "title": "AMZN rule", "triggers": []}]
+
+    draft = RuleDraft(
+        title="Amazon dup",
+        description_contains="AMZN",
+        transaction_type=None,
+    )
+    with pytest.raises(DuplicateRuleError):
+        await create_approved_rule(_Client(), draft, "1")
+
+
+@pytest.mark.asyncio
+async def test_trigger_backfill_audits(monkeypatch, tmp_path):
+    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    triggered: list[tuple[str, str, str]] = []
+
+    class _Client:
+        async def trigger_rule(self, rule_id, start, end):
+            triggered.append((rule_id, start, end))
+            return {"ok": True}
+
+    await trigger_backfill(_Client(), "42", "2024-01-01", "2024-01-31")
+    assert triggered == [("42", "2024-01-01", "2024-01-31")]
+
+
+def test_suggest_pipeline_does_not_import_rule_writes():
+    """Approval invariant: AI suggest path must not call rule create/trigger."""
+    backend = Path(__file__).resolve().parent.parent
+    for rel in ("categorization_suggest.py", "openrouter_client.py"):
+        source = (backend / rel).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        names = {
+            node.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name)
+        }
+        assert "create_rule" not in names
+        assert "trigger_rule" not in names
+        assert "create_approved_rule" not in names
+        assert "trigger_backfill" not in names

@@ -41,6 +41,49 @@ Set `FIREFLY_BASE_URL` to your Firefly instance URL, e.g. `https://firefly.examp
 
 **Production deep links:** Sankey and transaction links use `firefly_base_url` returned by the API at runtime from `FIREFLY_BASE_URL`. No frontend build-time `VITE_FIREFLY_BASE_URL` is required in production.
 
+### Automation environment variables
+
+Used by AI categorization and loan split features (v1.1+). See [Automations](#automations) below.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OPENROUTER_API_KEY` | No | — | OpenRouter API key for AI suggest; when empty, queue is read-only |
+| `OPENROUTER_MODEL` | No | `openai/gpt-4o-mini` | Model id sent to OpenRouter for categorization |
+| `FF3ANALYTICS_RULE_GROUP` | No | `FF3Analytics AI` | Firefly rule group title for user-approved AI rules |
+| `FF3ANALYTICS_DATA_DIR` | No | `./data` | SQLite sidecar path (suggestion cache + audit log) |
+| `FF3ANALYTICS_AI_TAG` | No | `ai-categorized` | Tag applied on direct apply and AI-created rules |
+| `FF3ANALYTICS_LOAN_SPLITS_SINCE` | No | — | Forward-only start date for loan split queue (`YYYY-MM-DD`) |
+| `FF3ANALYTICS_LOAN_TAG` | No | `loan-split` | Tag applied after loan split apply |
+
+## Automations
+
+FF3Analytics **proposes** categorizations and loan splits; **you approve** every write. Firefly III remains the system of record — nothing is written without an explicit click in the Manage UI.
+
+### Manage routes
+
+| Route | Purpose |
+|-------|---------|
+| `/manage/categorize` | Uncategorized queue, AI suggest, direct category apply, or graduate to a Firefly rule |
+| `/manage/loans` | Loan profile editor and payment split review queue |
+
+### Approval workflow
+
+- **No autonomous writes** — OpenRouter and rule engines only suggest; apply/create endpoints run after user action.
+- When `OPENROUTER_API_KEY` is missing, the categorize queue still loads but **Suggest** is hidden (read-only).
+- Direct apply updates one transaction (`PUT` via Firefly API) and tags it with `FF3ANALYTICS_AI_TAG`.
+- **Rule graduation:** edit title and `description_contains`, run **Preview matches** to see test-hit counts, then **Create rule**. Rules are created in `FF3ANALYTICS_RULE_GROUP` with category, optional budget, and the AI tag action.
+- **Backfill is opt-in, default off** — a checkbox applies the rule to existing transactions in the selected date range via a separate trigger call only after you check it.
+- Loan splits apply forward from `FF3ANALYTICS_LOAN_SPLITS_SINCE`; loan profiles live in Firefly account notes (no sidecar profile DB).
+
+### Health
+
+`GET /health` reports `openrouter_configured` and `sidecar_writable` so operators can verify automation prerequisites without opening the UI.
+
+### Design references
+
+- [AI-assisted categorization & rules](docs/features/ai-categorization.md)
+- [Loan & mortgage payment split automation](docs/features/loan-payment-splits.md)
+
 ## Quick start (standalone)
 
 Works on a LAN or VPN with no reverse proxy — one URL serves the UI and proxied API.
@@ -156,13 +199,6 @@ Runs prod-default `docker compose up -d --build`, waits for backend health (`:18
 - `FIREFLY_API_TOKEN` must be the raw token string, not wrapped in quotes with extra whitespace.
 - `FIREFLY_BASE_URL` should be the Firefly **web** URL (e.g. `https://firefly.example.com`), not the API path.
 - Never commit `.env` or paste tokens into issue trackers.
-
-## Feature designs
-
-Planned capabilities documented outside the core app:
-
-- [Loan & mortgage payment split automation](docs/features/loan-payment-splits.md)
-- [AI-assisted categorization & rules](docs/features/ai-categorization.md)
 
 ## Icon attributions
 

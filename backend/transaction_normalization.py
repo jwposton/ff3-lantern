@@ -2,7 +2,25 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+_DIGIT_RUN = re.compile(r"\d+")
+_PUNCT_RUN = re.compile(r"[^\w\s]+", re.UNICODE)
+_WHITESPACE = re.compile(r"\s+")
+
+
+def description_fingerprint(description: str) -> str:
+    """Normalize merchant description for queue grouping (not rule triggers)."""
+    if not description or not description.strip():
+        return ""
+    text = description.lower()
+    if "*" in text:
+        text = text.split("*", 1)[0]
+    text = _DIGIT_RUN.sub(" ", text)
+    text = _PUNCT_RUN.sub(" ", text)
+    text = _WHITESPACE.sub(" ", text).strip()
+    return text
 
 OMNI_KEYS = (
     "amount",
@@ -75,6 +93,47 @@ def normalize_transactions(flat_splits: list[dict[str, Any]]) -> list[dict[str, 
         }
         out.append(assign_transfer_labels(record))
     return out
+
+
+def _empty_to_none(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
+def _preview_normalized_category(flat_split: dict[str, Any]) -> str | None:
+    """Category after OMNI normalization (including transfer pseudo-labels)."""
+    budget = _empty_to_none(flat_split.get("budget_name") or flat_split.get("budget"))
+    category = _empty_to_none(
+        flat_split.get("category_name") or flat_split.get("category")
+    )
+    record: dict[str, Any] = {
+        "type": flat_split.get("type"),
+        "source_type": flat_split.get("source_type"),
+        "source_role": flat_split.get("source_role"),
+        "destination_account": flat_split.get("destination_name")
+        or flat_split.get("destination_account"),
+        "destination_type": flat_split.get("destination_type"),
+        "destination_role": flat_split.get("destination_role"),
+        "budget": budget if budget else None,
+        "category": category if category else None,
+    }
+    return assign_transfer_labels(record).get("category")
+
+
+def is_uncategorized_for_queue(flat_split: dict[str, Any]) -> bool:
+    """True when a withdrawal/deposit lacks category and is not transfer-like."""
+    tx_type = flat_split.get("type")
+    if tx_type not in ("withdrawal", "deposit"):
+        return False
+    cat = flat_split.get("category_name") or flat_split.get("category")
+    if _empty_to_none(cat) is not None:
+        return False
+    if _preview_normalized_category(flat_split):
+        return False
+    return True
 
 
 def spending_withdrawal_total(rows: list[dict[str, Any]]) -> float:

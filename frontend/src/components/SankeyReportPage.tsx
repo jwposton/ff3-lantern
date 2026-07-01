@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
+import { useNavigate } from "react-router-dom"
 
 import { SankeyChart } from "@/components/SankeyChart"
 import { Button } from "@/components/ui/button"
 import { useDateRange } from "@/context/DateRangeContext"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
+import {
+  buildCategorizeQueuePath,
+  isUncategorizedDisplayName,
+} from "@/lib/manageNav"
 import {
   buildDateRangeFilters,
   buildFireflyFilters,
@@ -109,6 +114,7 @@ export function SankeyReportPage({
   drilldownResetKey,
   topN,
 }: SankeyReportPageProps) {
+  const navigate = useNavigate()
   const { committedRange } = useDateRange()
   const { start: committedStart, end: committedEnd } = committedRange
   const { isPending, isError, isSuccess, data, refetch } =
@@ -202,8 +208,12 @@ export function SankeyReportPage({
 
   const handleSubchartNodeFirefly = useCallback(
     (nodeName: string) => {
-      if (!fireflyBaseUrl) return
       const displayName = subchartNodeDisplay[nodeName] ?? nodeName
+      if (isUncategorizedDisplayName(displayName)) {
+        navigate(buildCategorizeQueuePath(committedStart, committedEnd))
+        return
+      }
+      if (!fireflyBaseUrl) return
       const nodeFilter =
         drilldownMode === "cashflow"
           ? getCashFlowNodeQueryString(nodeName, displayName)
@@ -212,19 +222,43 @@ export function SankeyReportPage({
       const filters = [...dateFilters, nodeFilter].filter(Boolean).join(" ")
       openFireflySearch(fireflyBaseUrl, filters)
     },
-    [fireflyBaseUrl, dateFilters, subchartNodeDisplay, drilldownMode],
+    [
+      fireflyBaseUrl,
+      dateFilters,
+      subchartNodeDisplay,
+      drilldownMode,
+      navigate,
+      committedStart,
+      committedEnd,
+    ],
   )
 
-  const handleMainNodeClick = (nodeName: string) => {
-    if (!enableDrilldown) return
-    if (drilldownMode === "cashflow") {
-      const parsed = parseCashFlowNodeSelection(nodeName, mainData.nodes)
-      if (parsed) setSelectedNode(parsed)
-    } else {
-      const parsed = parseNodeSelection(nodeName, mainNodeDisplay)
-      if (parsed) setSelectedNode(parsed)
-    }
-  }
+  const handleMainNodeClick = useCallback(
+    (nodeName: string) => {
+      if (!enableDrilldown) return
+      const displayName = mainNodeDisplay[nodeName] ?? nodeName
+      if (isUncategorizedDisplayName(displayName)) {
+        navigate(buildCategorizeQueuePath(committedStart, committedEnd))
+        return
+      }
+      if (drilldownMode === "cashflow") {
+        const parsed = parseCashFlowNodeSelection(nodeName, mainData.nodes)
+        if (parsed) setSelectedNode(parsed)
+      } else {
+        const parsed = parseNodeSelection(nodeName, mainNodeDisplay)
+        if (parsed) setSelectedNode(parsed)
+      }
+    },
+    [
+      enableDrilldown,
+      mainNodeDisplay,
+      navigate,
+      committedStart,
+      committedEnd,
+      drilldownMode,
+      mainData.nodes,
+    ],
+  )
 
   return (
     <div className="space-y-8">

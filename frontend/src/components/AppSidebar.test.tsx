@@ -1,12 +1,64 @@
-import { cleanup, render } from "@testing-library/react"
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import type { ReactNode } from "react"
 
+import { DateRangeProvider } from "@/context/DateRangeContext"
 import { SidebarProvider } from "@/components/ui/sidebar"
+import { useManageQueueCounts } from "@/hooks/useManageQueueCounts"
 
 import { AppSidebar } from "./AppSidebar"
 
-beforeAll(() => {
+const RANGE = { start: "2024-06-01", end: "2024-06-30" }
+
+function TestProviders({
+  children,
+  initialEntries = [`/?start=${RANGE.start}&end=${RANGE.end}`],
+}: {
+  children: ReactNode
+  initialEntries?: string[]
+}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={initialEntries}>
+        <DateRangeProvider>
+          <SidebarProvider>{children}</SidebarProvider>
+        </DateRangeProvider>
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+}
+
+function mockPendingFetch(categorizeCount: number, loanSplitCount: number) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input)
+    if (url.includes("/api/categorize/pending")) {
+      return new Response(
+        JSON.stringify({
+          data: [],
+          meta: { count: categorizeCount, ...RANGE, limit: 50 },
+        }),
+        { status: 200 },
+      )
+    }
+    if (url.includes("/api/loan-splits/pending")) {
+      return new Response(
+        JSON.stringify({
+          data: [],
+          meta: { count: loanSplitCount, ...RANGE, forward_only_since: RANGE.start },
+        }),
+        { status: 200 },
+      )
+    }
+    return new Response("not found", { status: 404 })
+  })
+}
+
+beforeEach(() => {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -24,11 +76,9 @@ beforeAll(() => {
 
 function renderSidebar(initialEntry: string) {
   return render(
-    <MemoryRouter initialEntries={[initialEntry]}>
-      <SidebarProvider>
-        <AppSidebar />
-      </SidebarProvider>
-    </MemoryRouter>
+    <TestProviders initialEntries={[initialEntry]}>
+      <AppSidebar />
+    </TestProviders>,
   )
 }
 
@@ -50,9 +100,107 @@ function expectActive(path: string, active: boolean) {
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
+})
+
+describe("useManageQueueCounts", () => {
+  function HookProbe() {
+    const counts = useManageQueueCounts()
+    return (
+      <div
+        data-testid="counts"
+        data-categorize={counts.categorizeCount}
+        data-loans={counts.loanSplitCount}
+        data-loading={counts.isLoading}
+      />
+    )
+  }
+
+  it("returns correct counts for a fixed date range", async () => {
+    mockPendingFetch(3, 2)
+
+    render(
+      <TestProviders>
+        <HookProbe />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const el = screen.getByTestId("counts")
+      expect(el.getAttribute("data-categorize")).toBe("3")
+      expect(el.getAttribute("data-loans")).toBe("2")
+    })
+  })
+
+  it("returns zero counts when APIs return empty data with count 0", async () => {
+    mockPendingFetch(0, 0)
+
+    render(
+      <TestProviders>
+        <HookProbe />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const el = screen.getByTestId("counts")
+      expect(el.getAttribute("data-categorize")).toBe("0")
+      expect(el.getAttribute("data-loans")).toBe("0")
+    })
+  })
+})
+
+describe("AppSidebar Manage section", () => {
+  beforeEach(() => {
+    mockPendingFetch(0, 0)
+  })
+
+  it("renders Manage group with Categorize and Loans links", async () => {
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Manage")).toBeTruthy()
+    })
+    expect(document.querySelector('a[href="/manage/categorize"]')).toBeTruthy()
+    expect(document.querySelector('a[href="/manage/loans/queue"]')).toBeTruthy()
+  })
+
+  it("shows badge with pending count when mock fetch returns nonzero", async () => {
+    mockPendingFetch(5, 0)
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("5")).toBeTruthy()
+    })
+  })
+
+  it("omits badge when count is zero", async () => {
+    mockPendingFetch(0, 0)
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-sidebar="menu-badge"]')).toBeNull()
+    })
+  })
 })
 
 describe("AppSidebar active nav state", () => {
+  beforeEach(() => {
+    mockPendingFetch(0, 0)
+  })
   it("highlights Spending Bar on /reports/spending", () => {
     renderSidebar("/reports/spending")
     expectActive("/reports/spending", true)

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from copy import deepcopy
+from typing import Any, Callable
 
 import httpx
 
@@ -110,6 +111,202 @@ class FireflyClient:
         self._accounts = accounts
         return accounts
 
+    async def _fetch_paginated_list(
+        self,
+        path: str,
+        *,
+        map_item: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        page = 1
+        async with self._build_client() as client:
+            while True:
+                response = await client.get(
+                    path, params={"limit": 1000, "page": page}
+                )
+                if response.status_code != 200:
+                    raise RuntimeError(
+                        f"Firefly API error {response.status_code}: {response.text}"
+                    )
+                payload = response.json()
+                for entry in payload.get("data", []):
+                    items.append(map_item(entry))
+                pagination = payload.get("meta", {}).get("pagination", {})
+                current = pagination.get("current_page", 1)
+                total_pages = pagination.get("total_pages", 1)
+                if current >= total_pages:
+                    break
+                page += 1
+        return items
+
+    async def fetch_categories(self) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            "/api/v1/categories",
+            map_item=lambda entry: {
+                "id": str(entry.get("id")),
+                "name": entry.get("attributes", {}).get("name"),
+            },
+        )
+
+    async def fetch_budgets(self) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            "/api/v1/budgets",
+            map_item=lambda entry: {
+                "id": str(entry.get("id")),
+                "name": entry.get("attributes", {}).get("name"),
+            },
+        )
+
+    async def fetch_rules(self) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            "/api/v1/rules",
+            map_item=lambda entry: {
+                "id": str(entry.get("id")),
+                "title": entry.get("attributes", {}).get("title"),
+                "triggers": entry.get("attributes", {}).get("triggers") or [],
+            },
+        )
+
+    async def fetch_rule_groups(self) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            "/api/v1/rule-groups",
+            map_item=lambda entry: {
+                "id": str(entry.get("id")),
+                "title": entry.get("attributes", {}).get("title"),
+            },
+        )
+
+    async def create_rule(self, rule_body: dict[str, Any]) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.post("/api/v1/rules", json=rule_body)
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            payload = response.json()
+            data = payload.get("data", {})
+            attrs = data.get("attributes", {})
+            return {
+                "id": str(data.get("id")),
+                "title": attrs.get("title"),
+            }
+
+    async def trigger_rule(
+        self, rule_id: str, start: str, end: str
+    ) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.post(
+                f"/api/v1/rules/{rule_id}/trigger",
+                json={"start": start, "end": end},
+            )
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            return response.json()
+
+    async def fetch_account(self, account_id: str) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.get(f"/api/v1/accounts/{account_id}")
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            payload = response.json()
+            data = payload.get("data", {})
+            return {
+                "id": str(data.get("id")),
+                "attributes": data.get("attributes", {}),
+            }
+
+    async def fetch_transaction(self, group_id: str) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.get(f"/api/v1/transactions/{group_id}")
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            payload = response.json()
+            data = payload.get("data", {})
+            return {
+                "id": str(data.get("id")),
+                "attributes": data.get("attributes", {}),
+            }
+
+    async def update_transaction(
+        self,
+        group_id: str,
+        mutate_fn: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> dict[str, Any]:
+        journal = await self.fetch_transaction(group_id)
+        attrs = journal.get("attributes", {})
+        updated_attrs = mutate_fn(deepcopy(attrs))
+        original_ids = {
+            str(t.get("transaction_journal_id"))
+            for t in attrs.get("transactions", [])
+            if t.get("transaction_journal_id") is not None
+        }
+        put_txns = updated_attrs.get("transactions", [])
+        put_ids = {
+            str(t.get("transaction_journal_id"))
+            for t in put_txns
+            if t.get("transaction_journal_id") is not None
+        }
+        if original_ids and original_ids != put_ids:
+            raise ValueError(
+                "mutate_fn must preserve all transaction_journal_id values; "
+                f"expected {original_ids}, got {put_ids}"
+            )
+        put_body: dict[str, Any] = {
+            "apply_rules": False,
+            "transactions": updated_attrs.get("transactions", []),
+        }
+        txns = put_body["transactions"]
+        if len(txns) > 1:
+            put_body["group_title"] = (
+                updated_attrs.get("group_title")
+                or attrs.get("group_title")
+                or (txns[0].get("description") if txns else None)
+                or "Split transaction"
+            )
+        tags = updated_attrs.get("tags")
+        if tags:
+            put_body["tags"] = tags
+        async with self._build_client() as client:
+            response = await client.put(
+                f"/api/v1/transactions/{group_id}",
+                json=put_body,
+            )
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            payload = response.json()
+            data = payload.get("data", {})
+            return {
+                "id": str(data.get("id")),
+                "attributes": data.get("attributes", {}),
+            }
+
+    async def update_account(
+        self, account_id: str, attributes: dict[str, Any]
+    ) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.put(
+                f"/api/v1/accounts/{account_id}",
+                json=attributes,
+            )
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            payload = response.json()
+            data = payload.get("data", {})
+            return {
+                "id": str(data.get("id")),
+                "attributes": data.get("attributes", {}),
+            }
+
     async def fetch_splits(self, start: str, end: str) -> list[dict[str, Any]]:
         accounts = await self.fetch_accounts()
         flat: list[dict[str, Any]] = []
@@ -137,16 +334,21 @@ class FireflyClient:
                     attrs = entry.get("attributes", {})
                     parent_category = attrs.get("category_name")
                     parent_budget = attrs.get("budget_name")
+                    parent_description = attrs.get("description")
+                    parent_notes = attrs.get("notes")
                     for split in attrs.get("transactions", []):
                         source_id = str(split.get("source_id") or "")
                         dest_id = str(split.get("destination_id") or "")
                         source_acct = accounts.get(source_id, {})
                         dest_acct = accounts.get(dest_id, {})
+                        tjid = split.get("transaction_journal_id")
                         flat.append(
                             {
                                 "journal_id": journal_id,
                                 "type": split.get("type"),
                                 "amount": split.get("amount"),
+                                "source_id": source_id,
+                                "destination_id": dest_id,
                                 "category_name": split.get("category_name")
                                 or parent_category,
                                 "budget_name": split.get("budget_name") or parent_budget,
@@ -157,6 +359,10 @@ class FireflyClient:
                                 "source_name": split.get("source_name"),
                                 "source_role": source_acct.get("role"),
                                 "source_type": source_acct.get("type"),
+                                "description": split.get("description")
+                                or parent_description,
+                                "transaction_journal_id": str(tjid) if tjid is not None else None,
+                                "notes": split.get("notes") or parent_notes,
                             }
                         )
                 pagination = payload.get("meta", {}).get("pagination", {})

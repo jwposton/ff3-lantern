@@ -28,6 +28,19 @@ def test_health_env_presence_booleans_unset(client):
     data = response.json()
     assert data["firefly_base_url_configured"] is False
     assert data["firefly_api_token_configured"] is False
+    assert data["openrouter_configured"] is False
+    assert data["sidecar_writable"] is True
+
+
+def test_health_openrouter_and_sidecar_flags(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    from main import app
+
+    response = TestClient(app).get("/health")
+    data = response.json()
+    assert data["openrouter_configured"] is True
+    assert data["sidecar_writable"] is True
 
 
 def test_health_env_presence_booleans_set(monkeypatch):
@@ -44,12 +57,15 @@ def test_health_env_presence_booleans_set(monkeypatch):
 def test_health_does_not_leak_secrets(client, monkeypatch):
     monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example/")
     monkeypatch.setenv("FIREFLY_API_TOKEN", "secret-token")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret")
     from main import app
 
     response = TestClient(app).get("/health")
     body = json.dumps(response.json())
     assert "secret-token" not in body
+    assert "sk-or-secret" not in body
     assert "https://firefly.example" not in body
     assert "firefly_base_url" not in response.json()
     assert "firefly_api_token" not in response.json()
     assert "FIREFLY_API_TOKEN" not in body
+    assert "OPENROUTER_API_KEY" not in body
