@@ -2,6 +2,8 @@
 
 Self-hosted analytics UI for a personal [Firefly III](https://www.firefly-iii.org/) instance. Pick a date range and explore spending trends, Sankey flows, month-over-month variance, and transaction drilldowns.
 
+Release notes: [CHANGELOG.md](CHANGELOG.md)
+
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose v2

@@ -8,6 +8,7 @@ import {
 } from "lucide-react"
 import { NavLink } from "react-router-dom"
 
+import { AppVersionBadge } from "@/components/AppVersionBadge"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
 import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
 
@@ -155,6 +156,9 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
+        <div className="flex items-center justify-center px-2 py-1 group-data-[collapsible=icon]:hidden">
+          <AppVersionBadge className="text-[10px]" />
+        </div>
         <SidebarMenu>
           <SidebarMenuItem>
             <NavLink to="/about" className="contents">
