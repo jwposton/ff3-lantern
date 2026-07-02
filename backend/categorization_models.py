@@ -15,6 +15,7 @@ class RuleDraft(BaseModel):
     destination_account: str | None = None
     destination_match_type: DestinationMatchType = "is"
     transaction_type: Literal["withdrawal", "deposit"] | None = None
+    amount: str | None = None
 
 
 def validate_rule_triggers(draft: RuleDraft) -> None:
@@ -75,6 +76,7 @@ SUGGESTION_JSON_SCHEMA: dict = {
                     "type": ["string", "null"],
                     "enum": ["withdrawal", "deposit", None],
                 },
+                "amount": {"type": ["string", "null"]},
             },
             "required": [
                 "title",
@@ -82,6 +84,7 @@ SUGGESTION_JSON_SCHEMA: dict = {
                 "destination_account",
                 "destination_match_type",
                 "transaction_type",
+                "amount",
             ],
             "additionalProperties": False,
         },

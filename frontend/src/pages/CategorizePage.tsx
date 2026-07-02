@@ -42,6 +42,7 @@ type CardState = {
   ruleDestinationAccount: string
   ruleDestinationMatchType: DestinationMatchType
   ruleTransactionType: "" | "withdrawal" | "deposit"
+  ruleAmount: string
   preview: RulePreviewCounts | null
   previewError?: string
   ruleError?: string
@@ -55,8 +56,15 @@ function hasRuleTrigger(state: CardState | undefined): boolean {
   )
 }
 
+function defaultRuleAmount(amount: string | undefined): string {
+  if (!amount) return ""
+  const parsed = Math.abs(parseFloat(amount))
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : ""
+}
+
 function ruleDraftFromState(state: CardState): RuleDraft {
   const txType = state.ruleTransactionType
+  const amount = (state.ruleAmount ?? "").trim()
   return {
     title: state.ruleTitle ?? "",
     description_contains: state.ruleDescriptionContains ?? "",
@@ -64,6 +72,7 @@ function ruleDraftFromState(state: CardState): RuleDraft {
     destination_match_type: state.ruleDestinationMatchType ?? "is",
     transaction_type:
       txType === "withdrawal" || txType === "deposit" ? txType : null,
+    amount: amount || null,
   }
 }
 
@@ -112,12 +121,16 @@ function defaultCardState(
     budgetId: "",
     mode,
     ruleTitle: suggestion?.rule?.title ?? "",
-    ruleDescriptionContains: suggestion?.rule?.description_contains ?? "",
+    ruleDescriptionContains: row?.description ?? "",
     ruleDestinationAccount:
       suggestion?.rule?.destination_account ?? row?.destination_name ?? "",
     ruleDestinationMatchType:
       suggestion?.rule?.destination_match_type ?? "is",
     ruleTransactionType: suggestion?.rule?.transaction_type ?? rowType,
+    ruleAmount:
+      suggestion?.rule?.amount != null
+        ? defaultRuleAmount(suggestion.rule.amount)
+        : defaultRuleAmount(row?.amount),
     preview: null,
     backfillOptIn: false,
   }
@@ -141,6 +154,7 @@ function TransactionCard({
   onRuleDestinationChange,
   onRuleDestinationMatchTypeChange,
   onRuleTransactionTypeChange,
+  onRuleAmountChange,
   onBackfillChange,
   onApprove,
   onPreview,
@@ -172,6 +186,7 @@ function TransactionCard({
     journalId: string,
     value: "" | "withdrawal" | "deposit",
   ) => void
+  onRuleAmountChange: (journalId: string, value: string) => void
   onBackfillChange: (journalId: string, checked: boolean) => void
   onApprove: (row: PendingRow) => void
   onPreview: (journalId: string) => void
@@ -294,8 +309,7 @@ function TransactionCard({
         {mode === "rule" ? (
           <div className="space-y-3 rounded-lg border p-3">
             <p className="text-xs text-muted-foreground">
-              Rule matches when every condition below is met. Use destination
-              account (payee) when the bank description is generic.
+              Rule matches when every condition below is met.
             </p>
             <label className="flex flex-col gap-1 text-xs font-medium">
               Rule title
@@ -308,16 +322,26 @@ function TransactionCard({
               />
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium">
-              Description contains
+              Description
+              <input
+                className={inputClassName()}
+                value={state?.ruleDescriptionContains ?? ""}
+                readOnly
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium">
+              Amount (optional)
               <span className="font-normal text-muted-foreground">
-                Bank statement text: &ldquo;{row.description}&rdquo;
+                Transaction amount: {row.amount}
               </span>
               <input
                 className={inputClassName()}
-                placeholder="e.g. AMZN MKTP (optional if payee is set)"
-                value={state?.ruleDescriptionContains ?? ""}
+                type="text"
+                inputMode="decimal"
+                placeholder="Leave blank to match any amount"
+                value={state?.ruleAmount ?? ""}
                 onChange={(e) => {
-                  onRuleDescriptionChange(row.journal_id, e.target.value)
+                  onRuleAmountChange(row.journal_id, e.target.value)
                 }}
               />
             </label>
@@ -796,6 +820,18 @@ export function CategorizePage() {
     }))
   }
 
+  function updateRuleAmount(journalId: string, value: string) {
+    setCardState((prev) => ({
+      ...prev,
+      [journalId]: {
+        ...prev[journalId],
+        ruleAmount: value,
+        preview: null,
+        previewError: undefined,
+      },
+    }))
+  }
+
   function updateBackfill(journalId: string, checked: boolean) {
     setCardState((prev) => ({
       ...prev,
@@ -937,6 +973,7 @@ export function CategorizePage() {
                   onRuleDestinationChange={updateRuleDestination}
                   onRuleDestinationMatchTypeChange={updateRuleDestinationMatchType}
                   onRuleTransactionTypeChange={updateRuleTransactionType}
+                  onRuleAmountChange={updateRuleAmount}
                   onBackfillChange={updateBackfill}
                   onApprove={handleApprove}
                   onPreview={handlePreview}
@@ -987,6 +1024,7 @@ export function CategorizePage() {
                         onRuleDestinationChange={updateRuleDestination}
                   onRuleDestinationMatchTypeChange={updateRuleDestinationMatchType}
                         onRuleTransactionTypeChange={updateRuleTransactionType}
+                        onRuleAmountChange={updateRuleAmount}
                         onBackfillChange={updateBackfill}
                         onApprove={handleApprove}
                         onPreview={handlePreview}

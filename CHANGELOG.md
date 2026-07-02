@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.12] - 2026-07-02
+
+### Added
+
+- **Categorize rule amount trigger** — Optional exact amount on rule preview and create (Firefly `amount_exactly`); defaults to the transaction amount and can be cleared to match any amount
+
+### Changed
+
+- **Categorize rule description** — Rule trigger always uses the transaction bank description verbatim; removed AI substring extraction, generic-description fallbacks, and payee substitution for the description field
+- **Categorize rule editor** — Description is read-only and shown separately from the editable rule title
+
 ## [1.1.11] - 2026-07-01
 
 ### Added
@@ -211,7 +222,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.11...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.12...HEAD
+[1.1.12]: https://github.com/jwposton/FF3Analytics/compare/v1.1.11...v1.1.12
 [1.1.11]: https://github.com/jwposton/FF3Analytics/compare/v1.1.10...v1.1.11
 [1.1.10]: https://github.com/jwposton/FF3Analytics/compare/v1.1.9...v1.1.10
 [1.1.9]: https://github.com/jwposton/FF3Analytics/compare/v1.1.8...v1.1.9

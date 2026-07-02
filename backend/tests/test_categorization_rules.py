@@ -45,6 +45,50 @@ def test_build_firefly_rule_body_includes_active_and_tag(monkeypatch):
     ]
 
 
+def test_build_firefly_rule_body_includes_amount_when_set(monkeypatch):
+    monkeypatch.setenv("FF3ANALYTICS_RULE_GROUP", "Test Group")
+    draft = RuleDraft(
+        title="Netflix",
+        description_contains="NETFLIX.COM",
+        amount="15.99",
+        transaction_type="withdrawal",
+    )
+    body = build_firefly_rule_body(draft, "Entertainment", None)
+    assert {"type": "amount_exactly", "value": "15.99", "active": True} in body[
+        "triggers"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_matches_amount_filter():
+    splits = [
+        {
+            "type": "withdrawal",
+            "description": "SUBSCRIPTION",
+            "amount": "9.99",
+            "category_name": None,
+        },
+        {
+            "type": "withdrawal",
+            "description": "SUBSCRIPTION",
+            "amount": "14.99",
+            "category_name": None,
+        },
+    ]
+
+    class _Client:
+        async def fetch_splits(self, start, end):
+            return splits
+
+    draft = RuleDraft(
+        title="Sub",
+        description_contains="SUBSCRIPTION",
+        amount="9.99",
+    )
+    result = await preview_rule_matches(_Client(), "2024-01-01", "2024-01-31", draft)
+    assert result == {"total": 1, "uncategorized_count": 1, "categorized_count": 0}
+
+
 def test_build_firefly_rule_body_destination_account_trigger(monkeypatch):
     monkeypatch.setenv("FF3ANALYTICS_RULE_GROUP", "Test Group")
     draft = RuleDraft(

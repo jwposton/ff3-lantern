@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import sidecar_db
@@ -30,6 +31,25 @@ def _rule_group_title() -> str:
         os.environ.get("FF3ANALYTICS_RULE_GROUP", "FF3Analytics AI").strip()
         or "FF3Analytics AI"
     )
+
+
+def _normalize_amount(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return abs(Decimal(raw.replace(",", ".")))
+    except InvalidOperation:
+        return None
+
+
+def _format_amount_for_firefly(value: str) -> str:
+    amount = _normalize_amount(value)
+    if amount is None:
+        raise ValueError(f"invalid rule amount: {value!r}")
+    return f"{amount:.2f}"
 
 
 def _firefly_destination_trigger_type(match_type: DestinationMatchType) -> str:
@@ -93,6 +113,11 @@ def _destination_trigger_overlap(
 def _matches_draft(split: dict[str, Any], draft: RuleDraft) -> bool:
     if draft.transaction_type and split.get("type") != draft.transaction_type:
         return False
+    rule_amount = _normalize_amount(draft.amount)
+    if rule_amount is not None:
+        split_amount = _normalize_amount(str(split.get("amount") or ""))
+        if split_amount is None or rule_amount != split_amount:
+            return False
     desc_needle = draft.description_contains.strip().lower()
     dest_needle = (draft.destination_account or "").strip()
     desc_ok = True
@@ -181,6 +206,14 @@ def build_firefly_rule_body(
             {
                 "type": "transaction_type",
                 "value": draft.transaction_type,
+                "active": True,
+            }
+        )
+    if (draft.amount or "").strip():
+        triggers.append(
+            {
+                "type": "amount_exactly",
+                "value": _format_amount_for_firefly(draft.amount or ""),
                 "active": True,
             }
         )
@@ -274,6 +307,7 @@ async def create_approved_rule(
                 "description_contains": draft.description_contains,
                 "destination_account": draft.destination_account,
                 "destination_match_type": draft.destination_match_type,
+                "amount": draft.amount,
                 "category_id": category_id,
                 "budget_id": budget_id,
             }

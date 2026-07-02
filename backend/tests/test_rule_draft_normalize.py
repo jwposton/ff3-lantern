@@ -3,21 +3,13 @@
 from __future__ import annotations
 
 from categorization_models import RuleDraft
-from rule_draft_normalize import (
-    derive_rule_title,
-    extract_description_needle,
-    normalize_rule_draft,
-)
-
-
-def test_extract_description_needle_prefers_merchant_token():
-    assert extract_description_needle("AMZN MKTP US*AB12") == "AMZN"
+from rule_draft_normalize import derive_rule_title, normalize_rule_draft
 
 
 def test_normalize_rule_draft_replaces_rationale_style_title():
     draft = RuleDraft(
         title="Matches prior Amazon purchases with stable payee token",
-        description_contains="AMZN MKTP",
+        description_contains="ignored",
         transaction_type="withdrawal",
     )
     normalized = normalize_rule_draft(
@@ -27,10 +19,10 @@ def test_normalize_rule_draft_replaces_rationale_style_title():
         category_name="Shopping",
     )
     assert normalized.title == "Amazon → Shopping"
-    assert normalized.description_contains == "AMZN MKTP"
+    assert normalized.description_contains == "AMZN MKTP US*AB12"
 
 
-def test_normalize_rule_draft_fills_needle_from_description():
+def test_normalize_rule_draft_uses_transaction_description():
     draft = RuleDraft(
         title="Shopping",
         description_contains="",
@@ -42,7 +34,7 @@ def test_normalize_rule_draft_fills_needle_from_description():
         destination_name="Netflix",
         category_name="Entertainment",
     )
-    assert normalized.description_contains == "NETFLIX"
+    assert normalized.description_contains == "NETFLIX.COM 866-579-7172"
     assert normalized.destination_account is None
     assert normalized.title == "Netflix → Entertainment"
 
@@ -50,7 +42,7 @@ def test_normalize_rule_draft_fills_needle_from_description():
 def test_normalize_rule_draft_keeps_good_title():
     draft = RuleDraft(
         title="Amazon marketplace",
-        description_contains="AMZN MKTP",
+        description_contains="ignored",
         transaction_type="withdrawal",
     )
     normalized = normalize_rule_draft(
@@ -60,13 +52,14 @@ def test_normalize_rule_draft_keeps_good_title():
         category_name="Shopping",
     )
     assert normalized.title == "Amazon marketplace"
-    assert normalized.description_contains == "AMZN MKTP"
+    assert normalized.description_contains == "AMZN MKTP US"
 
 
-def test_normalize_rule_draft_generic_description_uses_destination():
+def test_normalize_rule_draft_generic_description_unchanged():
     draft = RuleDraft(
         title="Groceries",
-        description_contains="POS PURCHASE",
+        description_contains="ignored",
+        destination_account="Safeway",
         transaction_type="withdrawal",
     )
     normalized = normalize_rule_draft(
@@ -75,7 +68,7 @@ def test_normalize_rule_draft_generic_description_uses_destination():
         destination_name="Safeway",
         category_name="Groceries",
     )
-    assert normalized.description_contains == ""
+    assert normalized.description_contains == "POS PURCHASE"
     assert normalized.destination_account == "Safeway"
     assert normalized.title == "Safeway → Groceries"
 
@@ -86,7 +79,6 @@ def test_derive_rule_title_uses_destination():
             destination_name="Safeway",
             description="SAFEWAY #1234",
             category_name="Groceries",
-            needle="SAFEWAY",
         )
         == "Safeway → Groceries"
     )

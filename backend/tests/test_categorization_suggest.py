@@ -36,6 +36,7 @@ def test_suggestion_json_schema_rule_includes_transaction_type_in_required():
     assert "transaction_type" in rule_schema["required"]
     assert "destination_account" in rule_schema["required"]
     assert "destination_match_type" in rule_schema["required"]
+    assert "amount" in rule_schema["required"]
 
 
 def test_model_requires_rule_when_recommendation_rule():

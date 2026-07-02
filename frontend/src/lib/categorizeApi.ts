@@ -33,6 +33,7 @@ export type RuleDraft = {
   destination_account?: string | null
   destination_match_type?: DestinationMatchType
   transaction_type?: "withdrawal" | "deposit" | null
+  amount?: string | null
 }
 
 export type SuggestionPayload = {
