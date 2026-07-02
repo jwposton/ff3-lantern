@@ -322,11 +322,14 @@ function TransactionCard({
               />
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium">
-              Description
+              Description contains
               <input
                 className={inputClassName()}
+                placeholder="Defaults to transaction description"
                 value={state?.ruleDescriptionContains ?? ""}
-                readOnly
+                onChange={(e) => {
+                  onRuleDescriptionChange(row.journal_id, e.target.value)
+                }}
               />
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium">

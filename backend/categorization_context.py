@@ -13,13 +13,11 @@ Never invent category or budget names.
 Recommend "rule" for recurring merchants with stable description patterns.
 Recommend "direct" for one-off or ambiguous transactions.
 When recommendation is "rule", include a rule object:
-- title: short human label for the Firefly rules list (e.g. "Amazon → Shopping", "Netflix subscription"). NOT the raw bank description, NOT the trigger needle, NOT your rationale.
-- description_contains: leave empty string (the app sets this from the transaction description).
-- destination_account: Firefly payee / destination account name when it identifies the merchant (from transaction.destination_name). Use null when description_contains is sufficient.
+- title: short human label for the Firefly rules list (e.g. "Amazon → Shopping", "Netflix subscription"). NOT the raw bank description, NOT your rationale.
+- destination_account: Firefly payee / destination account name when it identifies the merchant (from transaction.destination_name). Use null when not needed.
 - destination_match_type: how to match destination_account — "contains", "starts_with", "ends_with", or "is" (exact). Default "is" when destination_account is set.
 - transaction_type: "withdrawal" or "deposit" when the pattern is type-specific; null otherwise.
-- amount: exact transaction amount as a decimal string with a dot separator (e.g. "42.00"); null when amount should not be part of the rule.
-At least one of description_contains or destination_account must be non-empty.
+Do not set description or amount — the app fills those from the transaction; the user may edit them before creating the rule.
 Output JSON matching the required schema."""
 
 

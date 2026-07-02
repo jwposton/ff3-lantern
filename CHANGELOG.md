@@ -15,8 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Categorize rule description** — Rule trigger always uses the transaction bank description verbatim; removed AI substring extraction, generic-description fallbacks, and payee substitution for the description field
-- **Categorize rule editor** — Description is read-only and shown separately from the editable rule title
+- **Categorize rule description** — Defaults to the transaction bank description; editable before preview/create. AI still reads description and amount for category/budget suggestions but no longer outputs or modifies rule trigger fields
+- **Categorize AI rule schema** — Removed `description_contains` and `amount` from the suggest response; the app pre-fills those from the transaction
+
+### Fixed
+
+- **CI build** — Restored editable description field handler removed when description was briefly read-only (TypeScript TS6133)
 
 ## [1.1.11] - 2026-07-01
 

@@ -64,7 +64,6 @@ SUGGESTION_JSON_SCHEMA: dict = {
             "type": ["object", "null"],
             "properties": {
                 "title": {"type": "string"},
-                "description_contains": {"type": "string"},
                 "destination_account": {
                     "type": ["string", "null"],
                 },
@@ -76,15 +75,12 @@ SUGGESTION_JSON_SCHEMA: dict = {
                     "type": ["string", "null"],
                     "enum": ["withdrawal", "deposit", None],
                 },
-                "amount": {"type": ["string", "null"]},
             },
             "required": [
                 "title",
-                "description_contains",
                 "destination_account",
                 "destination_match_type",
                 "transaction_type",
-                "amount",
             ],
             "additionalProperties": False,
         },

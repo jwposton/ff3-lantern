@@ -59,7 +59,7 @@ def normalize_rule_draft(
     destination_name: str | None,
     category_name: str,
 ) -> RuleDraft:
-    """Ensure title is a short UI label; description always comes from the transaction."""
+    """Ensure title is a short UI label; description is set by the app/user, not AI."""
     desc = (description or "").strip()
     title = draft.title.strip()
     if _looks_like_bad_title(
@@ -76,7 +76,7 @@ def normalize_rule_draft(
 
     return RuleDraft(
         title=title,
-        description_contains=desc,
+        description_contains=draft.description_contains,
         destination_account=draft.destination_account,
         destination_match_type=draft.destination_match_type,
         transaction_type=draft.transaction_type,

@@ -31,12 +31,13 @@ def test_model_parses_direct_suggestion():
     assert suggestion.recommendation == "direct"
 
 
-def test_suggestion_json_schema_rule_includes_transaction_type_in_required():
+def test_suggestion_json_schema_rule_excludes_description_and_amount():
     rule_schema = SUGGESTION_JSON_SCHEMA["properties"]["rule"]
     assert "transaction_type" in rule_schema["required"]
     assert "destination_account" in rule_schema["required"]
     assert "destination_match_type" in rule_schema["required"]
-    assert "amount" in rule_schema["required"]
+    assert "description_contains" not in rule_schema["properties"]
+    assert "amount" not in rule_schema["properties"]
 
 
 def test_model_requires_rule_when_recommendation_rule():
