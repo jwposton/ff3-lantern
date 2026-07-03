@@ -4,7 +4,9 @@ import { RefreshCw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { BucketSheet } from "@/components/payment-run/BucketSheet"
+import { CreditCardsTable } from "@/components/payment-run/CreditCardsTable"
 import { FundingBucketBar } from "@/components/payment-run/FundingBucketBar"
+import { ShortfallBanner } from "@/components/payment-run/ShortfallBanner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -20,10 +22,13 @@ import {
   fetchFundingBuckets,
   formatMonthLabel,
   putBucketBalance,
+  putRowState,
+  putAccountWorksheet,
   refreshPaymentWorksheet,
   updateFundingBucket,
   type FundingBucket,
   type FundingBucketRollup,
+  type CreditCardRow,
 } from "@/lib/paymentRunApi"
 
 function formatRefreshedAt(value: string | null | undefined): string {
@@ -123,6 +128,40 @@ export function PaymentWorksheetPage() {
     setBucketSheetOpen(true)
   }
 
+  async function handlePlannedBlur(rowKey: string, value: string) {
+    await putRowState(rowKey, month, { planned_amount: value })
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
+  async function handlePaidChange(row: CreditCardRow, paid: boolean) {
+    if (paid) {
+      await putRowState(row.row_key, month, {
+        paid_at: new Date().toISOString(),
+      })
+    } else {
+      await putRowState(row.row_key, month, { clear_paid: true })
+    }
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
+  async function handleBucketChange(
+    accountId: string,
+    bucketKey: string | null,
+  ) {
+    await putAccountWorksheet(accountId, {
+      funding_bucket_key: bucketKey,
+    })
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
+  async function handleExclude(row: CreditCardRow) {
+    await putAccountWorksheet(row.account_id, { included: false })
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
+  const paidCount = data?.credit_cards.filter((row) => row.paid_at).length ?? 0
+  const ccCount = data?.credit_cards.length ?? 0
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -189,10 +228,23 @@ export function PaymentWorksheetPage() {
 
           <section className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-xl font-semibold">Credit cards</h2>
+              <h2 className="text-xl font-semibold">
+                Credit cards
+                {ccCount > 0 ? ` · ${paidCount} / ${ccCount} paid` : ""}
+              </h2>
             </div>
             {ccGuidance ? (
               <p className="text-muted-foreground text-sm">{ccGuidance}</p>
+            ) : null}
+            {data.credit_cards.length > 0 ? (
+              <CreditCardsTable
+                rows={data.credit_cards}
+                buckets={data.buckets}
+                onPlannedBlur={handlePlannedBlur}
+                onPaidChange={handlePaidChange}
+                onBucketChange={handleBucketChange}
+                onExclude={handleExclude}
+              />
             ) : null}
             {data.credit_cards.length === 0 && data.refreshed_at ? (
               <Card>
@@ -207,6 +259,7 @@ export function PaymentWorksheetPage() {
                 </CardContent>
               </Card>
             ) : null}
+            {data.shortfall ? <ShortfallBanner buckets={data.buckets} /> : null}
           </section>
         </>
       ) : null}

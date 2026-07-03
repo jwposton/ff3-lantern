@@ -260,7 +260,7 @@ describe("PaymentWorksheetPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Planned payments subtotal")).toBeTruthy()
-      expect(screen.getByText("900.00")).toBeTruthy()
+      expect(screen.getByTestId("cc-planned-subtotal").textContent).toBe("900.00")
     })
   })
 
@@ -274,7 +274,8 @@ describe("PaymentWorksheetPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("4,100.00")).toBeTruthy()
+      const bar = screen.getByTestId("funding-bucket-bar")
+      expect(bar.textContent).toContain("4,100.00")
     })
   })
 })
