@@ -24,6 +24,11 @@ from payment_worksheet_profiles import (
     patch_worksheet_refresh_profile,
     write_payment_worksheet_profile,
 )
+from payment_worksheet_bills import (
+    BillRegistrationError,
+    RegisterBillBody,
+    register_bill,
+)
 from payment_worksheet_compute import _row_type_from_key, build_worksheet_envelope
 from payment_worksheet_liabilities import is_liability_account
 from payment_worksheet_refresh import run_refresh
@@ -149,6 +154,15 @@ class RowStateBody(BaseModel):
     paid_at: str | None = None
     clear_paid: bool = False
     clear_planned_override: bool = False
+
+
+class UpdateBillRegistryBody(BaseModel):
+    worksheet_section: str | None = None
+    payment_rail: str | None = None
+    funding_bucket_key: str | None = None
+    credit_card_account_id: str | None = None
+    row_label: str | None = None
+    amount_mode: str | None = None
 
 
 def _validate_month(month: str) -> str:
@@ -399,3 +413,115 @@ async def update_account_worksheet(
     )
     firefly_reference_cache.clear()
     return {"account_id": account_id, "profile": merged}
+
+
+def _planned_sync_for_amount_mode(amount_mode: str) -> str:
+    return "fixed" if amount_mode == "recurring" else "manual"
+
+
+async def _validate_credit_card_account(
+    client: FireflyClient, account_id: str
+) -> None:
+    try:
+        account = await client.fetch_account(account_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not is_credit_card_asset(account.get("attributes", {})):
+        raise HTTPException(
+            status_code=422,
+            detail="credit_card_account_id must be a credit card asset account.",
+        )
+
+
+@router.post("/payment-run/bills/register")
+async def register_bill_route(
+    body: RegisterBillBody,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    if body.payment_rail == "credit_card" and body.credit_card_account_id:
+        await _validate_credit_card_account(client, body.credit_card_account_id)
+    try:
+        return await register_bill(client, body)
+    except BillRegistrationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.put("/payment-run/bills/{registry_id}")
+async def update_bill_registry(
+    registry_id: int,
+    body: UpdateBillRegistryBody,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    existing = await sidecar_db.get_worksheet_registry(registry_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Registry row not found.")
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        return existing
+    merged = {**existing, **updates, "id": registry_id}
+    payment_rail = merged.get("payment_rail") or "bank"
+    if payment_rail == "credit_card":
+        card_id = (merged.get("credit_card_account_id") or "").strip()
+        if not card_id:
+            raise HTTPException(
+                status_code=422,
+                detail="credit_card_account_id is required for credit_card payment rail.",
+            )
+        await _validate_credit_card_account(client, card_id)
+        merged["funding_bucket_key"] = None
+    elif payment_rail == "bank":
+        bucket_key = (merged.get("funding_bucket_key") or "").strip()
+        if not bucket_key:
+            raise HTTPException(
+                status_code=422,
+                detail="funding_bucket_key is required for bank payment rail.",
+            )
+        bucket = await sidecar_db.get_funding_bucket(bucket_key)
+        if bucket is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown funding bucket: {bucket_key}",
+            )
+        merged["credit_card_account_id"] = None
+    amount_mode = merged.get("amount_mode") or existing.get("amount_mode")
+    if amount_mode:
+        merged["planned_sync"] = _planned_sync_for_amount_mode(str(amount_mode))
+    await sidecar_db.update_worksheet_registry(registry_id, merged)
+    updated = await sidecar_db.get_worksheet_registry(registry_id)
+    if updated is None:
+        raise HTTPException(status_code=500, detail="Failed to update registry row.")
+    return updated
+
+
+@router.delete("/payment-run/bills/{registry_id}")
+async def delete_bill_registry(
+    registry_id: int,
+    _: None = Depends(require_payment_worksheet),
+):
+    existing = await sidecar_db.get_worksheet_registry(registry_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Registry row not found.")
+    await sidecar_db.delete_worksheet_registry(registry_id)
+    return {"ok": True}
+
+
+@router.get("/payment-run/available")
+async def available_bills(
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    try:
+        bills = await client.fetch_bills()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    registered = {
+        str(row["firefly_bill_id"])
+        for row in await sidecar_db.list_worksheet_registry()
+        if row.get("firefly_bill_id")
+    }
+    available = [bill for bill in bills if str(bill.get("id")) not in registered]
+    return {"data": available}

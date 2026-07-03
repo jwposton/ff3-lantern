@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bill registration API** — Register bills on the payment worksheet with a Firefly bill and matching rule in one user-confirmed action
 - **Bills and liabilities on worksheet** — Backend envelope includes bills and liabilities sections with cash-plan subtotals, grand totals, and liability auto-draft from loan profiles
 - **Bill registry foundation** — Worksheet registry persistence and Firefly bills API support for payment worksheet setup
 - **Payment worksheet credit card activity** — expand the **New** column on a card row to see an inline table of charges, interest, and fees that sum to **New** (from the last refresh snapshot; refresh again after new Firefly imports); activity rows include payee and budget, indented below the card row with full-width columns
