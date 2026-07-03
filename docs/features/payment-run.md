@@ -1,6 +1,6 @@
 # Payment Worksheet (Bill Pay Planner)
 
-**Status:** Design — ready for GSD phase planning  
+**Status:** Phase A (MVP) shipped on `gsd/v1.2-payment-worksheet` — 2026-07-03  
 **Captured:** 2026-07-03  
 **App:** FF3Analytics (`selfhosted/FF3Analytics`)  
 **Epic:** [GitHub #17](https://github.com/jwposton/FF3Analytics/issues/17)
@@ -77,6 +77,8 @@ New charges       = X − interest_accrued − fees   (purchases + net refunds)
 
 A transaction counts in at most one breakout bucket (interest **or** fees **or** purchases). Unclassified lines roll into **new charges**.
 
+**Activity drill-down (shipped):** On refresh, each card snapshot also stores `new_transactions[]` — line items (date, description, payee, category, budget, amount) that sum to **New**. The worksheet expands the **New** column to show this inline table (frozen at refresh; expand again after new Firefly imports).
+
 **Paid** (mark-paid flag) is worksheet progress tracking only — it does **not** change outflow tallies, **user balance**, or **New**. Actual CC payments for **New** are discovered from Firefly transfers, not mark-paid state.
 
 ### Funding sources (user-confirmed)
@@ -147,7 +149,7 @@ New Firefly accounts/bills do **not** appear until registered.
 
 **Credit cards are not bills.** Card paydown is a **transfer** (checking → card asset). Firefly bills attach only to **withdrawals**.
 
-**Credit card discovery:** asset accounts with credit card role — not the liability list. Reuse `frontend/src/lib/accounts.ts` / `backend/firefly_client.py` role normalization.
+**Credit card discovery:** asset accounts with credit card role (`creditCard` or `ccAsset` in Firefly) — not the liability list. Reuse `frontend/src/lib/accounts.ts` / `backend/firefly_client.py` role normalization.
 
 ### `payment_worksheet.v1` notes block
 
@@ -368,7 +370,7 @@ Route module: `backend/routes/payment_run.py`
 | `GET /payment-run` | Worksheet view (opted-in rows + state + computed remainings) |
 | `POST /payment-run/refresh` | Pull FF data; update refresh snapshot (reported balances) |
 | `PUT /payment-run/buckets/{id}/balance` | Set user balance override for a funding bucket |
-| `PUT /payment-run/rows/{key}` | Planned payment / mark paid |
+| `PUT /payment-run/rows/{key}` | Planned payment / mark paid; `clear_planned_override` resets soft zero |
 | `PUT /payment-run/accounts/{id}/worksheet` | Register/update notes marker |
 | `POST /payment-run/bills/register` | Wizard: FF bill + rule + registry |
 | `PUT /payment-run/bills/{registry_id}` | Update registry (worksheet section, payment rail, bucket, etc.) |
@@ -384,7 +386,7 @@ Helper: `backend/payment_worksheet_profiles.py` (parse/write notes, mirror `loan
 - `funding_buckets`
 - `worksheet_registry` — `firefly_bill_id`, `worksheet_section` (`"bills"` \| `"liabilities"`), `row_label` (optional), `funding_bucket_key`, `amount_mode`, `planned_sync`, `payment_rail`, `credit_card_account_id` (optional), `counts_toward_cash_plan`, `active_months`, `rule_id`
 - `worksheet_state` — `row_key`, `row_type`, `month`, `planned_amount`, `planned_amount_override` (bool), `paid_at`, optional `matched_journal_id`
-- `worksheet_refresh` — `month`, `refreshed_at`, `balances_json` (per bucket: `reported_balance`; per CC: `owed`, `new_total`, `interest_accrued`, `fees`, `last_payment_date`)
+- `worksheet_refresh` — `month`, `refreshed_at`, `balances_json` (per bucket: `reported_balance`; per CC: `owed`, `new_total`, `interest_accrued`, `fees`, `last_payment_date`, `last_payment_amount`, `new_transactions[]` with `journal_id`, `date`, `description`, `payee`, `category`, `budget`, `kind`, `amount`)
 - `worksheet_bucket_balance` — `bucket_key`, `month`, `user_balance`, `user_balance_override` (bool — true once user edits; refresh does not overwrite)
 
 ### Environment
@@ -437,7 +439,7 @@ Per funding bucket (Checking, Savings, Loan account, …):
 | Field | Editable | Source / formula |
 |-------|----------|------------------|
 | **Reported balance** | No | Sum of mapped Firefly asset accounts at last **Refresh** |
-| **User balance** | Yes | Defaults to reported on first load; override only when you move cash **between buckets** (e.g. savings → checking) before Firefly reflects it |
+| **User balance** | Yes | Defaults to reported on first load; field shows **reported** as soft placeholder when not overridden; override only when you move cash **between buckets** (e.g. savings → checking) before Firefly reflects it; clear field or **Reset to reported** removes override |
 | **Planned outflows** | — | Σ `planned_amount` for rows assigned to this bucket where `counts_toward_cash_plan: true` (paid and unpaid) |
 | **Remaining** | No | `user_balance − planned_outflows` |
 
@@ -498,10 +500,14 @@ Mirrors the spreadsheet habit of **bolding a row when paid**, using FF3Analytics
 
 ### Interaction
 
-- **Refresh** — updates reported balances and CC activity columns; shows last-refreshed timestamp.
-- **User balance** edit — for inter-bucket moves only; immediate recalc of bucket remaining; persists in sidecar.
+- **Refresh** — updates reported balances, CC activity columns, and `new_transactions` drill-down data; shows last-refreshed timestamp.
+- **User balance** edit — for inter-bucket moves only; soft placeholder matches reported until overridden; clearing the field resets to reported; persists in sidecar.
+- **Planned payment** — soft `0.00` placeholder when unset; clearing the field resets to default (no manual override); saved amounts require explicit edit.
 - **Planned / mark paid** — persists in sidecar; recalculates remainings when `planned_amount` changes only.
 - **Mark paid** — toggle checkbox; semibold + tint on row (see **Paid vs unpaid** above); no effect on user balance, outflow tallies, subtotals, grand total, or remaining.
+- **New expand** — chevron on **New** column opens inline activity table (right-aligned under dollar columns); links to Firefly when configured.
+- **Card Details** — pencil opens sheet for bucket, limit, due day, APR, default planned pay, exclude; writes `payment_worksheet.v1` to Firefly notes.
+- **Manage cards** — restore excluded credit card asset accounts to the worksheet.
 
 ## GSD delivery phases (suggested)
 
