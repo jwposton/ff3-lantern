@@ -286,9 +286,11 @@ async def delete_bucket(
 async def update_account_worksheet(
     account_id: str,
     body: PaymentWorksheetBody,
+    month: str | None = None,
     _: None = Depends(require_payment_worksheet),
     client: FireflyClient = Depends(get_firefly_client),
 ):
+    target_month = _validate_month(month or current_month_key())
     account = await client.fetch_account(account_id)
     attrs = account.get("attributes", {})
     if not is_credit_card_asset(attrs):
@@ -301,7 +303,7 @@ async def update_account_worksheet(
     merged = merge_payment_worksheet_profile(existing_profile, updates)
     await write_payment_worksheet_profile(client, account_id, merged)
     await patch_worksheet_refresh_profile(
-        current_month_key(), account_id, merged, updates
+        target_month, account_id, merged, updates
     )
     firefly_reference_cache.clear()
     return {"account_id": account_id, "profile": merged}
