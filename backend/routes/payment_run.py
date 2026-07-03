@@ -24,7 +24,8 @@ from payment_worksheet_profiles import (
     patch_worksheet_refresh_profile,
     write_payment_worksheet_profile,
 )
-from payment_worksheet_compute import build_worksheet_envelope
+from payment_worksheet_compute import _row_type_from_key, build_worksheet_envelope
+from payment_worksheet_liabilities import is_liability_account
 from payment_worksheet_refresh import run_refresh
 
 router = APIRouter()
@@ -261,7 +262,7 @@ async def update_row_state(
 
     await sidecar_db.upsert_worksheet_state_row(
         row_key=row_key,
-        row_type="credit_card",
+        row_type=_row_type_from_key(row_key),
         month=target_month,
         planned_amount=planned_amount,
         planned_amount_override=planned_override,
@@ -358,9 +359,10 @@ async def update_account_worksheet(
     target_month = _validate_month(month or current_month_key())
     account = await client.fetch_account(account_id)
     attrs = account.get("attributes", {})
-    if not is_credit_card_asset(attrs):
+    if not is_credit_card_asset(attrs) and not is_liability_account(attrs):
         raise HTTPException(
-            status_code=422, detail="Account must be an asset credit card."
+            status_code=422,
+            detail="Account must be an asset credit card or liability account.",
         )
     existing_notes = attrs.get("notes") or ""
     existing_profile = parse_payment_worksheet_from_notes(existing_notes)

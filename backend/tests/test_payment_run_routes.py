@@ -625,3 +625,66 @@ def test_bucket_crud(monkeypatch, client):
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
         firefly_reference_cache.clear()
+
+
+def test_get_worksheet_bills(monkeypatch, client, data_dir, payment_worksheet_env):
+    import asyncio
+
+    from payment_worksheet_compute import bill_row_key
+
+    async def _seed() -> int:
+        await sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+        reg_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-1",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-1",
+                "row_label": "Electric",
+            }
+        )
+        balances = {
+            "buckets": {"checking": {"reported_balance": "5000.00"}},
+            "credit_cards": {},
+            "liabilities": {},
+            "excluded_liabilities": {},
+            "bills": {
+                str(reg_id): {
+                    "owed": "99.00",
+                    "firefly_bill_id": "bill-1",
+                    "name": "Electric",
+                }
+            },
+        }
+        await sidecar_db.upsert_worksheet_refresh(
+            month="2026-07",
+            refreshed_at="2026-07-03T12:00:00Z",
+            balances_json=json.dumps(balances),
+        )
+        await sidecar_db.upsert_worksheet_state_row(
+            row_key=bill_row_key(reg_id),
+            row_type="bill",
+            month="2026-07",
+            planned_amount="99.00",
+            planned_amount_override=0,
+        )
+        return reg_id
+
+    reg_id = asyncio.run(_seed())
+    response = client.get("/api/payment-run", params={"month": "2026-07"})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["bills"]) == 1
+    assert body["bills"][0]["row_key"] == bill_row_key(reg_id)
+    assert body["bills"][0]["owed"] == "99.00"
+    assert body["section_subtotals"]["bills"]["owed"] == "99.00"
+    assert body["grand_totals"]["owed"] == "99.00"
+    assert body["grand_totals"]["planned_cash"] == "99.00"
