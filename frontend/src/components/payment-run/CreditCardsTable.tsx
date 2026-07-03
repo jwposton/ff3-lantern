@@ -79,7 +79,7 @@ function NewActivitySubTable({
         <thead>
           <tr>
             <th className="w-[5.5rem] pr-3 text-left whitespace-nowrap">Date</th>
-            <th className="pr-3 text-left">Description</th>
+            <th className="max-w-[7rem] pr-3 text-left">Description</th>
             <th className="w-[8rem] pr-3 text-left">Payee</th>
             <th className="w-[8rem] pr-3 text-left">Category</th>
             <th className="w-[7rem] pr-3 text-left">Budget</th>
@@ -98,19 +98,21 @@ function NewActivitySubTable({
                 <td className="pr-3 tabular-nums whitespace-nowrap">
                   {formatDisplayDate(txn.date)}
                 </td>
-                <td className="pr-3">
+                <td className="max-w-[7rem] pr-3 truncate">
                   {fireflyUrl ? (
                     <a
                       href={fireflyUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:underline"
+                      className="block truncate hover:underline"
                       title={txn.description}
                     >
                       {txn.description}
                     </a>
                   ) : (
-                    <span title={txn.description}>{txn.description}</span>
+                    <span className="block truncate" title={txn.description}>
+                      {txn.description}
+                    </span>
                   )}
                 </td>
                 <td
