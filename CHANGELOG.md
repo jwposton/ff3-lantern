@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bill registry foundation** — Worksheet registry persistence and Firefly bills API support for payment worksheet setup
 - **Payment worksheet credit card activity** — expand the **New** column on a card row to see an inline table of charges, interest, and fees that sum to **New** (from the last refresh snapshot; refresh again after new Firefly imports); activity rows include payee and budget, indented below the card row with full-width columns
 - **Payment worksheet planned amount** — unset planned payment shows a soft **0.00** placeholder (empty field on focus); clearing the field resets to the default; saved amounts still require explicit edits
 - **Payment worksheet bucket user balance** — unset user balance shows a soft placeholder matching **Reported** (empty field on focus); clearing the field resets to reported; saved overrides still require explicit edits
