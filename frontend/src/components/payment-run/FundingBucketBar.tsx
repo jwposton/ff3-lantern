@@ -1,7 +1,7 @@
 import { Plus } from "lucide-react"
 
+import { UserBalanceInput } from "@/components/payment-run/UserBalanceInput"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { formatDisplayAmount } from "@/lib/formatDisplay"
 import type { FundingBucketRollup } from "@/lib/paymentRunApi"
 import { cn } from "@/lib/utils"
@@ -16,7 +16,10 @@ type FundingBucketBarProps = {
   accountNameById: Map<string, string>
   onAddBucket: () => void
   onEditBucket: (bucket: FundingBucketRollup) => void
-  onBalanceBlur: (bucketId: string, value: string) => void
+  onBalanceBlur: (
+    bucketId: string,
+    body: { user_balance: string; reset_to_reported?: boolean },
+  ) => void
   onResetBalance: (bucketId: string) => void
 }
 
@@ -88,17 +91,9 @@ export function FundingBucketBar({
                   <div className="flex items-center justify-between gap-2">
                     <dt className="text-muted-foreground">User balance</dt>
                     <dd>
-                      <Input
-                        className="h-8 w-[120px] text-right text-sm tabular-nums"
-                        defaultValue={bucket.user_balance}
-                        onBlur={(event) =>
-                          onBalanceBlur(bucket.id, event.target.value)
-                        }
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.currentTarget.blur()
-                          }
-                        }}
+                      <UserBalanceInput
+                        bucket={bucket}
+                        onCommit={onBalanceBlur}
                       />
                     </dd>
                   </div>

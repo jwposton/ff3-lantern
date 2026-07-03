@@ -147,6 +147,7 @@ class RowStateBody(BaseModel):
     planned_amount: str | None = None
     paid_at: str | None = None
     clear_paid: bool = False
+    clear_planned_override: bool = False
 
 
 def _validate_month(month: str) -> str:
@@ -248,6 +249,9 @@ async def update_row_state(
     updates = body.model_dump(exclude_unset=True)
     if "planned_amount" in updates and updates["planned_amount"] is not None:
         planned_amount = _validate_amount(updates["planned_amount"], "planned_amount")
+    if body.clear_planned_override:
+        planned_override = 0
+    elif "planned_amount" in updates and updates["planned_amount"] is not None:
         planned_override = 1
 
     if body.clear_paid:

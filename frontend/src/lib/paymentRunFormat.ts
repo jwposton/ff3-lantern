@@ -110,6 +110,97 @@ function parseAmount(value: string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+export const SOFT_PLANNED_AMOUNT_PLACEHOLDER = "0.00"
+
+/** Unset planned amount shows as empty with a placeholder until the user types. */
+export function isSoftPlannedAmount(row: {
+  planned_amount: string
+  planned_amount_override: boolean
+}): boolean {
+  if (row.planned_amount_override) return false
+  return parseAmount(row.planned_amount) === 0
+}
+
+export function displayPlannedAmountInput(row: {
+  planned_amount: string
+  planned_amount_override: boolean
+}): string {
+  return isSoftPlannedAmount(row) ? "" : row.planned_amount
+}
+
+export function plannedAmountsEqual(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  return parseAmount(left) === parseAmount(right)
+}
+
+/** Unset user balance tracks reported until the user overrides it. */
+export function isSoftUserBalance(bucket: {
+  user_balance_override: boolean
+}): boolean {
+  return !bucket.user_balance_override
+}
+
+export function displayUserBalanceInput(bucket: {
+  reported_balance: string
+  user_balance: string
+  user_balance_override: boolean
+}): string {
+  return isSoftUserBalance(bucket) ? "" : bucket.user_balance
+}
+
+export function userBalancePlaceholder(bucket: {
+  reported_balance: string
+}): string {
+  return bucket.reported_balance
+}
+
+/** Blur commit for bucket user balance input; null means no API call. */
+export function resolveUserBalanceCommit(
+  bucket: {
+    reported_balance: string
+    user_balance: string
+    user_balance_override: boolean
+  },
+  rawInput: string,
+): { user_balance: string; reset_to_reported?: boolean } | null {
+  const trimmed = rawInput.trim()
+  if (!trimmed) {
+    if (isSoftUserBalance(bucket)) return null
+    return { user_balance: "0.00", reset_to_reported: true }
+  }
+
+  const user_balance = trimmed
+  if (plannedAmountsEqual(user_balance, bucket.user_balance)) {
+    return null
+  }
+
+  return { user_balance }
+}
+
+/** Blur commit for planned amount input; null means no API call. */
+export function resolvePlannedAmountCommit(
+  row: {
+    planned_amount: string
+    planned_amount_override: boolean
+  },
+  rawInput: string,
+): { planned_amount: string; clear_planned_override?: boolean } | null {
+  const trimmed = rawInput.trim()
+  if (!trimmed) {
+    if (isSoftPlannedAmount(row)) return null
+    return { planned_amount: "0.00", clear_planned_override: true }
+  }
+
+  const planned_amount = trimmed
+  if (plannedAmountsEqual(planned_amount, row.planned_amount)) {
+    return null
+  }
+
+  return { planned_amount }
+}
+
 /** Aggregate CC table numerics; APR is balance-weighted, util is total owed / total limits. */
 export function computeCreditCardSubtotals(
   rows: CreditCardSubtotalInput[],

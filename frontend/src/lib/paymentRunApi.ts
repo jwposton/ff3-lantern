@@ -10,6 +10,17 @@ export type FundingBucketRollup = {
   remaining: string
 }
 
+export type CreditCardActivityTransaction = {
+  journal_id: string | null
+  date: string
+  description: string
+  payee: string | null
+  category: string | null
+  budget: string | null
+  kind: "charge" | "interest" | "fee"
+  amount: string
+}
+
 export type CreditCardRow = {
   account_id: string
   row_key: string
@@ -25,6 +36,7 @@ export type CreditCardRow = {
   fees: string
   last_payment_date: string | null
   last_payment_amount: string
+  new_transactions: CreditCardActivityTransaction[]
   planned_amount: string
   planned_amount_override: boolean
   paid_at: string | null
@@ -197,6 +209,7 @@ export async function putRowState(
     planned_amount?: string
     paid_at?: string | null
     clear_paid?: boolean
+    clear_planned_override?: boolean
   },
 ): Promise<{
   row_key: string

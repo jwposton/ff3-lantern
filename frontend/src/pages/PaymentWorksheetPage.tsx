@@ -123,8 +123,11 @@ export function PaymentWorksheetPage() {
     }
   }
 
-  async function handleBalanceBlur(bucketId: string, value: string) {
-    await putBucketBalance(bucketId, month, { user_balance: value })
+  async function handleBalanceBlur(
+    bucketId: string,
+    body: { user_balance: string; reset_to_reported?: boolean },
+  ) {
+    await putBucketBalance(bucketId, month, body)
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
   }
 
@@ -167,8 +170,11 @@ export function PaymentWorksheetPage() {
     setBucketSheetOpen(true)
   }
 
-  async function handlePlannedBlur(rowKey: string, value: string) {
-    await putRowState(rowKey, month, { planned_amount: value })
+  async function handlePlannedBlur(
+    rowKey: string,
+    body: { planned_amount: string; clear_planned_override?: boolean },
+  ) {
+    await putRowState(rowKey, month, body)
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
   }
 

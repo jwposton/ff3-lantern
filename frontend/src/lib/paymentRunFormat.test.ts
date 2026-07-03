@@ -2,11 +2,17 @@ import { describe, expect, it } from "vitest"
 
 import {
   computeCreditCardSubtotals,
+  displayPlannedAmountInput,
+  displayUserBalanceInput,
   formatInterestPercent,
   formatPaymentDueDay,
   isLastPaymentInWorksheetMonth,
   isPaymentDueUrgent,
+  isSoftPlannedAmount,
+  isSoftUserBalance,
   parsePaymentDueDayInput,
+  resolvePlannedAmountCommit,
+  resolveUserBalanceCommit,
   shouldHighlightCreditCardDue,
 } from "./paymentRunFormat"
 
@@ -63,6 +69,52 @@ describe("paymentRunFormat", () => {
     expect(totals.weighted_apr).toBeCloseTo(27.5)
     // 4000 / 15000 * 100
     expect(totals.portfolio_util).toBeCloseTo(26.666, 2)
+  })
+
+  it("treats unset planned amount as soft zero", () => {
+    const row = { planned_amount: "0.00", planned_amount_override: false }
+    expect(isSoftPlannedAmount(row)).toBe(true)
+    expect(displayPlannedAmountInput(row)).toBe("")
+    expect(resolvePlannedAmountCommit(row, "")).toBeNull()
+    expect(resolvePlannedAmountCommit(row, "400")).toEqual({
+      planned_amount: "400",
+    })
+  })
+
+  it("clears manual planned amount back to soft zero", () => {
+    const row = { planned_amount: "400.00", planned_amount_override: true }
+    expect(resolvePlannedAmountCommit(row, "")).toEqual({
+      planned_amount: "0.00",
+      clear_planned_override: true,
+    })
+    expect(resolvePlannedAmountCommit(row, "400.00")).toBeNull()
+  })
+
+  it("treats unset user balance as soft reported match", () => {
+    const bucket = {
+      reported_balance: "5000.00",
+      user_balance: "5000.00",
+      user_balance_override: false,
+    }
+    expect(isSoftUserBalance(bucket)).toBe(true)
+    expect(displayUserBalanceInput(bucket)).toBe("")
+    expect(resolveUserBalanceCommit(bucket, "")).toBeNull()
+    expect(resolveUserBalanceCommit(bucket, "4800")).toEqual({
+      user_balance: "4800",
+    })
+  })
+
+  it("clears manual user balance back to reported", () => {
+    const bucket = {
+      reported_balance: "5000.00",
+      user_balance: "4800.00",
+      user_balance_override: true,
+    }
+    expect(resolveUserBalanceCommit(bucket, "")).toEqual({
+      user_balance: "0.00",
+      reset_to_reported: true,
+    })
+    expect(resolveUserBalanceCommit(bucket, "4800.00")).toBeNull()
   })
 
   it("flags urgent due dates for unpaid cards without a payment this month", () => {

@@ -150,6 +150,14 @@ async def test_cc_activity(data_dir, payment_worksheet_env):
     assert Decimal(cc["fees"]) == Decimal("35.00")
     assert cc["last_payment_date"] == "2026-07-05"
     assert Decimal(cc["last_payment_amount"]) == Decimal("500.00")
+    txns = cc["new_transactions"]
+    assert len(txns) == 3
+    assert sum(Decimal(t["amount"]) for t in txns) == Decimal("149.49")
+    kinds = {t["kind"] for t in txns}
+    assert kinds == {"charge", "interest", "fee"}
+    grocery = next(t for t in txns if t["journal_id"] == "301")
+    assert grocery["payee"] == "Grocery Store"
+    assert grocery["budget"] == "Groceries"
 
 
 @pytest.mark.asyncio

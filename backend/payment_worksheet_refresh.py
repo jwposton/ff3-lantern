@@ -109,6 +109,31 @@ def _amount_for_card_activity(split: dict[str, Any], card_id: str) -> Decimal:
     return Decimal("0")
 
 
+def _activity_description(split: dict[str, Any], card_id: str) -> str:
+    desc = (split.get("description") or "").strip()
+    if desc:
+        return desc
+    if split.get("source_id") == card_id:
+        return (split.get("destination_name") or "").strip() or "—"
+    return (split.get("source_name") or "").strip() or "—"
+
+
+def _activity_kind_label(category: str) -> str:
+    if category == "interest":
+        return "interest"
+    if category == "fee":
+        return "fee"
+    return "charge"
+
+
+def _activity_payee(split: dict[str, Any], card_id: str) -> str | None:
+    if split.get("source_id") == card_id:
+        name = (split.get("destination_name") or "").strip()
+    else:
+        name = (split.get("source_name") or "").strip()
+    return name or None
+
+
 def _last_payment_amount(
     card_splits: list[dict[str, Any]],
     card_id: str,
@@ -135,7 +160,7 @@ def _compute_cc_activity(
     fetch_start: str,
     interest_cats: list[str],
     fee_cats: list[str],
-) -> dict[str, str | None]:
+) -> dict[str, Any]:
     card_splits = [s for s in splits if _touches_card(s, card_id)]
     window_start, last_payment = _resolve_activity_window(
         card_splits, card_id, month_start
@@ -144,6 +169,7 @@ def _compute_cc_activity(
     interest = Decimal("0")
     fees = Decimal("0")
     new_charges = Decimal("0")
+    new_transactions: list[dict[str, str | None]] = []
 
     for split in card_splits:
         split_date = _split_date(split)
@@ -161,7 +187,20 @@ def _compute_cc_activity(
             fees += amount
         else:
             new_charges += amount
+        new_transactions.append(
+            {
+                "journal_id": split.get("journal_id"),
+                "date": split_date,
+                "description": _activity_description(split, card_id),
+                "payee": _activity_payee(split, card_id),
+                "category": (split.get("category_name") or "").strip() or None,
+                "budget": (split.get("budget_name") or "").strip() or None,
+                "kind": _activity_kind_label(category),
+                "amount": _format_decimal(amount),
+            }
+        )
 
+    new_transactions.sort(key=lambda row: row["date"] or "", reverse=True)
     new_total = interest + fees + new_charges
     return {
         "new_total": _format_decimal(new_total),
@@ -171,6 +210,7 @@ def _compute_cc_activity(
         "last_payment_amount": _last_payment_amount(
             card_splits, card_id, last_payment, fetch_start
         ),
+        "new_transactions": new_transactions,
     }
 
 

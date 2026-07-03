@@ -172,4 +172,5 @@ async def test_build_worksheet_envelope_with_refresh(data_dir):
     assert card["name"] == "Chase VISA"
     assert card["planned_amount"] == "500.00"
     assert card["paid_at"] == "2026-07-10T00:00:00Z"
+    assert card["new_transactions"] == []
     assert envelope["buckets"][0]["planned_outflows"] == "500.00"

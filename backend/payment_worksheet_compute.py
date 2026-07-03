@@ -126,6 +126,7 @@ def _assemble_credit_cards(
                 "fees": snapshot.get("fees", "0.00"),
                 "last_payment_date": snapshot.get("last_payment_date"),
                 "last_payment_amount": snapshot.get("last_payment_amount", "0.00"),
+                "new_transactions": snapshot.get("new_transactions") or [],
                 "planned_amount": state.get("planned_amount", "0.00"),
                 "planned_amount_override": bool(state.get("planned_amount_override")),
                 "paid_at": state.get("paid_at"),

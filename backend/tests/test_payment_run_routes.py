@@ -457,6 +457,19 @@ def test_put_row_state(monkeypatch, client, data_dir, payment_worksheet_env):
     assert after_paid["credit_cards"][0]["paid_at"] == "2026-07-15T12:00:00Z"
     assert after_paid["buckets"][0]["remaining"] == after_planned["buckets"][0]["remaining"]
 
+    clear_planned = client.put(
+        "/api/payment-run/rows/cc:cc1",
+        params={"month": month},
+        json={"planned_amount": "0.00", "clear_planned_override": True},
+    )
+    assert clear_planned.status_code == 200
+
+    after_clear = client.get("/api/payment-run", params={"month": month}).json()
+    card = after_clear["credit_cards"][0]
+    assert card["planned_amount"] == "0.00"
+    assert card["planned_amount_override"] is False
+    assert after_clear["buckets"][0]["planned_outflows"] == "0.00"
+
 
 def test_put_bucket_balance(monkeypatch, client, data_dir, payment_worksheet_env):
     month = current_month_key()
