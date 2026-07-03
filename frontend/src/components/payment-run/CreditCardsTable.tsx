@@ -74,8 +74,8 @@ function NewActivitySubTable({
   fireflyBaseUrl?: string
 }) {
   return (
-    <div className="bg-muted/30 border-t px-4 py-2.5 sm:pl-28">
-      <div className="overflow-x-auto">
+    <div className="bg-muted/30 border-t px-4 py-2.5">
+      <div className="ml-auto w-fit max-w-full overflow-x-auto">
         <table className="w-max max-w-full table-fixed text-xs [&_th]:font-medium [&_th]:text-muted-foreground [&_td]:py-1 [&_th]:py-1">
           <colgroup>
             <col style={{ width: "5.5rem" }} />

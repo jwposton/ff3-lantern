@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Payment worksheet credit card activity** — activity sub-table uses fixed column widths so description stays narrow without a dead gap before payee
+- **Payment worksheet credit card activity** — activity sub-table is right-aligned under the dollar columns with fixed column widths
 - **Payment worksheet credit cards** — card name links to Firefly; pencil opens **Details** (bucket, limit, due day, APR, default pay, exclude); table shows read-only balances with only **Planned** and **Paid** editable inline; paid rows use a light green background; table help is a header tooltip; excluded cards live in **Manage cards**; subtotal row sums dollar columns with balance-weighted APR and portfolio utilization; bucket, limit, due, APR, and util columns hide below xl width to reduce horizontal scrolling; due dates turn red when due today or earlier, the row is not marked paid, and no bank payment posted this month
 - **Payment worksheet bucket sheet** — compact footer buttons (Delete, Cancel, Save) aligned on one row, matching credit card Details
 - **Payment worksheet buckets** — bucket cards show linked Firefly account names; footer totals are left-aligned; edit sheet includes delete with confirmation
