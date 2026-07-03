@@ -176,6 +176,77 @@ def test_normalize_cc_asset_role():
     assert _normalize_account_role("creditCard") == "Credit card"
 
 
+def test_prepare_account_update_payload_ccasset_strips_liability_fields():
+    from firefly_client import prepare_account_update_payload
+
+    attrs = {
+        "name": "Chase",
+        "type": "asset",
+        "account_role": "ccAsset",
+        "notes": "old notes",
+        "liability_type": "loan",
+        "liability_direction": "credit",
+        "interest": None,
+        "interest_period": "monthly",
+    }
+    payload = prepare_account_update_payload(attrs, notes="new notes")
+    assert payload["notes"] == "new notes"
+    assert payload["credit_card_type"] == "monthlyFull"
+    assert payload["monthly_payment_date"] == "2000-01-01"
+    assert "liability_type" not in payload
+    assert "interest" not in payload
+
+
+def test_normalize_monthly_payment_date_formats():
+    from firefly_client import _normalize_monthly_payment_date
+
+    assert _normalize_monthly_payment_date(None) == "2000-01-01"
+    assert _normalize_monthly_payment_date("15") == "2000-01-15"
+    assert _normalize_monthly_payment_date("2020-05-11") == "2020-05-11"
+    assert _normalize_monthly_payment_date("2020-05-11T12:00:00+00:00") == "2020-05-11"
+
+
+def test_update_account_sends_sanitized_ccasset_body():
+    put_bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/accounts/9" and request.method == "PUT":
+            put_bodies.append(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "9",
+                        "attributes": put_bodies[-1],
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    asyncio.run(
+        client.update_account(
+            "9",
+            {
+                "name": "Chase",
+                "type": "asset",
+                "account_role": "ccAsset",
+                "notes": "profile",
+                "liability_type": "loan",
+            },
+        )
+    )
+    assert put_bodies
+    body = put_bodies[0]
+    assert body["credit_card_type"] == "monthlyFull"
+    assert body["monthly_payment_date"] == "2000-01-01"
+    assert "liability_type" not in body
+
+
 def test_account_role_not_replaced_by_account_type():
     accounts_payload = {
         "data": [

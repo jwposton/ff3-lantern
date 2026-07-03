@@ -1,15 +1,23 @@
 import { useMemo, useState } from "react"
 import { Navigate } from "react-router-dom"
-import { RefreshCw } from "lucide-react"
+import { CircleHelp, RefreshCw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { BucketSheet } from "@/components/payment-run/BucketSheet"
+import { CreditCardSheet } from "@/components/payment-run/CreditCardSheet"
+import type { CreditCardDetailsInput } from "@/components/payment-run/CreditCardSheet"
 import { CreditCardsTable } from "@/components/payment-run/CreditCardsTable"
+import { ManageCardsSheet } from "@/components/payment-run/ManageCardsSheet"
 import { FundingBucketBar } from "@/components/payment-run/FundingBucketBar"
 import { ShortfallBanner } from "@/components/payment-run/ShortfallBanner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useHealth } from "@/hooks/useHealth"
 import { useLoanMeta } from "@/hooks/useLoans"
 import { isFundingBucketAsset } from "@/lib/accounts"
@@ -48,8 +56,12 @@ export function PaymentWorksheetPage() {
   const { data: loanMeta } = useLoanMeta()
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [ccActionError, setCcActionError] = useState<string | null>(null)
   const [bucketSheetOpen, setBucketSheetOpen] = useState(false)
   const [editingBucket, setEditingBucket] = useState<FundingBucket | null>(null)
+  const [cardSheetOpen, setCardSheetOpen] = useState(false)
+  const [editingCard, setEditingCard] = useState<CreditCardRow | null>(null)
+  const [manageCardsOpen, setManageCardsOpen] = useState(false)
 
   const bucketAssetAccounts = useMemo(
     () =>
@@ -171,23 +183,55 @@ export function PaymentWorksheetPage() {
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
   }
 
-  async function handleBucketChange(
+  async function handleCardDetailsSave(
     accountId: string,
-    bucketKey: string | null,
+    values: CreditCardDetailsInput,
   ) {
-    await putAccountWorksheet(accountId, month, {
-      funding_bucket_key: bucketKey,
-    })
-    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    setCcActionError(null)
+    try {
+      await putAccountWorksheet(accountId, month, values)
+      await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    } catch (err) {
+      setCcActionError(
+        err instanceof Error ? err.message : "Could not save card details.",
+      )
+      throw err
+    }
+  }
+
+  function openCardDetails(row: CreditCardRow) {
+    setEditingCard(row)
+    setCardSheetOpen(true)
   }
 
   async function handleExclude(row: CreditCardRow) {
-    await putAccountWorksheet(row.account_id, month, { included: false })
-    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    setCcActionError(null)
+    try {
+      await putAccountWorksheet(row.account_id, month, { included: false })
+      await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    } catch (err) {
+      setCcActionError(
+        err instanceof Error ? err.message : "Could not exclude card.",
+      )
+    }
+  }
+
+  async function handleInclude(accountId: string) {
+    setCcActionError(null)
+    try {
+      await putAccountWorksheet(accountId, month, { included: true })
+      await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not restore card."
+      setCcActionError(message)
+      throw new Error(message)
+    }
   }
 
   const paidCount = data?.credit_cards.filter((row) => row.paid_at).length ?? 0
   const ccCount = data?.credit_cards.length ?? 0
+  const excludedCount = data?.excluded_credit_cards.length ?? 0
 
   return (
     <div className="space-y-8">
@@ -256,22 +300,57 @@ export function PaymentWorksheetPage() {
 
           <section className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-xl font-semibold">
-                Credit cards
-                {ccCount > 0 ? ` · ${paidCount} / ${ccCount} paid` : ""}
-              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl font-semibold">
+                  Credit cards
+                  {ccCount > 0 ? ` · ${paidCount} / ${ccCount} paid` : ""}
+                </h2>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground inline-flex rounded-sm"
+                      aria-label="Credit card table help"
+                    >
+                      <CircleHelp className="size-4" aria-hidden />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    Card names open Firefly. Use the pencil to edit bucket,
+                    limits, and other account fields. Only Planned and Paid edit
+                    inline.
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              {data.refreshed_at ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setManageCardsOpen(true)}
+                >
+                  Manage cards
+                  {excludedCount > 0 ? ` (${excludedCount} excluded)` : ""}
+                </Button>
+              ) : null}
             </div>
             {ccGuidance ? (
               <p className="text-muted-foreground text-sm">{ccGuidance}</p>
+            ) : null}
+            {ccActionError ? (
+              <p className="text-destructive text-sm" role="alert">
+                {ccActionError}
+              </p>
             ) : null}
             {data.credit_cards.length > 0 ? (
               <CreditCardsTable
                 rows={data.credit_cards}
                 buckets={data.buckets}
+                month={data.month}
+                fireflyBaseUrl={data.firefly_base_url}
                 onPlannedBlur={handlePlannedBlur}
                 onPaidChange={handlePaidChange}
-                onBucketChange={handleBucketChange}
-                onExclude={handleExclude}
+                onEditDetails={openCardDetails}
               />
             ) : null}
             {data.credit_cards.length === 0 && !data.refreshed_at ? (
@@ -296,9 +375,10 @@ export function PaymentWorksheetPage() {
                     No credit cards on this worksheet
                   </p>
                   <p>
-                    Firefly returned no credit card asset accounts. Excluded cards
-                    stay hidden until you include them again from setup (coming in
-                    a later phase).
+                    All cards may be excluded, or Firefly returned no credit card
+                    asset accounts. Open <span className="font-medium">Manage cards</span>{" "}
+                    to restore excluded cards, or refresh after fixing account roles
+                    in Firefly.
                   </p>
                 </CardContent>
               </Card>
@@ -315,6 +395,22 @@ export function PaymentWorksheetPage() {
         assetAccounts={bucketAssetAccounts}
         onSave={handleSaveBucket}
         onDelete={handleDeleteBucket}
+      />
+
+      <ManageCardsSheet
+        open={manageCardsOpen}
+        onOpenChange={setManageCardsOpen}
+        excludedCards={data?.excluded_credit_cards ?? []}
+        onInclude={handleInclude}
+      />
+
+      <CreditCardSheet
+        open={cardSheetOpen}
+        onOpenChange={setCardSheetOpen}
+        row={editingCard}
+        buckets={data?.buckets ?? []}
+        onSave={handleCardDetailsSave}
+        onExclude={handleExclude}
       />
     </div>
   )

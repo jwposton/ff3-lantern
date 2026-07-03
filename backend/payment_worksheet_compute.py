@@ -117,11 +117,15 @@ def _assemble_credit_cards(
                 "name": snapshot.get("name"),
                 "credit_limit": snapshot.get("credit_limit"),
                 "funding_bucket_key": snapshot.get("funding_bucket_key"),
+                "default_planned_payment": snapshot.get("default_planned_payment"),
+                "apr_percent": snapshot.get("apr_percent"),
+                "payment_due_day": snapshot.get("payment_due_day"),
                 "owed": snapshot.get("owed", "0.00"),
                 "new_total": snapshot.get("new_total", "0.00"),
                 "interest_accrued": snapshot.get("interest_accrued", "0.00"),
                 "fees": snapshot.get("fees", "0.00"),
                 "last_payment_date": snapshot.get("last_payment_date"),
+                "last_payment_amount": snapshot.get("last_payment_amount", "0.00"),
                 "planned_amount": state.get("planned_amount", "0.00"),
                 "planned_amount_override": bool(state.get("planned_amount_override")),
                 "paid_at": state.get("paid_at"),
@@ -130,6 +134,23 @@ def _assemble_credit_cards(
 
     cards.sort(key=lambda row: (row.get("name") or "", row["account_id"]))
     return cards
+
+
+def _assemble_excluded_credit_cards(
+    refresh_snapshot: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if refresh_snapshot is None:
+        return []
+    excluded = refresh_snapshot.get("excluded_credit_cards") or {}
+    rows = [
+        {
+            "account_id": account_id,
+            "name": meta.get("name"),
+        }
+        for account_id, meta in excluded.items()
+    ]
+    rows.sort(key=lambda row: (row.get("name") or "", row["account_id"]))
+    return rows
 
 
 async def build_worksheet_envelope(month: str) -> dict[str, Any]:
@@ -146,6 +167,7 @@ async def build_worksheet_envelope(month: str) -> dict[str, Any]:
         refresh_snapshot = json.loads(refresh_row["balances_json"])
 
     credit_cards = _assemble_credit_cards(refresh_snapshot, worksheet_state)
+    excluded_credit_cards = _assemble_excluded_credit_cards(refresh_snapshot)
     rollups = compute_bucket_rollups(
         buckets,
         refresh_snapshot,
@@ -159,6 +181,7 @@ async def build_worksheet_envelope(month: str) -> dict[str, Any]:
         "refreshed_at": refreshed_at,
         "buckets": rollups["buckets"],
         "credit_cards": credit_cards,
+        "excluded_credit_cards": excluded_credit_cards,
         "shortfall": rollups["shortfall"],
         "totals": rollups["totals"],
     }

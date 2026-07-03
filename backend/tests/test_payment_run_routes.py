@@ -92,6 +92,7 @@ def test_get_worksheet(monkeypatch, client, data_dir, payment_worksheet_env):
     assert body["buckets"][0]["id"] == "checking"
     assert "shortfall" in body
     assert "totals" in body
+    assert body["firefly_base_url"] == "https://firefly.example"
 
 
 def test_get_worksheet_does_not_call_firefly(monkeypatch, client, data_dir, payment_worksheet_env):
@@ -193,6 +194,75 @@ def test_put_worksheet_updates_get_envelope(monkeypatch, client, data_dir, payme
 
         after_exclude = client.get("/api/payment-run", params={"month": month})
         assert after_exclude.json()["credit_cards"] == []
+        assert after_exclude.json()["excluded_credit_cards"][0]["account_id"] == "cc1"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_put_worksheet_ccasset_account_sanitizes_firefly_body(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    month = current_month_key()
+    import asyncio
+
+    asyncio.run(_seed_worksheet_snapshot(month))
+    put_bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/accounts/cc9" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "cc9",
+                        "attributes": {
+                            "name": "Amex",
+                            "type": "asset",
+                            "account_role": "ccAsset",
+                            "notes": "",
+                            "liability_type": "loan",
+                            "interest": None,
+                        },
+                    }
+                },
+            )
+        if request.url.path == "/api/v1/accounts/cc9" and request.method == "PUT":
+            put_bodies.append(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "cc9",
+                        "attributes": put_bodies[-1],
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    from routes import payment_run as payment_run_mod
+    from main import app
+
+    app.dependency_overrides[payment_run_mod.get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    try:
+        put_response = client.put(
+            "/api/payment-run/accounts/cc9/worksheet",
+            params={"month": month},
+            json={"credit_limit": "15000.00", "funding_bucket_key": "checking"},
+        )
+        assert put_response.status_code == 200
+        assert put_bodies
+        assert put_bodies[0]["credit_card_type"] == "monthlyFull"
+        assert "liability_type" not in put_bodies[0]
+
+        get_response = client.get("/api/payment-run", params={"month": month})
+        cards = get_response.json()["credit_cards"]
+        cc9 = next(row for row in cards if row["account_id"] == "cc9")
+        assert cc9["credit_limit"] == "15000.00"
+        assert cc9["funding_bucket_key"] == "checking"
     finally:
         app.dependency_overrides.clear()
 

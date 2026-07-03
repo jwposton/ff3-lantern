@@ -12,6 +12,7 @@ import sidecar_db
 from firefly_client import FireflyClient
 from payment_worksheet_cc import classify_cc_activity_category, is_credit_card_payment_flow
 from payment_worksheet_profiles import (
+    _due_day_from_monthly_payment_date,
     current_month_key,
     effective_profile_from_notes,
 )
@@ -59,6 +60,35 @@ def _split_date(split: dict[str, Any]) -> str:
     return raw[:10] if len(raw) >= 10 else raw
 
 
+def _activity_fetch_start(month: str) -> str:
+    """First day of the calendar month before *month* (for last-payment lookback)."""
+    year = int(month[:4])
+    mon = int(month[5:7])
+    if mon == 1:
+        return f"{year - 1}-12-01"
+    return f"{year}-{mon - 1:02d}-01"
+
+
+def _resolve_activity_window(
+    card_splits: list[dict[str, Any]], card_id: str, month_start: str
+) -> tuple[str, str | None]:
+    """Anchor New/interest/fees to the latest payment in-month, else prior month, else MTD."""
+    payment_dates = [
+        _split_date(s)
+        for s in card_splits
+        if _is_payment_to_card(s, card_id) and _split_date(s)
+    ]
+    in_month = [d for d in payment_dates if d >= month_start]
+    if in_month:
+        anchor = max(in_month)
+        return anchor, anchor
+    before_month = [d for d in payment_dates if d < month_start]
+    if before_month:
+        anchor = max(before_month)
+        return anchor, anchor
+    return month_start, None
+
+
 def _touches_card(split: dict[str, Any], card_id: str) -> bool:
     return split.get("source_id") == card_id or split.get("destination_id") == card_id
 
@@ -79,29 +109,37 @@ def _amount_for_card_activity(split: dict[str, Any], card_id: str) -> Decimal:
     return Decimal("0")
 
 
-def _find_last_payment_date(
-    splits: list[dict[str, Any]], card_id: str
-) -> str | None:
-    payment_dates = [
-        _split_date(s)
-        for s in splits
-        if _is_payment_to_card(s, card_id) and _split_date(s)
-    ]
-    return max(payment_dates) if payment_dates else None
+def _last_payment_amount(
+    card_splits: list[dict[str, Any]],
+    card_id: str,
+    last_payment_date: str | None,
+    fetch_start: str,
+) -> str:
+    """Payment amount when the anchor date falls in the prior or current month."""
+    if not last_payment_date or last_payment_date < fetch_start:
+        return "0.00"
+    total = Decimal("0")
+    for split in card_splits:
+        if not _is_payment_to_card(split, card_id):
+            continue
+        if _split_date(split) != last_payment_date:
+            continue
+        total += _decimal_amount(split.get("amount"))
+    return _format_decimal(total)
 
 
 def _compute_cc_activity(
     splits: list[dict[str, Any]],
     card_id: str,
     month_start: str,
+    fetch_start: str,
     interest_cats: list[str],
     fee_cats: list[str],
 ) -> dict[str, str | None]:
     card_splits = [s for s in splits if _touches_card(s, card_id)]
-    last_payment = _find_last_payment_date(card_splits, card_id)
-    window_start = month_start
-    if last_payment and last_payment > window_start:
-        window_start = last_payment
+    window_start, last_payment = _resolve_activity_window(
+        card_splits, card_id, month_start
+    )
 
     interest = Decimal("0")
     fees = Decimal("0")
@@ -130,22 +168,21 @@ def _compute_cc_activity(
         "interest_accrued": _format_decimal(interest),
         "fees": _format_decimal(fees),
         "last_payment_date": last_payment,
+        "last_payment_amount": _last_payment_amount(
+            card_splits, card_id, last_payment, fetch_start
+        ),
     }
 
 
 async def _included_credit_card_ids(client: FireflyClient) -> list[tuple[str, dict[str, Any]]]:
     accounts = await client.fetch_accounts()
-    included: list[tuple[str, dict[str, Any]]] = []
+    cards: list[tuple[str, dict[str, Any]]] = []
     for account_id, summary in accounts.items():
         if summary.get("type") != "Asset account" or summary.get("role") != "Credit card":
             continue
         full = await client.fetch_account(account_id)
-        notes = full.get("attributes", {}).get("notes") or ""
-        profile = effective_profile_from_notes(notes)
-        if profile.get("included") is False:
-            continue
-        included.append((account_id, full))
-    return included
+        cards.append((account_id, full))
+    return cards
 
 
 async def run_refresh(
@@ -162,7 +199,7 @@ async def run_refresh(
     interest_cats = interest_categories()
     fee_cats = fee_categories()
 
-    balances: dict[str, Any] = {"buckets": {}, "credit_cards": {}}
+    balances: dict[str, Any] = {"buckets": {}, "credit_cards": {}, "excluded_credit_cards": {}}
 
     for bucket in buckets:
         reported = Decimal("0")
@@ -186,25 +223,34 @@ async def run_refresh(
             user_balance_override=0,
         )
 
-    splits = await client.fetch_splits(month_start, today)
+    fetch_start = _activity_fetch_start(month)
+    splits = await client.fetch_splits(fetch_start, today)
     cc_accounts = await _included_credit_card_ids(client)
     state_rows = {
         row["row_key"]: row
         for row in await sidecar_db.get_worksheet_state_for_month(month)
     }
 
+    excluded_credit_cards: dict[str, Any] = {}
+
     for account_id, account in cc_accounts:
         attrs = account.get("attributes", {})
         notes = attrs.get("notes") or ""
         profile = effective_profile_from_notes(notes)
+        if profile.get("included") is False:
+            excluded_credit_cards[account_id] = {"name": attrs.get("name")}
+            continue
         owed = abs(_decimal_amount(attrs.get("current_balance")))
         activity = _compute_cc_activity(
-            splits, account_id, month_start, interest_cats, fee_cats
+            splits, account_id, month_start, fetch_start, interest_cats, fee_cats
         )
         balances["credit_cards"][account_id] = {
             "name": attrs.get("name"),
             "credit_limit": profile.get("credit_limit"),
             "funding_bucket_key": profile.get("funding_bucket_key"),
+            "payment_due_day": profile.get("payment_due_day")
+            or _due_day_from_monthly_payment_date(attrs.get("monthly_payment_date")),
+            "apr_percent": profile.get("apr_percent"),
             "owed": _format_decimal(owed),
             **activity,
         }
@@ -230,6 +276,8 @@ async def run_refresh(
                 planned_amount="0.00",
                 planned_amount_override=0,
             )
+
+    balances["excluded_credit_cards"] = excluded_credit_cards
 
     await sidecar_db.upsert_worksheet_refresh(
         month=month,

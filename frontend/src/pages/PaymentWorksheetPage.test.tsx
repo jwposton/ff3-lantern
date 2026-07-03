@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
 
 import { DateRangeProvider } from "@/context/DateRangeContext"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { PaymentWorksheetPage } from "./PaymentWorksheetPage"
 import type { PaymentWorksheetEnvelope } from "@/lib/paymentRunApi"
 
@@ -13,6 +14,7 @@ const EMPTY_ENVELOPE: PaymentWorksheetEnvelope = {
   refreshed_at: null,
   buckets: [],
   credit_cards: [],
+  excluded_credit_cards: [],
   shortfall: false,
   totals: {
     reported_balance: "0.00",
@@ -38,37 +40,47 @@ const WORKSHEET_ENVELOPE: PaymentWorksheetEnvelope = {
   ],
   credit_cards: [
     {
-      account_id: "cc1",
-      row_key: "cc:cc1",
+      account_id: "42",
+      row_key: "cc:42",
       name: "Chase VISA",
       credit_limit: "10000.00",
       funding_bucket_key: "checking",
+      default_planned_payment: "200.00",
+      payment_due_day: "15",
+      apr_percent: "24.99",
       owed: "1200.00",
       new_total: "100.00",
       interest_accrued: "20.00",
       fees: "5.00",
       last_payment_date: null,
+      last_payment_amount: "0.00",
       planned_amount: "400.00",
       planned_amount_override: false,
       paid_at: null,
     },
     {
-      account_id: "cc2",
-      row_key: "cc:cc2",
+      account_id: "43",
+      row_key: "cc:43",
       name: "AmEx",
       credit_limit: "5000.00",
       funding_bucket_key: "checking",
+      default_planned_payment: null,
+      payment_due_day: null,
+      apr_percent: null,
       owed: "800.00",
       new_total: "50.00",
       interest_accrued: "10.00",
       fees: "0.00",
       last_payment_date: null,
+      last_payment_amount: "0.00",
       planned_amount: "500.00",
       planned_amount_override: false,
       paid_at: "2026-07-15T12:00:00Z",
     },
   ],
   shortfall: false,
+  excluded_credit_cards: [],
+  firefly_base_url: "https://ff.example",
   totals: {
     reported_balance: "5000.00",
     user_balance: "5000.00",
@@ -98,7 +110,9 @@ function TestProviders({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <DateRangeProvider>{children}</DateRangeProvider>
+        <DateRangeProvider>
+          <TooltipProvider>{children}</TooltipProvider>
+        </DateRangeProvider>
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -218,6 +232,11 @@ describe("PaymentWorksheetPage", () => {
       expect(screen.getByText("Chase VISA")).toBeTruthy()
       expect(screen.getByText("AmEx")).toBeTruthy()
     })
+
+    const chaseLink = screen.getByRole("link", { name: /Chase VISA/i })
+    expect(chaseLink.getAttribute("href")).toBe(
+      "https://ff.example/accounts/show/42",
+    )
   })
 
   it("applies paid row styling with data-state=paid", async () => {
@@ -259,7 +278,6 @@ describe("PaymentWorksheetPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("Planned payments subtotal")).toBeTruthy()
       expect(screen.getByTestId("cc-planned-subtotal").textContent).toBe("900.00")
     })
   })
@@ -276,6 +294,35 @@ describe("PaymentWorksheetPage", () => {
     await waitFor(() => {
       const bar = screen.getByTestId("funding-bucket-bar")
       expect(bar.textContent).toContain("4,100.00")
+    })
+  })
+
+  it("shows manage cards with excluded count and help tooltip", async () => {
+    mockPaymentFetch({
+      envelope: {
+        ...WORKSHEET_ENVELOPE,
+        excluded_credit_cards: [
+          { account_id: "99", name: "Hidden Card" },
+        ],
+      },
+    })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Manage cards (1 excluded)" }),
+      ).toBeTruthy()
+      expect(
+        screen.getByRole("button", { name: "Credit card table help" }),
+      ).toBeTruthy()
+      expect(
+        screen.queryByText(/Card names open Firefly/i),
+      ).toBeNull()
     })
   })
 })

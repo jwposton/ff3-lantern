@@ -122,6 +122,7 @@ async def test_build_worksheet_envelope_no_refresh(data_dir):
     assert envelope["month"] == "2026-07"
     assert envelope["refreshed_at"] is None
     assert envelope["credit_cards"] == []
+    assert envelope["excluded_credit_cards"] == []
     assert len(envelope["buckets"]) == 1
     assert envelope["buckets"][0]["reported_balance"] == "0.00"
     assert envelope["shortfall"] is False

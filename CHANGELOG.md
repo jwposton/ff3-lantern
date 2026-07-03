@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Payment worksheet credit cards** — card name links to Firefly; pencil opens **Details** (bucket, limit, due day, APR, default pay, exclude); table shows read-only balances with only **Planned** and **Paid** editable inline; paid rows use a light green background; table help is a header tooltip; excluded cards live in **Manage cards**; subtotal row sums dollar columns with balance-weighted APR and portfolio utilization; bucket, limit, due, APR, and util columns hide below xl width to reduce horizontal scrolling; due dates turn red when due today or earlier, the row is not marked paid, and no bank payment posted this month
+- **Payment worksheet bucket sheet** — compact footer buttons (Delete, Cancel, Save) aligned on one row, matching credit card Details
 - **Payment worksheet buckets** — bucket cards show linked Firefly account names; footer totals are left-aligned; edit sheet includes delete with confirmation
 - **Payment worksheet onboarding** — clearer copy that credit cards load from Firefly on Refresh (no separate add control)
 - **Transaction Explorer default scope** — Shows all transaction types by default (bank and credit card withdrawals, deposits, transfers); optional **Bank spending only** narrows to checking/savings purchases
@@ -25,8 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Payment worksheet foundation** — Sidecar tables and funding-bucket API behind `FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED` feature flag
+- **Credit card Details sheet** — payment due day, APR %, credit limit, default planned payment, funding bucket, and exclude; fields that Firefly ccAsset cannot persist are stored in worksheet profile notes
 - **Credit card worksheet profiles** — Include-all-by-default credit cards with exclude via account notes; inline bucket assign and exclude update the worksheet snapshot without a full refresh
-- **Refresh balances** — Manual refresh pulls Firefly balances and credit card activity columns (New, interest, fees, owed)
+- **Refresh balances** — Manual refresh pulls Firefly balances and credit card activity columns (New, interest, fees, owed, last payment amount); activity window starts at the latest bank→card payment in the current month, or the prior month when none yet this month
 - **Payment worksheet API** — View endpoint returns sidecar snapshot without live Firefly pull; inline profile edits visible on GET without refresh
 - **Payment worksheet mutations** — Row planned/paid and bucket user balance endpoints
 - **Payment worksheet page** — Manage screen at `/manage/payment-run` with manual Refresh and GET-only load on open
@@ -44,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Funding bucket accounts** — bucket setup lists and accepts only non–credit-card asset accounts (checking/savings); credit cards cannot be mapped to a cash pool
 - **Worksheet profile month** — bucket assignment and exclude changes apply to the month you are viewing, including near month boundaries
 - **Credit card bucket unassign** — selecting Unassigned clears funding bucket on the worksheet without editing Firefly notes manually
+- **Credit card bucket assign** — bucket selection persists on the worksheet even when no refresh snapshot existed yet
+- **Credit card profile saves** — limit, bucket, and exclude updates work for Firefly `ccAsset` accounts (PUT no longer sends invalid liability fields back to Firefly); `monthly_payment_date` is normalized to `YYYY-MM-DD` when Firefly returns a day-only value
 - **AI filter parse** — Account allowlist for natural-language filter parsing no longer crashes when reading Firefly accounts
 
 ## [1.1.12] - 2026-07-02

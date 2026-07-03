@@ -54,9 +54,9 @@ Firefly remains **system of record** for transactions, balances, bills, and rule
 
 **New** is **not** a balance delta and **not** tied to worksheet planned/paid. It is transaction-based:
 
-1. On refresh, pull **month-to-date** transactions for the card.
+1. On refresh, pull transactions from the **start of the prior calendar month** through today (so the last bank payment can be found even when it posted before the current month).
 2. Find the **most recent transfer from a bank account** (checking/savings asset) **to** this card asset — same detection as `isCreditCardPaymentFlow` in `frontend/src/lib/cashFlowLabels.ts` (bank source → credit card destination).
-3. Define the activity window: `max(current_month_start, last_bank_payment_date)`. If there is no bank→card payment on or before the refresh date, the window is all MTD activity on the card.
+3. Define the activity window: **latest bank payment in the current month** when one exists; otherwise **latest bank payment in the prior month** (from the fetched range); otherwise **current month start**. Count net card activity on or after that date (exclusive of the payment transfer itself).
 4. **New (X)** = net activity on the card in that window (exclusive of the payment transfer itself): purchases, fees, **interest posts**, refunds/credits.
 5. **Interest accrued** = sum of **interest charge** transactions in that same window (a component of **X**, shown on its own line).
 6. **Fees** = sum of **fee** transactions in that same window (a component of **X**, shown on its own line).

@@ -230,6 +230,68 @@ async def test_patch_refresh_clears_bucket_when_updates_null(data_dir):
 
 
 @pytest.mark.asyncio
+async def test_patch_refresh_creates_row_when_missing(data_dir):
+    import sidecar_db
+
+    from payment_worksheet_profiles import patch_worksheet_refresh_profile
+
+    month = current_month_key()
+    await patch_worksheet_refresh_profile(
+        month,
+        "cc1",
+        {
+            "included": True,
+            "worksheet_section": "credit",
+            "funding_bucket_key": "checking",
+        },
+        {"funding_bucket_key": "checking"},
+    )
+
+    row = await sidecar_db.get_worksheet_refresh(month)
+    assert row is not None
+    updated = json.loads(row["balances_json"])
+    assert updated["credit_cards"]["cc1"]["funding_bucket_key"] == "checking"
+
+
+@pytest.mark.asyncio
+async def test_patch_refresh_exclude_moves_card_to_excluded_list(data_dir):
+    import sidecar_db
+
+    from payment_worksheet_profiles import patch_worksheet_refresh_profile
+
+    month = current_month_key()
+    balances = {
+        "buckets": {},
+        "credit_cards": {
+            "cc1": {
+                "name": "Chase VISA",
+                "funding_bucket_key": "checking",
+                "owed": "1200.00",
+            }
+        },
+        "excluded_credit_cards": {},
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month=month,
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+
+    await patch_worksheet_refresh_profile(
+        month,
+        "cc1",
+        {"included": False, "worksheet_section": "credit"},
+        {"included": False},
+    )
+
+    row = await sidecar_db.get_worksheet_refresh(month)
+    assert row is not None
+    updated = json.loads(row["balances_json"])
+    assert "cc1" not in updated["credit_cards"]
+    assert updated["excluded_credit_cards"]["cc1"]["name"] == "Chase VISA"
+
+
+@pytest.mark.asyncio
 async def test_patch_refresh_omitted_bucket_leaves_snapshot_unchanged(data_dir):
     import sidecar_db
 

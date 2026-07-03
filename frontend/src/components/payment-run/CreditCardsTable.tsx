@@ -1,16 +1,7 @@
-import { useMemo, useState } from "react"
-import { MoreHorizontal } from "lucide-react"
+import { Pencil } from "lucide-react"
+import { useMemo } from "react"
 
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
 import {
   Table,
   TableBody,
@@ -20,16 +11,30 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { formatDisplayAmount } from "@/lib/formatDisplay"
+import { buildFireflyAccountUrl } from "@/lib/fireflyLinks"
+import {
+  computeCreditCardSubtotals,
+  formatInterestPercent,
+  formatPaymentDueDay,
+  shouldHighlightCreditCardDue,
+} from "@/lib/paymentRunFormat"
 import type { CreditCardRow, FundingBucketRollup } from "@/lib/paymentRunApi"
 import { cn } from "@/lib/utils"
+
+const COMPACT_TABLE =
+  "text-xs [&_th]:h-8 [&_th]:px-2 [&_th]:py-1 [&_th]:text-xs [&_td]:px-2 [&_td]:py-1.5 [&_td]:text-xs [&_td]:min-h-0"
+
+/** Bucket, limit, due, APR, util — detail columns shown from xl up to avoid horizontal scroll. */
+const XL_COL = "hidden xl:table-cell"
 
 type CreditCardsTableProps = {
   rows: CreditCardRow[]
   buckets: FundingBucketRollup[]
+  month: string
+  fireflyBaseUrl?: string
   onPlannedBlur: (rowKey: string, value: string) => Promise<void>
   onPaidChange: (row: CreditCardRow, paid: boolean) => Promise<void>
-  onBucketChange: (accountId: string, bucketKey: string | null) => Promise<void>
-  onExclude: (row: CreditCardRow) => Promise<void>
+  onEditDetails: (row: CreditCardRow) => void
 }
 
 function formatUtilPercent(
@@ -39,79 +44,142 @@ function formatUtilPercent(
   if (!creditLimit) return "—"
   const limit = Number.parseFloat(creditLimit)
   if (!Number.isFinite(limit) || limit <= 0) return "—"
-  const owedAmount = Number.parseFloat(owed)
+  const owedAmount = Math.abs(Number.parseFloat(owed))
   if (!Number.isFinite(owedAmount)) return "—"
   return `${((owedAmount / limit) * 100).toFixed(1)}%`
 }
 
-function selectClassName(): string {
-  return "border-input bg-background ring-offset-background focus-visible:ring-ring flex h-8 w-full rounded-md border px-2 py-0.5 text-xs shadow-xs focus-visible:ring-2 focus-visible:outline-hidden"
+function bucketLabel(
+  buckets: FundingBucketRollup[],
+  bucketKey: string | null | undefined,
+): string {
+  if (!bucketKey) return "—"
+  return buckets.find((bucket) => bucket.id === bucketKey)?.label ?? "—"
 }
 
 export function CreditCardsTable({
   rows,
   buckets,
+  month,
+  fireflyBaseUrl,
   onPlannedBlur,
   onPaidChange,
-  onBucketChange,
-  onExclude,
+  onEditDetails,
 }: CreditCardsTableProps) {
-  const [excludeRow, setExcludeRow] = useState<CreditCardRow | null>(null)
-  const [excluding, setExcluding] = useState(false)
-
-  const subtotal = useMemo(
-    () =>
-      rows.reduce((sum, row) => {
-        const amount = Number.parseFloat(row.planned_amount)
-        return sum + (Number.isFinite(amount) ? amount : 0)
-      }, 0),
-    [rows],
-  )
-
-  async function confirmExclude() {
-    if (!excludeRow) return
-    setExcluding(true)
-    try {
-      await onExclude(excludeRow)
-      setExcludeRow(null)
-    } finally {
-      setExcluding(false)
-    }
-  }
+  const totals = useMemo(() => computeCreditCardSubtotals(rows), [rows])
+  const paidCount = totals.paid_count
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="rounded-md border">
-        <Table>
+        <Table className={COMPACT_TABLE}>
           <TableHeader>
             <TableRow>
-              <TableHead>Card</TableHead>
-              <TableHead className="text-right">New</TableHead>
-              <TableHead className="text-right">Interest accrued</TableHead>
-              <TableHead className="text-right">Fees</TableHead>
+              <TableHead className="max-w-[7rem]">Card</TableHead>
+              <TableHead className={XL_COL}>Bucket</TableHead>
+              <TableHead className={cn("text-right", XL_COL)}>Limit</TableHead>
+              <TableHead className={cn("text-right", XL_COL)}>Due</TableHead>
+              <TableHead className={cn("text-right", XL_COL)}>APR</TableHead>
+              <TableHead className={cn("text-right", XL_COL)}>Util</TableHead>
               <TableHead className="text-right">Owed</TableHead>
+              <TableHead className="text-right">Last pmt</TableHead>
+              <TableHead className="text-right">New</TableHead>
+              <TableHead className="text-right">Int.</TableHead>
+              <TableHead className="text-right">Fees</TableHead>
               <TableHead className="text-right">Planned</TableHead>
-              <TableHead className="text-right">Util %</TableHead>
-              <TableHead>Bucket</TableHead>
-              <TableHead className="text-center">Paid</TableHead>
-              <TableHead className="w-10" />
+              <TableHead className="w-8 text-center">Paid</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => {
               const isPaid = Boolean(row.paid_at)
+              const dueHighlight = shouldHighlightCreditCardDue(row, month)
               const cardName = row.name ?? row.account_id
+              const fireflyAccountUrl = buildFireflyAccountUrl(
+                fireflyBaseUrl,
+                row.account_id,
+              )
               return (
                 <TableRow
                   key={row.row_key}
                   data-state={isPaid ? "paid" : undefined}
                   className={cn(
                     isPaid &&
-                      "bg-emerald-50/80 font-semibold dark:bg-emerald-950/25",
+                      "!bg-green-50 hover:!bg-green-50/90 dark:!bg-green-950/40",
                   )}
                 >
-                  <TableCell className="max-w-[160px] truncate" title={cardName}>
-                    {cardName}
+                  <TableCell className="max-w-[7rem]">
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <div className="flex min-w-0 items-center gap-0.5">
+                        {fireflyAccountUrl ? (
+                          <a
+                            href={fireflyAccountUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="min-w-0 truncate font-medium hover:underline"
+                            title={`${cardName} — open in Firefly`}
+                          >
+                            {cardName}
+                          </a>
+                        ) : (
+                          <span className="min-w-0 truncate font-medium">
+                            {cardName}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground shrink-0 rounded p-0.5"
+                          aria-label={`Edit ${cardName} worksheet details`}
+                          onClick={() => onEditDetails(row)}
+                        >
+                          <Pencil className="size-3" aria-hidden />
+                        </button>
+                      </div>
+                      {dueHighlight ? (
+                        <span
+                          className="text-destructive text-[10px] font-semibold tabular-nums xl:hidden"
+                          title="Due date passed or today — not paid and no payment this month"
+                        >
+                          Due {formatPaymentDueDay(row.payment_due_day)}
+                        </span>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell
+                    className={cn("max-w-[6rem] truncate text-muted-foreground", XL_COL)}
+                  >
+                    {bucketLabel(buckets, row.funding_bucket_key)}
+                  </TableCell>
+                  <TableCell className={cn("text-right tabular-nums", XL_COL)}>
+                    {row.credit_limit
+                      ? formatDisplayAmount(row.credit_limit)
+                      : "—"}
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      "text-right tabular-nums",
+                      XL_COL,
+                      dueHighlight && "text-destructive font-semibold",
+                    )}
+                    title={
+                      dueHighlight
+                        ? "Due date passed or today — not paid and no payment this month"
+                        : undefined
+                    }
+                  >
+                    {formatPaymentDueDay(row.payment_due_day)}
+                  </TableCell>
+                  <TableCell className={cn("text-right tabular-nums", XL_COL)}>
+                    {formatInterestPercent(row.apr_percent)}
+                  </TableCell>
+                  <TableCell className={cn("text-right tabular-nums", XL_COL)}>
+                    {formatUtilPercent(row.owed, row.credit_limit)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatDisplayAmount(row.owed)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatDisplayAmount(row.last_payment_amount)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatDisplayAmount(row.new_total)}
@@ -122,13 +190,10 @@ export function CreditCardsTable({
                   <TableCell className="text-right tabular-nums">
                     {formatDisplayAmount(row.fees)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatDisplayAmount(row.owed)}
-                  </TableCell>
                   <TableCell className="text-right">
                     <Input
                       className={cn(
-                        "ml-auto h-8 w-[112px] text-right text-sm tabular-nums",
+                        "ml-auto h-7 w-[4.5rem] px-1.5 text-right text-xs tabular-nums",
                         isPaid && "font-semibold",
                       )}
                       defaultValue={row.planned_amount}
@@ -142,33 +207,11 @@ export function CreditCardsTable({
                       }}
                     />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatUtilPercent(row.owed, row.credit_limit)}
-                  </TableCell>
-                  <TableCell>
-                    <select
-                      className={selectClassName()}
-                      value={row.funding_bucket_key ?? ""}
-                      onChange={(event) => {
-                        const value = event.target.value
-                        void onBucketChange(
-                          row.account_id,
-                          value ? value : null,
-                        )
-                      }}
-                    >
-                      <option value="">Unassigned</option>
-                      {buckets.map((bucket) => (
-                        <option key={bucket.id} value={bucket.id}>
-                          {bucket.label}
-                        </option>
-                      ))}
-                    </select>
-                  </TableCell>
                   <TableCell className="text-center">
                     <input
                       type="checkbox"
                       role="checkbox"
+                      className="size-3.5"
                       aria-label={`Mark ${cardName} paid`}
                       checked={isPaid}
                       onChange={(event) =>
@@ -176,61 +219,66 @@ export function CreditCardsTable({
                       }
                     />
                   </TableCell>
-                  <TableCell>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      aria-label={`Actions for ${cardName}`}
-                      onClick={() => setExcludeRow(row)}
-                    >
-                      <MoreHorizontal className="size-4" />
-                    </Button>
-                  </TableCell>
                 </TableRow>
               )
             })}
+            {rows.length > 0 ? (
+              <TableRow className="bg-muted/40 font-semibold hover:bg-muted/40">
+                <TableCell className="xl:hidden">Subtotal</TableCell>
+                <TableCell colSpan={2} className="hidden xl:table-cell">
+                  Subtotal
+                </TableCell>
+                <TableCell className={cn("text-right tabular-nums", XL_COL)}>
+                  {totals.credit_limit > 0
+                    ? formatDisplayAmount(totals.credit_limit)
+                    : "—"}
+                </TableCell>
+                <TableCell className={cn("text-right", XL_COL)}>—</TableCell>
+                <TableCell
+                  className={cn("text-right tabular-nums", XL_COL)}
+                  title="Balance-weighted average APR"
+                >
+                  {totals.weighted_apr != null
+                    ? `${totals.weighted_apr.toFixed(2)}%`
+                    : "—"}
+                </TableCell>
+                <TableCell
+                  className={cn("text-right tabular-nums", XL_COL)}
+                  title="Total owed ÷ total limits"
+                >
+                  {totals.portfolio_util != null
+                    ? `${totals.portfolio_util.toFixed(1)}%`
+                    : "—"}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatDisplayAmount(totals.owed)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatDisplayAmount(totals.last_payment_amount)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatDisplayAmount(totals.new_total)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatDisplayAmount(totals.interest_accrued)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatDisplayAmount(totals.fees)}
+                </TableCell>
+                <TableCell
+                  className="text-right tabular-nums"
+                  data-testid="cc-planned-subtotal"
+                >
+                  {formatDisplayAmount(totals.planned_amount)}
+                </TableCell>
+                <TableCell className="text-center tabular-nums text-muted-foreground font-normal">
+                  {paidCount}/{rows.length}
+                </TableCell>
+              </TableRow>
+            ) : null}
           </TableBody>
         </Table>
       </div>
-
-      <div className="flex justify-end gap-3 text-sm">
-        <span className="text-muted-foreground">Planned payments subtotal</span>
-        <span className="font-semibold tabular-nums" data-testid="cc-planned-subtotal">
-          {formatDisplayAmount(subtotal)}
-        </span>
-      </div>
-
-      <Sheet open={excludeRow !== null} onOpenChange={(open) => !open && setExcludeRow(null)}>
-        <SheetContent side="right" className="sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>Exclude {excludeRow?.name ?? excludeRow?.account_id}?</SheetTitle>
-            <SheetDescription>
-              This card will disappear from the worksheet until you include it
-              again. Planned amount for this month is preserved in the sidecar.
-            </SheetDescription>
-          </SheetHeader>
-          <SheetFooter className="gap-2 sm:flex-row">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setExcludeRow(null)}
-              disabled={excluding}
-            >
-              Keep on worksheet
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void confirmExclude()}
-              disabled={excluding}
-            >
-              Exclude
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
     </div>
   )
 }

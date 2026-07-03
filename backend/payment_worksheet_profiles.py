@@ -20,7 +20,29 @@ CLEARABLE_OPTIONAL_KEYS = (
     "funding_bucket_key",
     "credit_limit",
     "default_planned_payment",
+    "apr_percent",
+    "payment_due_day",
 )
+
+
+def _due_day_from_monthly_payment_date(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        try:
+            day = int(text[8:10])
+        except ValueError:
+            return None
+        if 1 <= day <= 31:
+            return str(day)
+    if text.isdigit():
+        day = int(text)
+        if 1 <= day <= 31:
+            return str(day)
+    return None
 
 
 def _extract_json_after_marker(notes: str) -> str | None:
@@ -131,13 +153,32 @@ async def patch_worksheet_refresh_profile(
 ) -> None:
     row = await sidecar_db.get_worksheet_refresh(month)
     if row is None:
-        return
-    balances = json.loads(row["balances_json"])
-    credit_cards = balances.setdefault("credit_cards", {})
-    if profile.get("included") is False:
-        credit_cards.pop(account_id, None)
+        balances: dict[str, Any] = {
+            "buckets": {},
+            "credit_cards": {},
+            "excluded_credit_cards": {},
+        }
+        refreshed_at = (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
     else:
+        balances = json.loads(row["balances_json"])
+        refreshed_at = row["refreshed_at"]
+    credit_cards = balances.setdefault("credit_cards", {})
+    excluded = balances.setdefault("excluded_credit_cards", {})
+    if profile.get("included") is False:
+        prior = credit_cards.pop(account_id, None)
+        excluded[account_id] = {
+            "name": (prior or {}).get("name"),
+        }
+    else:
+        prior_meta = excluded.pop(account_id, {})
         entry = credit_cards.setdefault(account_id, {})
+        if prior_meta.get("name") and not entry.get("name"):
+            entry["name"] = prior_meta.get("name")
         if updates is not None and "funding_bucket_key" in updates:
             entry["funding_bucket_key"] = updates["funding_bucket_key"]
         elif "funding_bucket_key" in profile:
@@ -146,20 +187,41 @@ async def patch_worksheet_refresh_profile(
             entry["credit_limit"] = updates["credit_limit"]
         elif "credit_limit" in profile:
             entry["credit_limit"] = profile.get("credit_limit")
+        if updates is not None and "default_planned_payment" in updates:
+            entry["default_planned_payment"] = updates["default_planned_payment"]
+        elif "default_planned_payment" in profile:
+            entry["default_planned_payment"] = profile.get("default_planned_payment")
+        if updates is not None and "apr_percent" in updates:
+            entry["apr_percent"] = updates["apr_percent"]
+        elif "apr_percent" in profile:
+            entry["apr_percent"] = profile.get("apr_percent")
+        if updates is not None and "payment_due_day" in updates:
+            entry["payment_due_day"] = updates["payment_due_day"]
+        elif "payment_due_day" in profile:
+            entry["payment_due_day"] = profile.get("payment_due_day")
     await sidecar_db.upsert_worksheet_refresh(
         month=month,
-        refreshed_at=row["refreshed_at"],
+        refreshed_at=refreshed_at,
         balances_json=json.dumps(balances),
     )
 
 
 async def write_payment_worksheet_profile(
-    client: FireflyClient, account_id: str, profile: dict[str, Any]
+    client: FireflyClient,
+    account_id: str,
+    profile: dict[str, Any],
+    account_updates: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     account = await client.fetch_account(account_id)
     attrs = account.get("attributes", {})
     existing_notes = attrs.get("notes") or ""
     new_notes = serialize_payment_worksheet_to_notes(profile, existing_notes)
     merged = {**attrs, "notes": new_notes}
+    if account_updates:
+        for key, value in account_updates.items():
+            if value is None:
+                merged.pop(key, None)
+            else:
+                merged[key] = value
     await client.update_account(account_id, merged)
     return profile

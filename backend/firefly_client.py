@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from copy import deepcopy
 from typing import Any, Callable
 
@@ -67,6 +68,133 @@ def _normalize_account_role(raw: str | None) -> str | None:
     if key == "asset":
         return None
     return _ACCOUNT_ROLE_MAP.get(key, raw)
+
+
+def _account_role_key(raw: str | None) -> str:
+    return (raw or "").replace("_", "").lower()
+
+
+_MONTHLY_PAYMENT_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+def _normalize_monthly_payment_date(raw: Any) -> str:
+    """Return YYYY-MM-DD for Firefly ccAsset monthly_payment_date validation."""
+    if raw is None:
+        return "2000-01-01"
+    text = str(raw).strip()
+    if not text:
+        return "2000-01-01"
+    match = _MONTHLY_PAYMENT_DATE_RE.match(text)
+    if match:
+        return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        return text[:10]
+    if text.isdigit():
+        day = int(text)
+        if 1 <= day <= 31:
+            return f"2000-01-{day:02d}"
+    return "2000-01-01"
+
+
+def prepare_account_update_payload(
+    attrs: dict[str, Any],
+    **updates: Any,
+) -> dict[str, Any]:
+    """Build a Firefly-safe PUT body from GET attributes plus field updates."""
+    merged = {**attrs, **updates}
+    acct_type = str(merged.get("type") or "").lower()
+    role_key = _account_role_key(merged.get("account_role"))
+
+    asset_fields = {
+        "name",
+        "active",
+        "type",
+        "account_role",
+        "currency_id",
+        "currency_code",
+        "virtual_balance",
+        "include_net_worth",
+        "iban",
+        "bic",
+        "account_number",
+        "opening_balance",
+        "opening_balance_date",
+        "notes",
+        "credit_card_type",
+        "monthly_payment_date",
+    }
+    liability_fields = {
+        "name",
+        "active",
+        "type",
+        "account_role",
+        "currency_id",
+        "currency_code",
+        "virtual_balance",
+        "include_net_worth",
+        "iban",
+        "bic",
+        "account_number",
+        "opening_balance",
+        "opening_balance_date",
+        "notes",
+        "liability_type",
+        "liability_direction",
+        "interest",
+        "interest_period",
+    }
+    generic_fields = {
+        "name",
+        "active",
+        "type",
+        "account_role",
+        "currency_id",
+        "currency_code",
+        "virtual_balance",
+        "include_net_worth",
+        "notes",
+    }
+
+    if acct_type == "asset":
+        allowed = asset_fields
+    elif acct_type in {"liabilities", "liability"}:
+        allowed = liability_fields
+    else:
+        allowed = generic_fields
+
+    payload: dict[str, Any] = {}
+    for key in allowed:
+        if key in updates:
+            value = updates[key]
+        else:
+            value = merged.get(key)
+        if value is not None:
+            payload[key] = value
+
+    if role_key in {"ccasset", "creditcard"}:
+        payload.setdefault("type", "asset")
+        payload.setdefault("account_role", merged.get("account_role") or "ccAsset")
+        payload.setdefault(
+            "credit_card_type",
+            merged.get("credit_card_type") or "monthlyFull",
+        )
+        payload["monthly_payment_date"] = _normalize_monthly_payment_date(
+            payload.get("monthly_payment_date", merged.get("monthly_payment_date")),
+        )
+
+    if acct_type in {"liabilities", "liability"}:
+        payload.setdefault("liability_type", merged.get("liability_type") or "loan")
+        payload.setdefault(
+            "liability_direction",
+            merged.get("liability_direction") or "credit",
+        )
+        payload.setdefault("interest", merged.get("interest") or "0")
+        payload.setdefault(
+            "interest_period",
+            merged.get("interest_period") or "monthly",
+        )
+
+    return payload
 
 
 class FireflyClient:
@@ -362,10 +490,11 @@ class FireflyClient:
     async def update_account(
         self, account_id: str, attributes: dict[str, Any]
     ) -> dict[str, Any]:
+        payload = prepare_account_update_payload(attributes)
         async with self._build_client() as client:
             response = await client.put(
                 f"/api/v1/accounts/{account_id}",
-                json=attributes,
+                json=payload,
             )
             if response.status_code not in (200, 201):
                 raise RuntimeError(

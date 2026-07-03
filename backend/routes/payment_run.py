@@ -6,6 +6,7 @@ import json
 import os
 import uuid
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 import firefly_reference_cache
 import sidecar_db
@@ -106,7 +107,35 @@ class PaymentWorksheetBody(BaseModel):
     funding_bucket_key: str | None = None
     credit_limit: str | None = None
     default_planned_payment: str | None = None
+    apr_percent: str | None = None
+    payment_due_day: str | None = None
     sort_order: int | None = None
+
+
+_PROFILE_FIELD_KEYS = frozenset(
+    {
+        "included",
+        "worksheet_section",
+        "funding_bucket_key",
+        "credit_limit",
+        "default_planned_payment",
+        "apr_percent",
+        "payment_due_day",
+        "sort_order",
+    }
+)
+
+
+def _validate_due_day(value: str) -> str:
+    try:
+        day = int(str(value).strip())
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid payment_due_day") from None
+    if day < 1 or day > 31:
+        raise HTTPException(
+            status_code=422, detail="payment_due_day must be between 1 and 31."
+        )
+    return str(day)
 
 
 class BucketBalanceBody(BaseModel):
@@ -149,7 +178,11 @@ async def get_payment_worksheet(
     _: None = Depends(require_payment_worksheet),
 ):
     target_month = _validate_month(month or current_month_key())
-    return await build_worksheet_envelope(target_month)
+    envelope = await build_worksheet_envelope(target_month)
+    base = os.environ.get("FIREFLY_BASE_URL", "").strip().rstrip("/")
+    if base:
+        envelope["firefly_base_url"] = base
+    return envelope
 
 
 @router.put("/payment-run/buckets/{bucket_id}/balance")
@@ -328,10 +361,35 @@ async def update_account_worksheet(
     existing_notes = attrs.get("notes") or ""
     existing_profile = parse_payment_worksheet_from_notes(existing_notes)
     updates = body.model_dump(exclude_unset=True)
-    merged = merge_payment_worksheet_profile(existing_profile, updates)
-    await write_payment_worksheet_profile(client, account_id, merged)
+    profile_updates = {
+        key: value for key, value in updates.items() if key in _PROFILE_FIELD_KEYS
+    }
+    if (
+        profile_updates.get("payment_due_day") is not None
+        and str(profile_updates["payment_due_day"]).strip() != ""
+    ):
+        profile_updates["payment_due_day"] = _validate_due_day(
+            str(profile_updates["payment_due_day"])
+        )
+    if (
+        profile_updates.get("apr_percent") is not None
+        and str(profile_updates["apr_percent"]).strip() != ""
+    ):
+        profile_updates["apr_percent"] = _validate_amount(
+            str(profile_updates["apr_percent"]), "apr_percent"
+        )
+    merged = merge_payment_worksheet_profile(existing_profile, profile_updates)
+    try:
+        await write_payment_worksheet_profile(
+            client,
+            account_id,
+            merged,
+            None,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     await patch_worksheet_refresh_profile(
-        target_month, account_id, merged, updates
+        target_month, account_id, merged, profile_updates
     )
     firefly_reference_cache.clear()
     return {"account_id": account_id, "profile": merged}

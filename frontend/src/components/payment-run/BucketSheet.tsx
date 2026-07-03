@@ -199,36 +199,35 @@ export function BucketSheet({
           ) : null}
         </div>
 
-        <SheetFooter className="gap-2 sm:flex-row sm:justify-between">
+        <SheetFooter className="flex flex-row flex-wrap items-center justify-end gap-2 border-t pt-3">
           {bucket && onDelete && !confirmDelete ? (
             <Button
               type="button"
               variant="destructive"
+              size="sm"
               onClick={() => setConfirmDelete(true)}
               disabled={saving || deleting}
             >
-              Delete bucket
+              Delete
             </Button>
-          ) : (
-            <span />
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={saving || deleting}
-            >
-              Close without saving
-            </Button>
-            <Button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || deleting}
-            >
-              Save bucket
-            </Button>
-          </div>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onOpenChange(false)}
+            disabled={saving || deleting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void handleSave()}
+            disabled={saving || deleting}
+          >
+            {saving ? "Saving…" : "Save"}
+          </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>

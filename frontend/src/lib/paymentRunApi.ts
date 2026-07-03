@@ -16,14 +16,23 @@ export type CreditCardRow = {
   name: string | null
   credit_limit: string | null
   funding_bucket_key: string | null
+  default_planned_payment: string | null
+  payment_due_day: string | null
+  apr_percent: string | null
   owed: string
   new_total: string
   interest_accrued: string
   fees: string
   last_payment_date: string | null
+  last_payment_amount: string
   planned_amount: string
   planned_amount_override: boolean
   paid_at: string | null
+}
+
+export type ExcludedCreditCard = {
+  account_id: string
+  name: string | null
 }
 
 export type PaymentWorksheetEnvelope = {
@@ -31,7 +40,9 @@ export type PaymentWorksheetEnvelope = {
   refreshed_at: string | null
   buckets: FundingBucketRollup[]
   credit_cards: CreditCardRow[]
+  excluded_credit_cards: ExcludedCreditCard[]
   shortfall: boolean
+  firefly_base_url?: string
   totals: {
     reported_balance: string
     user_balance: string
@@ -218,6 +229,8 @@ export async function putAccountWorksheet(
     funding_bucket_key?: string | null
     credit_limit?: string | null
     default_planned_payment?: string | null
+    payment_due_day?: string | null
+    apr_percent?: string | null
   },
 ): Promise<{ account_id: string; profile: Record<string, unknown> }> {
   const params = new URLSearchParams({ month })
