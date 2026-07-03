@@ -53,7 +53,7 @@ async def _seed_worksheet_snapshot(month: str) -> None:
             "cc1": {
                 "name": "Chase VISA",
                 "credit_limit": "10000.00",
-                "funding_bucket_key": "savings",
+                "funding_bucket_key": "checking",
                 "owed": "1200.00",
                 "new_total": "100.00",
                 "interest_accrued": "20.00",

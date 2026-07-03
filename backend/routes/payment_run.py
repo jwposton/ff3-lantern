@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
+from decimal import Decimal, InvalidOperation
 
 import firefly_reference_cache
 import sidecar_db
@@ -83,6 +85,31 @@ class PaymentWorksheetBody(BaseModel):
     sort_order: int | None = None
 
 
+class BucketBalanceBody(BaseModel):
+    user_balance: str
+    reset_to_reported: bool = False
+
+
+class RowStateBody(BaseModel):
+    planned_amount: str | None = None
+    paid_at: str | None = None
+    clear_paid: bool = False
+
+
+def _validate_month(month: str) -> str:
+    if len(month) != 7 or month[4] != "-":
+        raise HTTPException(status_code=422, detail="month must be YYYY-MM.")
+    return month
+
+
+def _validate_amount(value: str, field_name: str) -> str:
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise HTTPException(status_code=422, detail=f"invalid {field_name}") from None
+    return f"{amount.quantize(Decimal('0.01'))}"
+
+
 def _row_from_db(row: dict) -> FundingBucketRow:
     return FundingBucketRow(
         id=row["id"],
@@ -97,10 +124,94 @@ async def get_payment_worksheet(
     month: str | None = None,
     _: None = Depends(require_payment_worksheet),
 ):
-    target_month = month or current_month_key()
-    if len(target_month) != 7 or target_month[4] != "-":
-        raise HTTPException(status_code=422, detail="month must be YYYY-MM.")
+    target_month = _validate_month(month or current_month_key())
     return await build_worksheet_envelope(target_month)
+
+
+@router.put("/payment-run/buckets/{bucket_id}/balance")
+async def update_bucket_balance(
+    bucket_id: str,
+    body: BucketBalanceBody,
+    month: str | None = None,
+    _: None = Depends(require_payment_worksheet),
+):
+    target_month = _validate_month(month or current_month_key())
+    existing_bucket = await sidecar_db.get_funding_bucket(bucket_id)
+    if existing_bucket is None:
+        raise HTTPException(status_code=404, detail="Bucket not found.")
+
+    if body.reset_to_reported:
+        refresh_row = await sidecar_db.get_worksheet_refresh(target_month)
+        if refresh_row is None:
+            user_balance = "0.00"
+        else:
+            balances = json.loads(refresh_row["balances_json"])
+            reported = (
+                balances.get("buckets", {})
+                .get(bucket_id, {})
+                .get("reported_balance", "0.00")
+            )
+            user_balance = str(reported)
+        user_balance_override = 0
+    else:
+        user_balance = _validate_amount(body.user_balance, "user_balance")
+        user_balance_override = 1
+
+    await sidecar_db.upsert_bucket_balance(
+        bucket_key=bucket_id,
+        month=target_month,
+        user_balance=user_balance,
+        user_balance_override=user_balance_override,
+    )
+    return {
+        "bucket_key": bucket_id,
+        "month": target_month,
+        "user_balance": user_balance,
+        "user_balance_override": bool(user_balance_override),
+    }
+
+
+@router.put("/payment-run/rows/{row_key}")
+async def update_row_state(
+    row_key: str,
+    body: RowStateBody,
+    month: str | None = None,
+    _: None = Depends(require_payment_worksheet),
+):
+    target_month = _validate_month(month or current_month_key())
+    existing_rows = await sidecar_db.get_worksheet_state_for_month(target_month)
+    existing = next((row for row in existing_rows if row["row_key"] == row_key), None)
+
+    planned_amount = existing["planned_amount"] if existing else "0.00"
+    planned_override = (
+        int(existing["planned_amount_override"]) if existing else 0
+    )
+    paid_at = existing["paid_at"] if existing else None
+
+    updates = body.model_dump(exclude_unset=True)
+    if "planned_amount" in updates and updates["planned_amount"] is not None:
+        planned_amount = _validate_amount(updates["planned_amount"], "planned_amount")
+        planned_override = 1
+
+    if body.clear_paid:
+        paid_at = None
+    elif "paid_at" in updates:
+        paid_at = updates["paid_at"]
+
+    await sidecar_db.upsert_worksheet_state_row(
+        row_key=row_key,
+        row_type="credit_card",
+        month=target_month,
+        planned_amount=planned_amount,
+        planned_amount_override=planned_override,
+        paid_at=paid_at,
+    )
+    return {
+        "row_key": row_key,
+        "month": target_month,
+        "planned_amount": planned_amount,
+        "paid_at": paid_at,
+    }
 
 
 @router.post("/payment-run/refresh")
@@ -110,8 +221,7 @@ async def refresh_payment_worksheet(
     client: FireflyClient = Depends(get_firefly_client),
 ):
     target_month = month or current_month_key()
-    if len(target_month) != 7 or target_month[4] != "-":
-        raise HTTPException(status_code=422, detail="month must be YYYY-MM.")
+    _validate_month(target_month)
     return await run_refresh(client, target_month)
 
 
