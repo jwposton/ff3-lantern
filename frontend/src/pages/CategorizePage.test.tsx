@@ -214,6 +214,40 @@ describe("categorize api hooks", () => {
     const description = screen.getByLabelText("Description") as HTMLInputElement
     expect(description.value).toBe("AMZN MKTP")
   })
+
+  it("transaction mode links to Explorer with description and destination filters", async () => {
+    mockFetch({
+      pending: () => ({
+        data: [PENDING_ROW],
+        meta: { count: 1, ...RANGE, limit: 50 },
+      }),
+      meta: () => ({
+        openrouter_configured: true,
+        categories: [{ id: "1", name: "Shopping" }],
+        budgets: [],
+        default_model: "openai/gpt-4o-mini",
+      }),
+      normalized: () => ({ data: [], firefly_base_url: "https://firefly.example" }),
+    })
+
+    render(
+      <TestProviders>
+        <CategorizePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("AMZN MKTP")).toBeTruthy()
+    })
+
+    const link = [...document.querySelectorAll('a[href*="/reports/transactions"]')].find(
+      (anchor) => anchor.getAttribute("href")?.includes("description="),
+    )
+    expect(link).toBeTruthy()
+    expect(link!.getAttribute("href")).toContain("description=AMZN")
+    expect(link!.getAttribute("href")).toContain("destination=Amazon")
+    expect(link!.getAttribute("href")).not.toContain("show_all_types")
+  })
 })
 
 describe("CategorizePage degraded or empty", () => {

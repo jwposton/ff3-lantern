@@ -30,7 +30,11 @@ import {
   type DestinationMatchType,
 } from "@/lib/categorizeApi"
 import { invalidateReportCaches } from "@/lib/reportCache"
-import { buildCategorizeExplorerPath } from "@/lib/explorerFilterUrl"
+import {
+  buildCategorizeExplorerPath,
+  buildExplorerPathFromPendingRow,
+  buildExplorerPathFromRuleDraft,
+} from "@/lib/explorerFilterUrl"
 import { formatDisplayAmount, formatDisplayDate } from "@/lib/formatDisplay"
 import { cn } from "@/lib/utils"
 
@@ -210,6 +214,34 @@ function defaultCardState(
   }
 }
 
+function categorizeCardExplorerPath(
+  rangeStart: string,
+  rangeEnd: string,
+  row: PendingRow,
+  state: CardState | undefined,
+  mode: ApplyMode,
+): string {
+  if (mode === "rule" && state && hasRuleTrigger(state)) {
+    return buildExplorerPathFromRuleDraft(
+      rangeStart,
+      rangeEnd,
+      ruleDraftFromState(state),
+    )
+  }
+  return buildExplorerPathFromPendingRow(rangeStart, rangeEnd, row)
+}
+
+function CardExplorerLink({ to, label }: { to: string; label: string }) {
+  return (
+    <Button asChild variant="outline" size="sm" className="h-8">
+      <Link to={to}>
+        <Table className="mr-2 h-4 w-4" />
+        {label}
+      </Link>
+    </Button>
+  )
+}
+
 function TransactionCard({
   row,
   state,
@@ -237,6 +269,8 @@ function TransactionCard({
   onIgnore,
   groupJournalIds,
   ignoringId,
+  rangeStart,
+  rangeEnd,
 }: {
   row: PendingRow
   state: CardState | undefined
@@ -270,10 +304,21 @@ function TransactionCard({
   onIgnore: (row: PendingRow) => void
   groupJournalIds: string[]
   ignoringId: string | null
+  rangeStart: string
+  rangeEnd: string
 }) {
   const mode = state?.mode ?? "direct"
   const previewReady = state?.preview != null && !state.previewError
   const applyDescription = effectiveApplyDescription(state, row)
+  const explorerPath = categorizeCardExplorerPath(
+    rangeStart,
+    rangeEnd,
+    row,
+    state,
+    mode,
+  )
+  const explorerLinkLabel =
+    mode === "rule" && state?.preview ? "Open matches in Explorer" : "Open in Explorer"
 
   return (
     <Card className="gap-0 py-0 shadow-xs">
@@ -504,14 +549,19 @@ function TransactionCard({
             ) : null}
             {state?.preview?.sample?.length ? (
               <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Matching transactions
-                  {state.preview.total > state.preview.sample.length
-                    ? ` (showing ${state.preview.sample.length} of ${state.preview.total})`
-                    : null}
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Matching transactions
+                    {state.preview.total > state.preview.sample.length
+                      ? ` (showing ${state.preview.sample.length} of ${state.preview.total})`
+                      : null}
+                  </p>
+                  <CardExplorerLink to={explorerPath} label={explorerLinkLabel} />
+                </div>
                 <RuleMatchPreviewTable rows={state.preview.sample} />
               </div>
+            ) : hasRuleTrigger(state) ? (
+              <CardExplorerLink to={explorerPath} label="Open in Explorer" />
             ) : null}
             <label className="flex items-center gap-2 text-xs">
               <input
@@ -551,7 +601,7 @@ function TransactionCard({
                 }}
               />
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 size="sm"
@@ -575,6 +625,7 @@ function TransactionCard({
               >
                 Ignore
               </Button>
+              <CardExplorerLink to={explorerPath} label="Open in Explorer" />
             </div>
           </>
         )}
@@ -1133,6 +1184,8 @@ export function CategorizePage() {
                   onCreateRule={handleCreateRule}
                   onIgnore={handleIgnore}
                   ignoringId={ignoringId}
+                  rangeStart={committedRange.start}
+                  rangeEnd={committedRange.end}
                 />
               )
             }
@@ -1185,6 +1238,8 @@ export function CategorizePage() {
                         onCreateRule={handleCreateRule}
                         onIgnore={handleIgnore}
                   ignoringId={ignoringId}
+                  rangeStart={committedRange.start}
+                  rangeEnd={committedRange.end}
                       />
                     ))}
                   </div>

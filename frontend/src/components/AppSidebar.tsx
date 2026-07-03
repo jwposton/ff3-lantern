@@ -8,12 +8,22 @@ import {
   TrendingUp,
   type LucideIcon,
 } from "lucide-react"
-import { NavLink, useMatch } from "react-router-dom"
+import { useMemo } from "react"
+import { NavLink, useLocation, useMatch, useNavigate } from "react-router-dom"
 
 import { AppVersionBadge } from "@/components/AppVersionBadge"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
 import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
+import { Button } from "@/components/ui/button"
 import { useManageQueueCounts } from "@/hooks/useManageQueueCounts"
+import {
+  CHART_NAV_ENTRIES,
+  buildChartNavPath,
+  detectReportLens,
+  swapReportLensPath,
+  type ChartNavSuffix,
+  type ReportLens,
+} from "@/lib/reportLens"
 
 import {
   Sidebar,
@@ -39,59 +49,15 @@ const generalNavItems = [
   },
 ] as const
 
-const spendingNavItems = [
-  {
-    to: "/reports/spending",
-    label: "Bar",
-    icon: BarChart3,
-    end: true,
-  },
-  {
-    to: "/reports/spending/trends",
-    label: "Line/Trend",
-    icon: TrendingUp,
-    end: false,
-  },
-  {
-    to: "/reports/spending/sankey",
-    label: "Sankey",
-    icon: SankeyChartIcon,
-    end: false,
-  },
-  {
-    to: "/reports/spending/mom",
-    label: "Variance",
-    icon: ComparisonGraphIcon,
-    end: false,
-  },
-] as const
-
-const cashFlowNavItems = [
-  {
-    to: "/reports/cash-flow",
-    label: "Bar",
-    icon: BarChart3,
-    end: true,
-  },
-  {
-    to: "/reports/cash-flow/trends",
-    label: "Line/Trend",
-    icon: TrendingUp,
-    end: false,
-  },
-  {
-    to: "/reports/cash-flow/sankey",
-    label: "Sankey",
-    icon: SankeyChartIcon,
-    end: false,
-  },
-  {
-    to: "/reports/cash-flow/mom",
-    label: "Variance",
-    icon: ComparisonGraphIcon,
-    end: false,
-  },
-] as const
+const chartNavMeta: Record<
+  ChartNavSuffix,
+  { label: string; icon: LucideIcon }
+> = {
+  "": { label: "Bar", icon: BarChart3 },
+  "/trends": { label: "Line/Trend", icon: TrendingUp },
+  "/sankey": { label: "Sankey", icon: SankeyChartIcon },
+  "/mom": { label: "Variance", icon: ComparisonGraphIcon },
+}
 
 const manageNavItems = [
   {
@@ -137,6 +103,65 @@ function NavItems({
         </SidebarMenuItem>
       ))}
     </>
+  )
+}
+
+function ReportLensToggle({
+  lens,
+  pathname,
+}: {
+  lens: ReportLens
+  pathname: string
+}) {
+  const navigate = useNavigate()
+
+  return (
+    <div className="flex gap-1" role="group" aria-label="Report lens">
+      {(["spending", "cash-flow"] as const).map((option) => (
+        <Button
+          key={option}
+          type="button"
+          size="xs"
+          className="h-6 flex-1 px-1.5 text-[11px] font-medium"
+          variant={lens === option ? "default" : "outline"}
+          onClick={() => navigate(swapReportLensPath(pathname, option))}
+        >
+          {option === "spending" ? "Spending" : "Cash Flow"}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+function ChartsNavGroup() {
+  const { pathname } = useLocation()
+  const lens = detectReportLens(pathname)
+  const chartNavItems = useMemo(
+    () =>
+      CHART_NAV_ENTRIES.map(({ suffix, end }) => {
+        const meta = chartNavMeta[suffix]
+        return {
+          to: buildChartNavPath(lens, suffix),
+          label: meta.label,
+          icon: meta.icon,
+          end,
+        }
+      }),
+    [lens],
+  )
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel className="h-auto flex-col items-stretch gap-1.5 py-1.5 group-data-[collapsible=icon]:hidden">
+        <span>Charts</span>
+        <ReportLensToggle lens={lens} pathname={pathname} />
+      </SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          <NavItems items={chartNavItems} />
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
   )
 }
 
@@ -218,22 +243,7 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <SidebarGroup>
-          <SidebarGroupLabel>Spending</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <NavItems items={spendingNavItems} />
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-        <SidebarGroup>
-          <SidebarGroupLabel>Cash Flow</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <NavItems items={cashFlowNavItems} />
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <ChartsNavGroup />
         <SidebarGroup>
           <SidebarGroupLabel>Manage</SidebarGroupLabel>
           <SidebarGroupContent>

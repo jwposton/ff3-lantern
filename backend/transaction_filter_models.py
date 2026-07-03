@@ -19,6 +19,8 @@ class ExplorerFilterDraft(BaseModel):
     destination_match_type: DestinationMatchType = "contains"
     transaction_type: Literal["withdrawal", "deposit", "transfer"] | None = None
     amount_exact: str | None = None
+    amount_min: str | None = None
+    amount_max: str | None = None
     uncategorized_only: bool = False
     rationale: str = ""
 
@@ -44,6 +46,8 @@ FILTER_PARSE_JSON_SCHEMA: dict = {
             "enum": ["withdrawal", "deposit", "transfer", None],
         },
         "amount_exact": {"type": ["string", "null"]},
+        "amount_min": {"type": ["string", "null"]},
+        "amount_max": {"type": ["string", "null"]},
         "uncategorized_only": {"type": "boolean"},
         "rationale": {"type": "string"},
     },
@@ -57,6 +61,8 @@ FILTER_PARSE_JSON_SCHEMA: dict = {
         "destination_match_type",
         "transaction_type",
         "amount_exact",
+        "amount_min",
+        "amount_max",
         "uncategorized_only",
         "rationale",
     ],

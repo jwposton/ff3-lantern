@@ -197,6 +197,38 @@ describe("AppSidebar Manage section", () => {
   })
 })
 
+describe("AppSidebar Charts section", () => {
+  beforeEach(() => {
+    mockPendingFetch(0, 0)
+  })
+
+  it("renders a single Charts group with lens toggle instead of separate Spending/Cash Flow groups", () => {
+    renderSidebar("/reports/spending")
+    const groupLabelText = Array.from(
+      document.querySelectorAll('[data-sidebar="group-label"]'),
+    ).map((el) => el.textContent?.trim())
+    expect(groupLabelText.some((text) => text?.startsWith("Charts"))).toBe(true)
+    expect(groupLabelText.some((text) => text === "Manage")).toBe(true)
+    expect(groupLabelText.some((text) => text === "Spending")).toBe(false)
+    expect(groupLabelText.some((text) => text === "Cash Flow")).toBe(false)
+    expect(screen.getByRole("group", { name: "Report lens" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Spending" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Cash Flow" })).toBeTruthy()
+  })
+
+  it("builds chart nav links from the active cash-flow lens", () => {
+    renderSidebar("/reports/cash-flow/trends")
+    expect(document.querySelector('a[href="/reports/cash-flow/trends"]')).toBeTruthy()
+    expect(document.querySelector('a[href="/reports/spending/trends"]')).toBeNull()
+  })
+
+  it("builds chart nav links from spending lens when not on a chart route", () => {
+    renderSidebar("/")
+    expect(document.querySelector('a[href="/reports/spending"]')).toBeTruthy()
+    expect(document.querySelector('a[href="/reports/cash-flow"]')).toBeNull()
+  })
+})
+
 describe("AppSidebar active nav state", () => {
   beforeEach(() => {
     mockPendingFetch(0, 0)

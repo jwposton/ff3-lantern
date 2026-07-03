@@ -13,6 +13,8 @@ export type FilterState = {
   destination_match_type: DestinationMatchType
   transaction_type: string | null
   amount_exact: string
+  amount_min: string
+  amount_max: string
   uncategorized_only: boolean
   categorize_queue_only: boolean
 }
@@ -27,6 +29,8 @@ export const EMPTY_FILTERS: FilterState = {
   destination_match_type: "contains",
   transaction_type: null,
   amount_exact: "",
+  amount_min: "",
+  amount_max: "",
   uncategorized_only: false,
   categorize_queue_only: false,
 }
@@ -41,6 +45,8 @@ export function hasActiveFilters(filters: FilterState): boolean {
     filters.destination_account.trim() !== "" ||
     filters.transaction_type != null ||
     filters.amount_exact.trim() !== "" ||
+    filters.amount_min.trim() !== "" ||
+    filters.amount_max.trim() !== "" ||
     filters.uncategorized_only ||
     filters.categorize_queue_only
   )
@@ -87,6 +93,31 @@ function normalizeAmount(value: string): number | null {
   return Number.isFinite(n) ? Math.abs(n) : null
 }
 
+export function matchesAmountFilter(
+  rowAmount: string | null | undefined,
+  filters: Pick<FilterState, "amount_exact" | "amount_min" | "amount_max">,
+): boolean {
+  const exact = normalizeAmount(filters.amount_exact)
+  const min = normalizeAmount(filters.amount_min)
+  const max = normalizeAmount(filters.amount_max)
+  if (exact == null && min == null && max == null) return true
+
+  const row = normalizeAmount(rowAmount ?? "")
+  if (row == null) return false
+  if (exact != null && row !== exact) return false
+  if (min != null && row < min) return false
+  if (max != null && row > max) return false
+  return true
+}
+
+function hasAmountFilter(filters: FilterState): boolean {
+  return (
+    filters.amount_exact.trim() !== "" ||
+    filters.amount_min.trim() !== "" ||
+    filters.amount_max.trim() !== ""
+  )
+}
+
 function destinationMatches(
   destName: string,
   needle: string,
@@ -116,6 +147,50 @@ function matchesCategorizeQueue(row: OmniRow): boolean {
   if (cat?.startsWith("Transfer to ")) return false
   if (budget === "Credit Card Payment") return false
   return !cat || !budget
+}
+
+/** Fields included in general search — skips any field with an explicit filter. */
+export function searchHaystackForRow(
+  row: OmniRow,
+  filters: FilterState,
+): string[] {
+  const values: string[] = []
+  const add = (value: string | null | undefined) => {
+    if (value != null && value !== "") {
+      values.push(String(value).toLowerCase())
+    }
+  }
+
+  if (!filters.description_contains.trim()) add(row.description)
+  if (!filters.destination_account.trim()) add(row.destination_account)
+  if (filters.categories.length === 0) add(row.category)
+  if (!filters.budget) add(row.budget)
+  if (!filters.account) add(row.source_account)
+  if (!filters.transaction_type) add(row.type)
+  if (!hasAmountFilter(filters)) add(row.amount)
+  add(row.date)
+
+  return values
+}
+
+/** Split general search on " or " / "|" for OR matching (e.g. "Patreon or CFBDB"). */
+export function parseSearchTerms(search: string): string[] {
+  const trimmed = search.trim()
+  if (!trimmed) return []
+  return trimmed
+    .split(/\s+or\s+|\|/i)
+    .map((term) => term.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+export function rowMatchesSearchTerms(
+  row: OmniRow,
+  filters: FilterState,
+  terms: string[],
+): boolean {
+  if (terms.length === 0) return true
+  const haystack = searchHaystackForRow(row, filters)
+  return terms.some((term) => haystack.some((field) => field.includes(term)))
 }
 
 export function applyFilters(
@@ -169,30 +244,13 @@ export function applyFilters(
     )
   }
 
-  const amountExact = normalizeAmount(filters.amount_exact)
-  if (amountExact != null) {
-    result = result.filter((row) => {
-      const rowAmount = normalizeAmount(row.amount ?? "")
-      return rowAmount != null && rowAmount === amountExact
-    })
+  if (hasAmountFilter(filters)) {
+    result = result.filter((row) => matchesAmountFilter(row.amount, filters))
   }
 
-  const search = filters.search.trim().toLowerCase()
-  if (search !== "") {
-    result = result.filter((row) => {
-      const haystack = [
-        row.category,
-        row.budget,
-        row.source_account,
-        row.destination_account,
-        row.description,
-        row.amount,
-        row.date,
-      ]
-        .filter((v) => v != null && v !== "")
-        .map((v) => String(v).toLowerCase())
-      return haystack.some((field) => field.includes(search))
-    })
+  const searchTerms = parseSearchTerms(filters.search)
+  if (searchTerms.length > 0) {
+    result = result.filter((row) => rowMatchesSearchTerms(row, filters, searchTerms))
   }
 
   return result
@@ -228,6 +286,12 @@ function compareValues(
     return av.localeCompare(bv) * sign
   }
 
+  if (key === "description") {
+    const av = a.description ?? ""
+    const bv = b.description ?? ""
+    return av.localeCompare(bv) * sign
+  }
+
   const av = String(a[key] ?? "")
   const bv = String(b[key] ?? "")
   return av.localeCompare(bv) * sign
@@ -235,6 +299,7 @@ function compareValues(
 
 export type SortKey =
   | "date"
+  | "description"
   | "amount"
   | "type"
   | "category"

@@ -14,6 +14,10 @@ from transaction_filter_models import (
     FILTER_PARSE_JSON_SCHEMA,
     ExplorerFilterDraft,
 )
+from transaction_filter_normalize import (
+    normalize_explorer_filter_draft,
+    try_deterministic_search_query,
+)
 
 FILTER_PARSE_SYSTEM_PROMPT = """You convert plain-language transaction search requests into structured filter JSON for FF3Analytics Transaction Explorer.
 
@@ -22,10 +26,12 @@ Rules:
 - category, budget, and account values MUST be exact strings from the provided allowlists when used.
 - Do not invent category, budget, or account names.
 - Date range is already set by the app (start/end in the user payload); do not add date fields.
-- description_contains is for payee/memo substrings (e.g. "AMZN", "Netflix").
-- destination_account is for the expense/payee account name when the user mentions a merchant account.
+- search: use for merchant names, keywords, and broad "find X" requests (e.g. "spotify", "spotify charges", "all transactions with spotify" -> search: "spotify"). For OR queries use one search string with " or " between terms (e.g. "Patreon or CFBDB"). This matches the app's general search box across all fields.
+- Do NOT put broad merchant/keyword text in description_contains or destination_account.
+- description_contains: ONLY when the user explicitly asks to filter by description, payee, or memo text (e.g. "description contains AMZN").
+- destination_account: ONLY when the user explicitly filters by payee/destination account name as a field.
 - uncategorized_only=true when the user asks for uncategorized or missing category rows.
-- amount_exact is a decimal string like "42.50" when the user specifies an exact amount.
+- amount_exact is a decimal string like "42.50" when the user specifies an exact amount. amount_min and amount_max are decimal strings for inclusive ranges (e.g. "over 500" -> amount_min "500.00"; "under 20" -> amount_max "20.00"; "between 50 and 100" or "amount between 50 and 100" or "value between 50 and 100" -> amount_min and amount_max). Phrases like "amount", "value", "between X and Y" refer to transaction dollar amounts — never put those words in search. Combine amount filters with search only for real merchant/category keywords (amount AND any search term must match).
 - rationale: one short sentence explaining the filter choices.
 """
 
@@ -66,6 +72,8 @@ def draft_to_filter_state(draft: ExplorerFilterDraft) -> dict[str, Any]:
         "destination_match_type": draft.destination_match_type,
         "transaction_type": draft.transaction_type,
         "amount_exact": draft.amount_exact or "",
+        "amount_min": draft.amount_min or "",
+        "amount_max": draft.amount_max or "",
         "uncategorized_only": draft.uncategorized_only,
     }
 
@@ -85,6 +93,13 @@ async def parse_filter_query(
     if not trimmed:
         raise ValueError("query must not be empty")
 
+    deterministic = try_deterministic_search_query(trimmed)
+    if deterministic is not None:
+        return {
+            "filter": draft_to_filter_state(deterministic),
+            "rationale": deterministic.rationale,
+        }
+
     context = await build_filter_parse_context(client)
     user_payload = {
         "query": trimmed,
@@ -103,6 +118,7 @@ async def parse_filter_query(
         max_tokens=384,
         temperature=0.1,
     )
+    draft = normalize_explorer_filter_draft(draft, trimmed)
     return {
         "filter": draft_to_filter_state(draft),
         "rationale": draft.rationale,

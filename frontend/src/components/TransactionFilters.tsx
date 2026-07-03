@@ -41,6 +41,16 @@ function filterSummary(filters: FilterState): string[] {
   }
   if (filters.amount_exact.trim()) {
     parts.push(`Amount: ${filters.amount_exact.trim()}`)
+  } else {
+    if (filters.amount_min.trim() && filters.amount_max.trim()) {
+      parts.push(
+        `Amount: ${filters.amount_min.trim()}–${filters.amount_max.trim()}`,
+      )
+    } else if (filters.amount_min.trim()) {
+      parts.push(`Amount ≥ ${filters.amount_min.trim()}`)
+    } else if (filters.amount_max.trim()) {
+      parts.push(`Amount ≤ ${filters.amount_max.trim()}`)
+    }
   }
   if (filters.uncategorized_only) {
     parts.push("Uncategorized only")
@@ -82,9 +92,12 @@ export function TransactionFilters({
       destination_match_type: "contains",
       transaction_type: null,
       amount_exact: "",
+      amount_min: "",
+      amount_max: "",
       uncategorized_only: false,
       categorize_queue_only: false,
     })
+    onShowAllTypesChange(true)
   }
 
   return (
@@ -184,7 +197,8 @@ export function TransactionFilters({
 
         <Input
           type="search"
-          placeholder="Search…"
+          placeholder="Search all fields…"
+          aria-label="Search all fields"
           className="h-9 w-full min-w-[10rem] max-w-xs"
           value={filters.search}
           disabled={disabled}
@@ -194,12 +208,12 @@ export function TransactionFilters({
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <input
             type="checkbox"
-            checked={showAllTypes}
+            checked={!showAllTypes}
             disabled={disabled}
-            onChange={(e) => onShowAllTypesChange(e.target.checked)}
+            onChange={(e) => onShowAllTypesChange(!e.target.checked)}
             className="rounded border"
           />
-          Show all types
+          Bank spending only
         </label>
 
         {active ? (
@@ -269,7 +283,46 @@ export function TransactionFilters({
               value={filters.amount_exact}
               disabled={disabled}
               onChange={(e) =>
-                onChange({ ...filters, amount_exact: e.target.value })
+                onChange({
+                  ...filters,
+                  amount_exact: e.target.value,
+                  amount_min: "",
+                  amount_max: "",
+                })
+              }
+              className="h-9"
+            />
+          </label>
+          <label className="flex min-w-[8rem] flex-col gap-1 text-xs text-muted-foreground">
+            Min amount
+            <Input
+              inputMode="decimal"
+              placeholder="≥"
+              value={filters.amount_min}
+              disabled={disabled}
+              onChange={(e) =>
+                onChange({
+                  ...filters,
+                  amount_min: e.target.value,
+                  amount_exact: "",
+                })
+              }
+              className="h-9"
+            />
+          </label>
+          <label className="flex min-w-[8rem] flex-col gap-1 text-xs text-muted-foreground">
+            Max amount
+            <Input
+              inputMode="decimal"
+              placeholder="≤"
+              value={filters.amount_max}
+              disabled={disabled}
+              onChange={(e) =>
+                onChange({
+                  ...filters,
+                  amount_max: e.target.value,
+                  amount_exact: "",
+                })
               }
               className="h-9"
             />

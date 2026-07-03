@@ -16,6 +16,8 @@ export type ParsedExplorerFilter = {
   destination_match_type: "contains" | "starts_with" | "ends_with" | "is"
   transaction_type: string | null
   amount_exact: string
+  amount_min: string
+  amount_max: string
   uncategorized_only: boolean
 }
 

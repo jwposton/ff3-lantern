@@ -46,7 +46,7 @@ export function TransactionExplorerPage() {
     queryFn: fetchTransactionsMeta,
   })
 
-  const [showAllTypes, setShowAllTypes] = useState(false)
+  const [showAllTypes, setShowAllTypes] = useState(true)
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS)
   const [sortKey, setSortKey] = useState<SortKey>("date")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
@@ -326,7 +326,10 @@ export function TransactionExplorerPage() {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => setFilters(EMPTY_FILTERS)}
+            onClick={() => {
+              setFilters(EMPTY_FILTERS)
+              setShowAllTypes(true)
+            }}
           >
             Clear all filters
           </Button>
@@ -339,7 +342,6 @@ export function TransactionExplorerPage() {
             sortDir={sortDir}
             onSort={handleSort}
             isLoading={isPending}
-            showAllTypes={showAllTypes}
             fireflyBaseUrl={data?.firefly_base_url}
             selectionEnabled
             selectedKeys={selectedKeys}

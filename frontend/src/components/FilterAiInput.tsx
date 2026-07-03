@@ -3,6 +3,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { parseExplorerFilter } from "@/lib/transactionsApi"
+import { normalizeAiParsedFilter } from "@/lib/explorerFilterUrl"
 import type { FilterState } from "@/lib/transactionTable"
 
 type FilterAiInputProps = {
@@ -37,7 +38,10 @@ export function FilterAiInput({
         start,
         end,
       })
-      onApplyFilter(result.data.filter as FilterState, result.data.rationale)
+      onApplyFilter(
+        normalizeAiParsedFilter(result.data.filter, trimmed),
+        result.data.rationale,
+      )
       setRationale(result.data.rationale)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Filter parse failed")

@@ -1,6 +1,5 @@
 import { ExternalLink } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -19,6 +18,7 @@ import type { OmniRow } from "@/types/NormalizedTransaction"
 
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "date", label: "Date" },
+  { key: "description", label: "Description" },
   { key: "amount", label: "Amount" },
   { key: "type", label: "Type" },
   { key: "category", label: "Category" },
@@ -33,7 +33,6 @@ type TransactionTableProps = {
   sortDir: SortDir
   onSort: (key: SortKey) => void
   isLoading: boolean
-  showAllTypes: boolean
   fireflyBaseUrl?: string
   selectionEnabled?: boolean
   selectedKeys?: Set<string>
@@ -71,7 +70,6 @@ export function TransactionTable({
   sortDir,
   onSort,
   isLoading,
-  showAllTypes,
   fireflyBaseUrl,
   selectionEnabled = false,
   selectedKeys,
@@ -193,14 +191,14 @@ export function TransactionTable({
                   </TableCell>
                 ) : null}
                 <TableCell>{formatDisplayDate(row.date)}</TableCell>
-                <TableCell className={amount.className}>{amount.text}</TableCell>
-                <TableCell>
-                  {showAllTypes && row.type ? (
-                    <Badge variant="secondary">{row.type}</Badge>
-                  ) : (
-                    row.type ?? "—"
-                  )}
+                <TableCell
+                  className="max-w-[14rem] truncate"
+                  title={row.description ?? undefined}
+                >
+                  {row.description?.trim() ? row.description : "—"}
                 </TableCell>
+                <TableCell className={amount.className}>{amount.text}</TableCell>
+                <TableCell>{cellValue(row, "type")}</TableCell>
                 <TableCell>{cellValue(row, "category")}</TableCell>
                 <TableCell>{cellValue(row, "budget")}</TableCell>
                 <TableCell>{cellValue(row, "source_account")}</TableCell>

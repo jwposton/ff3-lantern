@@ -218,7 +218,6 @@ export function BudgetReportDrilldown({
             sortDir={sortDir}
             onSort={handleSort}
             isLoading={false}
-            showAllTypes
             fireflyBaseUrl={fireflyBaseUrl}
           />
           {totalPages > 1 && (
