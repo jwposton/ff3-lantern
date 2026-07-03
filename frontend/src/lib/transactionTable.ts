@@ -14,6 +14,7 @@ export type FilterState = {
   transaction_type: string | null
   amount_exact: string
   uncategorized_only: boolean
+  categorize_queue_only: boolean
 }
 
 export const EMPTY_FILTERS: FilterState = {
@@ -27,6 +28,7 @@ export const EMPTY_FILTERS: FilterState = {
   transaction_type: null,
   amount_exact: "",
   uncategorized_only: false,
+  categorize_queue_only: false,
 }
 
 export function hasActiveFilters(filters: FilterState): boolean {
@@ -39,7 +41,8 @@ export function hasActiveFilters(filters: FilterState): boolean {
     filters.destination_account.trim() !== "" ||
     filters.transaction_type != null ||
     filters.amount_exact.trim() !== "" ||
-    filters.uncategorized_only
+    filters.uncategorized_only ||
+    filters.categorize_queue_only
   )
 }
 
@@ -106,6 +109,15 @@ function isUncategorizedRow(row: OmniRow): boolean {
   return !category
 }
 
+function matchesCategorizeQueue(row: OmniRow): boolean {
+  if (row.type !== "withdrawal") return false
+  const cat = row.category?.trim()
+  const budget = row.budget?.trim()
+  if (cat?.startsWith("Transfer to ")) return false
+  if (budget === "Credit Card Payment") return false
+  return !cat || !budget
+}
+
 export function applyFilters(
   rows: OmniRow[],
   filters: FilterState,
@@ -133,6 +145,10 @@ export function applyFilters(
 
   if (filters.uncategorized_only) {
     result = result.filter(isUncategorizedRow)
+  }
+
+  if (filters.categorize_queue_only) {
+    result = result.filter(matchesCategorizeQueue)
   }
 
   const descNeedle = filters.description_contains.trim().toLowerCase()

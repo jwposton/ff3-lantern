@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Categorize transaction description** — Optional description edit when saving a single transaction; field pre-fills with the Firefly bank description (not a placeholder)
 - **Transaction Explorer mass edit** — Advanced filters (description, destination, type, exact amount, uncategorized only), row selection, and bulk category/budget updates via Firefly API
 - **Transaction Explorer AI filters** — Optional natural-language filter parsing via OpenRouter; `OPENROUTER_FILTER_MODEL` overrides the categorize model when set
+- **Categorize → Explorer link** — Open in Explorer tile on Categorize pre-applies the queue filter for bulk edit
+
+### Fixed
+
+- **AI filter parse** — Account allowlist for natural-language filter parsing no longer crashes when reading Firefly accounts
 
 ## [1.1.12] - 2026-07-02
 

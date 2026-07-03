@@ -37,6 +37,28 @@ def test_filter_parse_model_override(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_build_filter_parse_context_uses_account_dict_values():
+    from transaction_filter_parse import build_filter_parse_context
+
+    class _Client:
+        async def fetch_categories(self):
+            return [{"id": "1", "name": "Food"}]
+
+        async def fetch_budgets(self):
+            return [{"id": "2", "name": "Essentials"}]
+
+        async def fetch_accounts(self):
+            return {
+                "10": {"name": "Main Checking", "type": "Asset account"},
+                "11": {"name": "Grocery Store", "type": "Expense account"},
+            }
+
+    context = await build_filter_parse_context(_Client())
+    assert context["source_accounts"] == ["Main Checking"]
+    assert context["categories"] == ["Food"]
+
+
+@pytest.mark.asyncio
 async def test_parse_filter_route(client, firefly_env, monkeypatch):
     import routes.transactions as tx_mod
     from main import app

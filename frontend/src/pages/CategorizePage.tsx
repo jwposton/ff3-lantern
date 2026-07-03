@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { Link } from "react-router-dom"
+import { Table } from "lucide-react"
 
 import { FireflyTransactionLink } from "@/components/FireflyTransactionLink"
 import { Badge } from "@/components/ui/badge"
@@ -28,6 +30,7 @@ import {
   type DestinationMatchType,
 } from "@/lib/categorizeApi"
 import { invalidateReportCaches } from "@/lib/reportCache"
+import { buildCategorizeExplorerPath } from "@/lib/explorerFilterUrl"
 import { formatDisplayAmount, formatDisplayDate } from "@/lib/formatDisplay"
 import { cn } from "@/lib/utils"
 
@@ -1058,6 +1061,28 @@ export function CategorizePage() {
             </Card>
           ))}
         </div>
+      ) : null}
+
+      {!isPending && !isError ? (
+        <Card className="border-muted bg-muted/20">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+            <p className="text-sm text-muted-foreground">
+              Filter, select, and bulk-update category or budget in Transaction
+              Explorer — pre-filtered to this queue.
+            </p>
+            <Button asChild variant="outline" size="sm">
+              <Link
+                to={buildCategorizeExplorerPath(
+                  committedRange.start,
+                  committedRange.end,
+                )}
+              >
+                <Table className="mr-2 h-4 w-4" />
+                Open in Explorer
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
       ) : null}
 
       {!isPending && !isError && visibleRows.length === 0 ? (

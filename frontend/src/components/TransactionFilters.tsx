@@ -45,6 +45,9 @@ function filterSummary(filters: FilterState): string[] {
   if (filters.uncategorized_only) {
     parts.push("Uncategorized only")
   }
+  if (filters.categorize_queue_only) {
+    parts.push("Categorize queue")
+  }
   if (filters.search.trim()) {
     parts.push(`Search: "${filters.search.trim()}"`)
   }
@@ -80,6 +83,7 @@ export function TransactionFilters({
       transaction_type: null,
       amount_exact: "",
       uncategorized_only: false,
+      categorize_queue_only: false,
     })
   }
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useSearchParams } from "react-router-dom"
 
 import { MassEditBar } from "@/components/MassEditBar"
 import { FilterAiInput } from "@/components/FilterAiInput"
@@ -12,6 +13,7 @@ import {
   applyMassEdit,
   fetchTransactionsMeta,
 } from "@/lib/transactionsApi"
+import { parseExplorerFiltersFromSearchParams } from "@/lib/explorerFilterUrl"
 import {
   applyDefaultTypeScope,
   applyFilters,
@@ -34,6 +36,7 @@ const MAX_MASS_EDIT = 500
 export function TransactionExplorerPage() {
   const { committedRange } = useDateRange()
   const { start: committedStart, end: committedEnd } = committedRange
+  const [searchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const { isPending, isError, isSuccess, data, refetch } =
     useNormalizedTransactions(committedStart, committedEnd)
@@ -57,6 +60,15 @@ export function TransactionExplorerPage() {
   const [applying, setApplying] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const parsed = parseExplorerFiltersFromSearchParams(searchParams)
+    if (parsed.fromUrl) {
+      setFilters(parsed.filters)
+      setShowAllTypes(parsed.showAllTypes)
+      setPageIndex(0)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     setPageIndex(0)

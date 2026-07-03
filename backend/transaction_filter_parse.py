@@ -43,9 +43,9 @@ async def build_filter_parse_context(client: FireflyClient) -> dict[str, Any]:
     accounts = await client.fetch_accounts()
     source_accounts = sorted(
         {
-            a["name"]
-            for a in accounts
-            if a.get("name") and a.get("type") == "Asset account"
+            acct["name"]
+            for acct in accounts.values()
+            if acct.get("name") and acct.get("type") == "Asset account"
         }
     )
     return {
