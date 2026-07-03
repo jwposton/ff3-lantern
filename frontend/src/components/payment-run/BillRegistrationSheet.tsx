@@ -19,10 +19,22 @@ import type {
 
 type RegistrationMode = "create_new" | "link_existing"
 
+export type BillRegistrationEditTarget = {
+  registryId: number
+  row_label: string | null
+  worksheet_section: string
+  payment_rail: string
+  funding_bucket_key: string | null
+  credit_card_account_id: string | null
+  amount_mode: string
+}
+
 type BillRegistrationSheetProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultSection?: "bills" | "liabilities"
+  initialMode?: RegistrationMode
+  editTarget?: BillRegistrationEditTarget | null
   creditCards: CreditCardRow[]
   buckets: FundingBucketRollup[]
   availableBills: AvailableFireflyBill[]
@@ -37,6 +49,8 @@ export function BillRegistrationSheet({
   open,
   onOpenChange,
   defaultSection = "bills",
+  initialMode = "create_new",
+  editTarget = null,
   creditCards,
   buckets,
   availableBills,
@@ -62,9 +76,35 @@ export function BillRegistrationSheet({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const isEditMode = editTarget !== null
+
   useEffect(() => {
     if (!open) return
-    setMode("create_new")
+    if (editTarget) {
+      setMode("create_new")
+      setName(editTarget.row_label ?? "")
+      setAmount("")
+      setAmountMode(
+        editTarget.amount_mode === "intermittent" ? "intermittent" : "recurring",
+      )
+      setRepeatFreq("monthly")
+      setWorksheetSection(
+        editTarget.worksheet_section === "liabilities" ? "liabilities" : "bills",
+      )
+      setPaymentRail(
+        editTarget.payment_rail === "credit_card" ? "credit_card" : "bank",
+      )
+      setFundingBucketKey(editTarget.funding_bucket_key ?? buckets[0]?.id ?? "")
+      setCreditCardAccountId(
+        editTarget.credit_card_account_id ?? creditCards[0]?.account_id ?? "",
+      )
+      setDescriptionContains("existing-rule")
+      setAmountExactly("")
+      setSelectedBillId("")
+      setError(null)
+      return
+    }
+    setMode(initialMode)
     setName("")
     setAmount("")
     setAmountMode("recurring")
@@ -77,7 +117,14 @@ export function BillRegistrationSheet({
     setAmountExactly("")
     setSelectedBillId("")
     setError(null)
-  }, [open, defaultSection, buckets, creditCards])
+  }, [
+    open,
+    defaultSection,
+    initialMode,
+    editTarget,
+    buckets,
+    creditCards,
+  ])
 
   useEffect(() => {
     if (!selectedBillId) return
@@ -95,7 +142,7 @@ export function BillRegistrationSheet({
       return
     }
     const trimmedRule = descriptionContains.trim()
-    if (!trimmedRule) {
+    if (!isEditMode && !trimmedRule) {
       setError("Select or create a matching rule before saving.")
       return
     }
@@ -149,40 +196,47 @@ export function BillRegistrationSheet({
     }
   }
 
-  const submitLabel =
-    mode === "create_new" ? "Register bill" : "Link to worksheet"
+  const submitLabel = isEditMode
+    ? "Save registration"
+    : mode === "create_new"
+      ? "Register bill"
+      : "Link to worksheet"
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full sm:max-w-lg">
         <SheetHeader>
-          <SheetTitle>Register a bill</SheetTitle>
+          <SheetTitle>
+            {isEditMode ? "Edit bill registration" : "Register a bill"}
+          </SheetTitle>
           <SheetDescription>
             A matching rule is required so imports link to this bill.
           </SheetDescription>
         </SheetHeader>
 
         <div className="space-y-4 overflow-y-auto px-4">
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={mode === "create_new" ? "default" : "outline"}
-              aria-pressed={mode === "create_new"}
-              onClick={() => setMode("create_new")}
-            >
-              Create new
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={mode === "link_existing" ? "default" : "outline"}
-              aria-pressed={mode === "link_existing"}
-              onClick={() => setMode("link_existing")}
-            >
-              Link existing
-            </Button>
-          </div>
+          {!isEditMode ? (
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={mode === "create_new" ? "default" : "outline"}
+                aria-pressed={mode === "create_new"}
+                onClick={() => setMode("create_new")}
+              >
+                Create new
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={mode === "link_existing" ? "default" : "outline"}
+                aria-pressed={mode === "link_existing"}
+                onClick={() => setMode("link_existing")}
+              >
+                Link existing
+              </Button>
+            </div>
+          ) : null}
 
           {mode === "link_existing" ? (
             <div className="space-y-1">
@@ -372,31 +426,35 @@ export function BillRegistrationSheet({
             </div>
           )}
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium" htmlFor="rule-description">
-              Rule — description contains
-            </label>
-            <Input
-              id="rule-description"
-              value={descriptionContains}
-              onChange={(event) => setDescriptionContains(event.target.value)}
-            />
-            <p className="text-muted-foreground text-xs">
-              A matching rule is required so imports link to this bill.
-            </p>
-          </div>
+          {!isEditMode ? (
+            <>
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="rule-description">
+                  Rule — description contains
+                </label>
+                <Input
+                  id="rule-description"
+                  value={descriptionContains}
+                  onChange={(event) => setDescriptionContains(event.target.value)}
+                />
+                <p className="text-muted-foreground text-xs">
+                  A matching rule is required so imports link to this bill.
+                </p>
+              </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium" htmlFor="rule-amount">
-              Rule — amount exactly (optional)
-            </label>
-            <Input
-              id="rule-amount"
-              inputMode="decimal"
-              value={amountExactly}
-              onChange={(event) => setAmountExactly(event.target.value)}
-            />
-          </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="rule-amount">
+                  Rule — amount exactly (optional)
+                </label>
+                <Input
+                  id="rule-amount"
+                  inputMode="decimal"
+                  value={amountExactly}
+                  onChange={(event) => setAmountExactly(event.target.value)}
+                />
+              </div>
+            </>
+          ) : null}
 
           <p className="text-muted-foreground text-sm">
             {worksheetSection === "bills" ? "Bills" : "Liabilities"} ·{" "}
