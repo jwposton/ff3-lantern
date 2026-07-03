@@ -74,6 +74,18 @@ def _account_role_key(raw: str | None) -> str:
     return (raw or "").replace("_", "").lower()
 
 
+def _map_bill_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    attrs = entry.get("attributes", {})
+    repeat_freq = attrs.get("repeat_freq") or attrs.get("repeat_frequency")
+    return {
+        "id": str(entry.get("id")),
+        "name": attrs.get("name"),
+        "amount_min": attrs.get("amount_min"),
+        "amount_max": attrs.get("amount_max"),
+        "repeat_freq": repeat_freq,
+    }
+
+
 _MONTHLY_PAYMENT_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 
 
@@ -343,6 +355,36 @@ class FireflyClient:
                 "title": entry.get("attributes", {}).get("title"),
             },
         )
+
+    async def fetch_bills(self) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            "/api/v1/bills",
+            map_item=_map_bill_entry,
+        )
+
+    async def fetch_bill(self, bill_id: str) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.get(f"/api/v1/bills/{bill_id}")
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            payload = response.json()
+            return _map_bill_entry(payload.get("data", {}))
+
+    async def create_bill(self, body: dict[str, Any]) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.post("/api/v1/bills", json=body)
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {_format_firefly_error(response)}"
+                )
+            payload = response.json()
+            data = payload.get("data", {})
+            return {
+                "id": str(data.get("id")),
+                "attributes": data.get("attributes", {}),
+            }
 
     async def create_rule_group(self, title: str) -> dict[str, Any]:
         async with self._build_client() as client:
