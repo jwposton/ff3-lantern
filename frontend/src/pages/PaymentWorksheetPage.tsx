@@ -148,14 +148,14 @@ export function PaymentWorksheetPage() {
     accountId: string,
     bucketKey: string | null,
   ) {
-    await putAccountWorksheet(accountId, {
+    await putAccountWorksheet(accountId, month, {
       funding_bucket_key: bucketKey,
     })
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
   }
 
   async function handleExclude(row: CreditCardRow) {
-    await putAccountWorksheet(row.account_id, { included: false })
+    await putAccountWorksheet(row.account_id, month, { included: false })
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
   }
 

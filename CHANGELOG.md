@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Worksheet profile month** — bucket assignment and exclude changes apply to the month you are viewing, including near month boundaries
 - **Credit card bucket unassign** — selecting Unassigned clears funding bucket on the worksheet without editing Firefly notes manually
 - **AI filter parse** — Account allowlist for natural-language filter parsing no longer crashes when reading Firefly accounts
 

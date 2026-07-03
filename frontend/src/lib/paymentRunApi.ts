@@ -211,6 +211,7 @@ export async function putRowState(
 
 export async function putAccountWorksheet(
   accountId: string,
+  month: string,
   body: {
     included?: boolean
     funding_bucket_key?: string | null
@@ -218,11 +219,15 @@ export async function putAccountWorksheet(
     default_planned_payment?: string | null
   },
 ): Promise<{ account_id: string; profile: Record<string, unknown> }> {
-  const res = await fetch(`/api/payment-run/accounts/${accountId}/worksheet`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  })
+  const params = new URLSearchParams({ month })
+  const res = await fetch(
+    `/api/payment-run/accounts/${accountId}/worksheet?${params}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  )
   if (!res.ok) {
     await parseError(res, `Failed to update account worksheet (${res.status})`)
   }
