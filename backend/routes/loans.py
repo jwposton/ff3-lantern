@@ -68,8 +68,13 @@ def _is_asset_row(acct: dict[str, Any]) -> bool:
     return "asset" in raw_type
 
 
-def _account_option(account_id: str, acct: dict[str, Any]) -> dict[str, str]:
-    return {"id": account_id, "name": acct.get("name") or account_id}
+def _account_option(account_id: str, acct: dict[str, Any]) -> dict[str, str | None]:
+    return {
+        "id": account_id,
+        "name": acct.get("name") or account_id,
+        "type": acct.get("type"),
+        "role": acct.get("role"),
+    }
 
 
 def _account_row(account_id: str, attrs: dict[str, Any], profile: dict | None) -> dict:

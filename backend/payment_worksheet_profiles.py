@@ -111,6 +111,14 @@ def is_credit_card_asset(attrs: dict[str, Any]) -> bool:
     return acct_type == "Asset account" and role == "Credit card"
 
 
+def is_funding_bucket_eligible_summary(summary: dict[str, Any]) -> bool:
+    """True for fetch_accounts() rows that may fund a bucket (asset, not credit card)."""
+    return (
+        summary.get("type") == "Asset account"
+        and summary.get("role") != "Credit card"
+    )
+
+
 def current_month_key() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m")
 

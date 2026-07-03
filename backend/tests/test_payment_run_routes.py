@@ -420,66 +420,125 @@ def test_put_bucket_balance(monkeypatch, client, data_dir, payment_worksheet_env
 
 def test_bucket_crud(monkeypatch, client):
     monkeypatch.setenv("FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED", "true")
+    monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
+    monkeypatch.setenv("FIREFLY_API_TOKEN", "test-token")
 
-    create_savings = client.post(
-        "/api/payment-run/buckets",
-        json={
-            "id": "savings",
-            "label": "Savings",
-            "sort_order": 0,
-            "firefly_account_ids": ["10"],
-        },
+    import firefly_reference_cache
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    firefly_reference_cache.clear()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/accounts") and request.method == "GET":
+            data = [
+                {
+                    "type": "accounts",
+                    "id": aid,
+                    "attributes": {
+                        "name": name,
+                        "type": "asset",
+                        "account_role": role,
+                    },
+                }
+                for aid, name, role in [
+                    ("7", "Checking", "defaultAsset"),
+                    ("8", "Savings", "defaultAsset"),
+                    ("10", "Extra", "defaultAsset"),
+                    ("3", "Chase VISA", "creditCard"),
+                ]
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "data": data,
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        return httpx.Response(404)
+
+    mock_client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
     )
-    assert create_savings.status_code == 200
-    assert create_savings.json()["id"] == "savings"
+    app.dependency_overrides[get_firefly_client] = lambda: mock_client
 
-    create_checking = client.post(
-        "/api/payment-run/buckets",
-        json={
-            "id": "checking",
-            "label": "Checking",
-            "sort_order": 1,
-            "firefly_account_ids": ["7", "8"],
-        },
-    )
-    assert create_checking.status_code == 200
+    try:
+        create_savings = client.post(
+            "/api/payment-run/buckets",
+            json={
+                "id": "savings",
+                "label": "Savings",
+                "sort_order": 0,
+                "firefly_account_ids": ["10"],
+            },
+        )
+        assert create_savings.status_code == 200
+        assert create_savings.json()["id"] == "savings"
 
-    listed = client.get("/api/payment-run/buckets")
-    assert listed.status_code == 200
-    data = listed.json()["data"]
-    assert [bucket["id"] for bucket in data] == ["savings", "checking"]
+        create_checking = client.post(
+            "/api/payment-run/buckets",
+            json={
+                "id": "checking",
+                "label": "Checking",
+                "sort_order": 1,
+                "firefly_account_ids": ["7", "8"],
+            },
+        )
+        assert create_checking.status_code == 200
 
-    updated = client.put(
-        "/api/payment-run/buckets/checking",
-        json={
-            "label": "Primary Checking",
-            "sort_order": 1,
-            "firefly_account_ids": ["7", "8"],
-        },
-    )
-    assert updated.status_code == 200
-    assert updated.json()["label"] == "Primary Checking"
+        listed = client.get("/api/payment-run/buckets")
+        assert listed.status_code == 200
+        data = listed.json()["data"]
+        assert [bucket["id"] for bucket in data] == ["savings", "checking"]
 
-    after_update = client.get("/api/payment-run/buckets")
-    checking = next(
-        bucket for bucket in after_update.json()["data"] if bucket["id"] == "checking"
-    )
-    assert checking["label"] == "Primary Checking"
+        updated = client.put(
+            "/api/payment-run/buckets/checking",
+            json={
+                "label": "Primary Checking",
+                "sort_order": 1,
+                "firefly_account_ids": ["7", "8"],
+            },
+        )
+        assert updated.status_code == 200
+        assert updated.json()["label"] == "Primary Checking"
 
-    deleted = client.delete("/api/payment-run/buckets/savings")
-    assert deleted.status_code == 200
+        after_update = client.get("/api/payment-run/buckets")
+        checking = next(
+            bucket for bucket in after_update.json()["data"] if bucket["id"] == "checking"
+        )
+        assert checking["label"] == "Primary Checking"
 
-    remaining = client.get("/api/payment-run/buckets")
-    assert len(remaining.json()["data"]) == 1
-    assert remaining.json()["data"][0]["id"] == "checking"
+        deleted = client.delete("/api/payment-run/buckets/savings")
+        assert deleted.status_code == 200
 
-    invalid = client.post(
-        "/api/payment-run/buckets",
-        json={
-            "id": "bad",
-            "label": "Bad",
-            "sort_order": 2,
-            "firefly_account_ids": [""],
-        },
-    )
-    assert invalid.status_code == 422
+        remaining = client.get("/api/payment-run/buckets")
+        assert len(remaining.json()["data"]) == 1
+        assert remaining.json()["data"][0]["id"] == "checking"
+
+        invalid = client.post(
+            "/api/payment-run/buckets",
+            json={
+                "id": "bad",
+                "label": "Bad",
+                "sort_order": 2,
+                "firefly_account_ids": [""],
+            },
+        )
+        assert invalid.status_code == 422
+
+        cc_rejected = client.post(
+            "/api/payment-run/buckets",
+            json={
+                "id": "cc-bucket",
+                "label": "Bad CC",
+                "sort_order": 3,
+                "firefly_account_ids": ["3"],
+            },
+        )
+        assert cc_rejected.status_code == 422
+        assert "cannot fund a bucket" in cc_rejected.json()["detail"]
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+        firefly_reference_cache.clear()

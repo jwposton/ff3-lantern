@@ -77,6 +77,7 @@ def compute_bucket_rollups(
                 "id": bucket_id,
                 "label": bucket["label"],
                 "sort_order": bucket["sort_order"],
+                "firefly_account_ids": bucket.get("firefly_account_ids") or [],
                 "reported_balance": _format_decimal(reported),
                 "user_balance": _format_decimal(user_balance),
                 "user_balance_override": user_override,

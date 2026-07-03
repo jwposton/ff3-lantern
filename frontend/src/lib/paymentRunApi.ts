@@ -2,6 +2,7 @@ export type FundingBucketRollup = {
   id: string
   label: string
   sort_order: number
+  firefly_account_ids?: string[]
   reported_balance: string
   user_balance: string
   user_balance_override: boolean

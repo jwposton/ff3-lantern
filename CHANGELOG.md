@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Payment worksheet buckets** — bucket cards show linked Firefly account names; footer totals are left-aligned; edit sheet includes delete with confirmation
+- **Payment worksheet onboarding** — clearer copy that credit cards load from Firefly on Refresh (no separate add control)
 - **Transaction Explorer default scope** — Shows all transaction types by default (bank and credit card withdrawals, deposits, transfers); optional **Bank spending only** narrows to checking/savings purchases
 - **Categorize Open in Explorer** — Button height matches **Save** / **Ignore** on the transaction card row
 - **Transaction Explorer table** — Description column added (sortable); type always renders as plain text
@@ -38,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Payment worksheet credit cards** — Firefly `ccAsset` account role is recognized so credit card accounts appear after Refresh (not only `creditCard`)
+- **Funding bucket accounts** — bucket setup lists and accepts only non–credit-card asset accounts (checking/savings); credit cards cannot be mapped to a cash pool
 - **Worksheet profile month** — bucket assignment and exclude changes apply to the month you are viewing, including near month boundaries
 - **Credit card bucket unassign** — selecting Unassigned clears funding bucket on the worksheet without editing Firefly notes manually
 - **AI filter parse** — Account allowlist for natural-language filter parsing no longer crashes when reading Firefly accounts

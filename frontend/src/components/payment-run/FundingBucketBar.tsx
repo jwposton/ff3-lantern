@@ -13,6 +13,7 @@ type FundingBucketBarProps = {
     user_balance: string
     remaining: string
   }
+  accountNameById: Map<string, string>
   onAddBucket: () => void
   onEditBucket: (bucket: FundingBucketRollup) => void
   onBalanceBlur: (bucketId: string, value: string) => void
@@ -27,9 +28,22 @@ function remainingClassName(value: string): string {
   return "tabular-nums"
 }
 
+function formatAccountLabels(
+  accountIds: string[] | undefined,
+  accountNameById: Map<string, string>,
+): string {
+  if (!accountIds?.length) {
+    return "No accounts linked"
+  }
+  return accountIds
+    .map((id) => accountNameById.get(id) ?? `Account ${id}`)
+    .join(", ")
+}
+
 export function FundingBucketBar({
   buckets,
   totals,
+  accountNameById,
   onAddBucket,
   onEditBucket,
   onBalanceBlur,
@@ -56,11 +70,14 @@ export function FundingBucketBar({
               >
                 <button
                   type="button"
-                  className="mb-3 text-left text-sm font-semibold hover:underline"
+                  className="mb-1 text-left text-sm font-semibold hover:underline"
                   onClick={() => onEditBucket(bucket)}
                 >
                   {bucket.label}
                 </button>
+                <p className="text-muted-foreground mb-3 text-xs leading-snug">
+                  {formatAccountLabels(bucket.firefly_account_ids, accountNameById)}
+                </p>
                 <dl className="space-y-2 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <dt className="text-muted-foreground">Reported</dt>
@@ -128,19 +145,19 @@ export function FundingBucketBar({
 
       {buckets.length > 0 ? (
         <div className="mt-1 grid gap-3 border-t pt-3 sm:grid-cols-3">
-          <div className="flex flex-col gap-0.5 sm:items-end">
+          <div className="flex flex-col gap-0.5">
             <span className="text-muted-foreground text-xs">Total reported</span>
             <span className="text-sm font-medium tabular-nums">
               {formatDisplayAmount(totals.reported_balance)}
             </span>
           </div>
-          <div className="flex flex-col gap-0.5 sm:items-end">
+          <div className="flex flex-col gap-0.5">
             <span className="text-muted-foreground text-xs">Total user</span>
             <span className="text-sm font-medium tabular-nums">
               {formatDisplayAmount(totals.user_balance)}
             </span>
           </div>
-          <div className="flex flex-col gap-0.5 sm:items-end">
+          <div className="flex flex-col gap-0.5">
             <span className="text-muted-foreground text-xs">Total remaining</span>
             <span
               className={cn(

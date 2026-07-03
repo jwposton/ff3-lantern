@@ -17,6 +17,7 @@ from payment_worksheet_profiles import (
     current_month_key,
     effective_profile_from_notes,
     is_credit_card_asset,
+    is_funding_bucket_eligible_summary,
     merge_payment_worksheet_profile,
     parse_payment_worksheet_from_notes,
     patch_worksheet_refresh_profile,
@@ -44,6 +45,29 @@ def require_payment_worksheet() -> None:
 
 def get_firefly_client() -> FireflyClient:
     return FireflyClient()
+
+
+async def _validate_bucket_firefly_account_ids(
+    client: FireflyClient, account_ids: list[str]
+) -> None:
+    if not account_ids:
+        return
+    accounts = await client.fetch_accounts()
+    for account_id in account_ids:
+        summary = accounts.get(account_id)
+        if summary is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown Firefly account id: {account_id}",
+            )
+        if not is_funding_bucket_eligible_summary(summary):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Account {account_id} cannot fund a bucket; "
+                    "use checking or savings asset accounts only."
+                ),
+            )
 
 
 class FundingBucketBody(BaseModel):
@@ -235,8 +259,10 @@ async def list_buckets(_: None = Depends(require_payment_worksheet)):
 async def create_bucket(
     body: FundingBucketBody,
     _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
 ):
     bucket_id = (body.id or "").strip() or uuid.uuid4().hex
+    await _validate_bucket_firefly_account_ids(client, body.firefly_account_ids)
     await sidecar_db.upsert_funding_bucket(
         id=bucket_id,
         label=body.label,
@@ -254,10 +280,12 @@ async def update_bucket(
     bucket_id: str,
     body: FundingBucketBody,
     _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
 ):
     existing = await sidecar_db.get_funding_bucket(bucket_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Bucket not found.")
+    await _validate_bucket_firefly_account_ids(client, body.firefly_account_ids)
     await sidecar_db.upsert_funding_bucket(
         id=bucket_id,
         label=body.label,

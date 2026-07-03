@@ -169,6 +169,13 @@ def test_cc_withdrawal_source_role_is_credit_card():
     assert cc_rows[0].get("source_type") == "Asset account"
 
 
+def test_normalize_cc_asset_role():
+    from firefly_client import _normalize_account_role
+
+    assert _normalize_account_role("ccAsset") == "Credit card"
+    assert _normalize_account_role("creditCard") == "Credit card"
+
+
 def test_account_role_not_replaced_by_account_type():
     accounts_payload = {
         "data": [

@@ -49,6 +49,7 @@ _ACCOUNT_TYPE_MAP = {
 
 _ACCOUNT_ROLE_MAP = {
     "creditcard": "Credit card",
+    "ccasset": "Credit card",
     "defaultasset": "Default account",
 }
 

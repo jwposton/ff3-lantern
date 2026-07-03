@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useHealth } from "@/hooks/useHealth"
 import { useLoanMeta } from "@/hooks/useLoans"
+import { isFundingBucketAsset } from "@/lib/accounts"
 import {
   paymentRunQueryKey,
   usePaymentWorksheet,
@@ -19,6 +20,7 @@ import {
 import {
   createFundingBucket,
   currentMonthKey,
+  deleteFundingBucket,
   fetchFundingBuckets,
   formatMonthLabel,
   putBucketBalance,
@@ -49,15 +51,35 @@ export function PaymentWorksheetPage() {
   const [bucketSheetOpen, setBucketSheetOpen] = useState(false)
   const [editingBucket, setEditingBucket] = useState<FundingBucket | null>(null)
 
-  const assetAccounts = loanMeta?.asset_accounts ?? []
+  const bucketAssetAccounts = useMemo(
+    () =>
+      (loanMeta?.asset_accounts ?? []).filter((account) =>
+        isFundingBucketAsset(account.type, account.role),
+      ),
+    [loanMeta],
+  )
+
+  const accountNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const account of loanMeta?.asset_accounts ?? []) {
+      map.set(account.id, account.name)
+    }
+    return map
+  }, [loanMeta])
 
   const ccGuidance = useMemo(() => {
     if (!data) return null
     if (data.credit_cards.length === 0) {
       if (!data.refreshed_at) {
-        return "Refresh balances to load credit cards"
+        return (
+          "Credit cards load from Firefly when you click Refresh balances — " +
+          "there is no separate add step. Use Refresh after adding buckets."
+        )
       }
-      return "No credit cards on this worksheet"
+      return (
+        "No credit card asset accounts found in Firefly for this worksheet. " +
+        "Confirm cards use the credit card account role, then refresh again."
+      )
     }
     const unassigned = data.credit_cards.some(
       (row) => !row.funding_bucket_key,
@@ -113,6 +135,11 @@ export function PaymentWorksheetPage() {
     } else {
       await createFundingBucket(values)
     }
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
+  async function handleDeleteBucket(bucketId: string) {
+    await deleteFundingBucket(bucketId)
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
   }
 
@@ -220,6 +247,7 @@ export function PaymentWorksheetPage() {
           <FundingBucketBar
             buckets={data.buckets}
             totals={data.totals}
+            accountNameById={accountNameById}
             onAddBucket={openAddBucket}
             onEditBucket={openEditBucket}
             onBalanceBlur={handleBalanceBlur}
@@ -246,6 +274,21 @@ export function PaymentWorksheetPage() {
                 onExclude={handleExclude}
               />
             ) : null}
+            {data.credit_cards.length === 0 && !data.refreshed_at ? (
+              <Card>
+                <CardContent className="text-muted-foreground space-y-2 py-8 text-sm">
+                  <p className="font-medium text-foreground">
+                    Credit cards load on Refresh
+                  </p>
+                  <p>
+                    Firefly credit card accounts appear here automatically when
+                    you click <span className="font-medium">Refresh balances</span>.
+                    Add funding buckets first if you want to map cards to cash
+                    pools.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : null}
             {data.credit_cards.length === 0 && data.refreshed_at ? (
               <Card>
                 <CardContent className="text-muted-foreground space-y-2 py-8 text-sm">
@@ -253,8 +296,9 @@ export function PaymentWorksheetPage() {
                     No credit cards on this worksheet
                   </p>
                   <p>
-                    Firefly credit card accounts appear here after you refresh.
-                    Excluded cards stay hidden until you include them again.
+                    Firefly returned no credit card asset accounts. Excluded cards
+                    stay hidden until you include them again from setup (coming in
+                    a later phase).
                   </p>
                 </CardContent>
               </Card>
@@ -268,8 +312,9 @@ export function PaymentWorksheetPage() {
         open={bucketSheetOpen}
         onOpenChange={setBucketSheetOpen}
         bucket={editingBucket}
-        assetAccounts={assetAccounts}
+        assetAccounts={bucketAssetAccounts}
         onSave={handleSaveBucket}
+        onDelete={handleDeleteBucket}
       />
     </div>
   )
