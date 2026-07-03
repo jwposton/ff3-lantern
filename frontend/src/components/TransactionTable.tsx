@@ -1,6 +1,5 @@
 import { ExternalLink } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -12,12 +11,14 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { buildFireflyTransactionUrl } from "@/lib/fireflyLinks"
+import { formatDisplayDate } from "@/lib/formatDisplay"
 import { formatCurrency, isSpendingWithdrawal } from "@/lib/spending"
-import type { SortDir, SortKey } from "@/lib/transactionTable"
+import { isRowEditable, rowKey, type SortDir, type SortKey } from "@/lib/transactionTable"
 import type { OmniRow } from "@/types/NormalizedTransaction"
 
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "date", label: "Date" },
+  { key: "description", label: "Description" },
   { key: "amount", label: "Amount" },
   { key: "type", label: "Type" },
   { key: "category", label: "Category" },
@@ -32,8 +33,11 @@ type TransactionTableProps = {
   sortDir: SortDir
   onSort: (key: SortKey) => void
   isLoading: boolean
-  showAllTypes: boolean
   fireflyBaseUrl?: string
+  selectionEnabled?: boolean
+  selectedKeys?: Set<string>
+  onToggleRow?: (key: string, selected: boolean) => void
+  onTogglePage?: (keys: string[], selected: boolean) => void
 }
 
 function ariaSortValue(
@@ -66,10 +70,17 @@ export function TransactionTable({
   sortDir,
   onSort,
   isLoading,
-  showAllTypes,
   fireflyBaseUrl,
+  selectionEnabled = false,
+  selectedKeys,
+  onToggleRow,
+  onTogglePage,
 }: TransactionTableProps) {
   const showLinkColumn = Boolean(fireflyBaseUrl)
+  const editablePageKeys = rows.filter(isRowEditable).map(rowKey)
+  const allPageSelected =
+    editablePageKeys.length > 0 &&
+    editablePageKeys.every((key) => selectedKeys?.has(key))
 
   if (isLoading) {
     return (
@@ -77,6 +88,7 @@ export function TransactionTable({
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-muted/50">
             <TableRow>
+              {selectionEnabled ? <TableHead className="w-10" /> : null}
               {COLUMNS.map((col) => (
                 <TableHead key={col.key}>{col.label}</TableHead>
               ))}
@@ -90,6 +102,11 @@ export function TransactionTable({
           <TableBody>
             {Array.from({ length: 12 }).map((_, i) => (
               <TableRow key={i}>
+                {selectionEnabled ? (
+                  <TableCell>
+                    <Skeleton className="h-4 w-4" />
+                  </TableCell>
+                ) : null}
                 {COLUMNS.map((col) => (
                   <TableCell key={col.key}>
                     <Skeleton className="h-5 w-full max-w-[8rem]" />
@@ -113,6 +130,20 @@ export function TransactionTable({
       <Table>
         <TableHeader className="sticky top-0 z-10 bg-muted/50">
           <TableRow>
+            {selectionEnabled ? (
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  aria-label="Select all on page"
+                  checked={allPageSelected}
+                  disabled={editablePageKeys.length === 0}
+                  onChange={(e) =>
+                    onTogglePage?.(editablePageKeys, e.target.checked)
+                  }
+                  className="rounded border"
+                />
+              </TableHead>
+            ) : null}
             {COLUMNS.map((col) => (
               <TableHead key={col.key} aria-sort={ariaSortValue(col.key, sortKey, sortDir)}>
                 <button
@@ -143,17 +174,31 @@ export function TransactionTable({
               fireflyBaseUrl,
               row.journal_id,
             )
+            const key = rowKey(row)
+            const editable = isRowEditable(row)
             return (
-              <TableRow key={`${row.date}-${row.amount}-${index}`}>
-                <TableCell>{row.date}</TableCell>
-                <TableCell className={amount.className}>{amount.text}</TableCell>
-                <TableCell>
-                  {showAllTypes && row.type ? (
-                    <Badge variant="secondary">{row.type}</Badge>
-                  ) : (
-                    row.type ?? "—"
-                  )}
+              <TableRow key={`${key}-${index}`}>
+                {selectionEnabled ? (
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select transaction ${formatDisplayDate(row.date)}`}
+                      checked={selectedKeys?.has(key) ?? false}
+                      disabled={!editable}
+                      onChange={(e) => onToggleRow?.(key, e.target.checked)}
+                      className="rounded border disabled:opacity-40"
+                    />
+                  </TableCell>
+                ) : null}
+                <TableCell>{formatDisplayDate(row.date)}</TableCell>
+                <TableCell
+                  className="max-w-[14rem] truncate"
+                  title={row.description ?? undefined}
+                >
+                  {row.description?.trim() ? row.description : "—"}
                 </TableCell>
+                <TableCell className={amount.className}>{amount.text}</TableCell>
+                <TableCell>{cellValue(row, "type")}</TableCell>
                 <TableCell>{cellValue(row, "category")}</TableCell>
                 <TableCell>{cellValue(row, "budget")}</TableCell>
                 <TableCell>{cellValue(row, "source_account")}</TableCell>

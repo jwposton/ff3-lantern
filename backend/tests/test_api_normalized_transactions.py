@@ -7,6 +7,8 @@ import pytest
 OMNI_KEYS = frozenset(
     {
         "journal_id",
+        "transaction_journal_id",
+        "description",
         "amount",
         "type",
         "source_account",

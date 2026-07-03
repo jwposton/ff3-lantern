@@ -58,6 +58,21 @@ def test_is_categorize_ignored_detects_tag(monkeypatch):
     assert not is_categorize_ignored({"tags": ["other"]})
 
 
+def test_mutate_fn_updates_description_when_provided():
+    attrs = load_fixture("transactions_put_roundtrip.json")["data"]["attributes"]
+    mutate = build_apply_mutate_fn("5001", "99", None, "Cleaned up memo")
+    updated = mutate(attrs)
+    assert updated["transactions"][0]["description"] == "Cleaned up memo"
+    assert "description" not in updated["transactions"][1]
+
+
+def test_mutate_fn_skips_description_when_none():
+    attrs = load_fixture("transactions_put_roundtrip.json")["data"]["attributes"]
+    mutate = build_apply_mutate_fn("5001", "99", None, None)
+    updated = mutate(attrs)
+    assert "description" not in updated["transactions"][0]
+
+
 def test_mutate_fn_raises_when_journal_missing():
     attrs = load_fixture("transactions_put_roundtrip.json")["data"]["attributes"]
     mutate = build_apply_mutate_fn("9999", "99", None)

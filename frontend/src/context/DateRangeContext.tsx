@@ -63,7 +63,15 @@ export function DateRangeProvider({ children }: { children: ReactNode }) {
     setDraftRangeState(range)
 
     if (!hasUrlRange(searchParams)) {
-      setSearchParams({ start, end }, { replace: true })
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.set("start", start)
+          next.set("end", end)
+          return next
+        },
+        { replace: true },
+      )
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ start, end }))
       } catch {
@@ -82,7 +90,15 @@ export function DateRangeProvider({ children }: { children: ReactNode }) {
       const range = { start, end }
       setCommittedRange(range)
       setDraftRangeState(range)
-      setSearchParams({ start, end }, { replace: true })
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.set("start", start)
+          next.set("end", end)
+          return next
+        },
+        { replace: true },
+      )
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ start, end }))
       } catch {

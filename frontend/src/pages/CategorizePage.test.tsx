@@ -180,10 +180,73 @@ describe("categorize api hooks", () => {
       expect(screen.getByText("AMZN MKTP")).toBeTruthy()
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Rule mode" }))
+    fireEvent.click(screen.getByRole("button", { name: "Rule" }))
 
     expect(screen.getByRole("button", { name: "Preview matches" })).toBeTruthy()
     expect(screen.getByDisplayValue("Amazon")).toBeTruthy()
+  })
+
+  it("transaction mode description defaults to Firefly value before suggest", async () => {
+    mockFetch({
+      pending: () => ({
+        data: [PENDING_ROW],
+        meta: { count: 1, ...RANGE, limit: 50 },
+      }),
+      meta: () => ({
+        openrouter_configured: true,
+        categories: [{ id: "1", name: "Shopping" }],
+        budgets: [],
+        default_model: "openai/gpt-4o-mini",
+      }),
+      normalized: () => ({ data: [], firefly_base_url: "https://firefly.example" }),
+    })
+
+    render(
+      <TestProviders>
+        <CategorizePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("AMZN MKTP")).toBeTruthy()
+    })
+
+    const description = screen.getByLabelText("Description") as HTMLInputElement
+    expect(description.value).toBe("AMZN MKTP")
+  })
+
+  it("transaction mode links to Explorer with description and destination filters", async () => {
+    mockFetch({
+      pending: () => ({
+        data: [PENDING_ROW],
+        meta: { count: 1, ...RANGE, limit: 50 },
+      }),
+      meta: () => ({
+        openrouter_configured: true,
+        categories: [{ id: "1", name: "Shopping" }],
+        budgets: [],
+        default_model: "openai/gpt-4o-mini",
+      }),
+      normalized: () => ({ data: [], firefly_base_url: "https://firefly.example" }),
+    })
+
+    render(
+      <TestProviders>
+        <CategorizePage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("AMZN MKTP")).toBeTruthy()
+    })
+
+    const link = [...document.querySelectorAll('a[href*="/reports/transactions"]')].find(
+      (anchor) => anchor.getAttribute("href")?.includes("description="),
+    )
+    expect(link).toBeTruthy()
+    expect(link!.getAttribute("href")).toContain("description=AMZN")
+    expect(link!.getAttribute("href")).toContain("destination=Amazon")
+    expect(link!.getAttribute("href")).not.toContain("show_all_types")
   })
 })
 
@@ -381,7 +444,7 @@ describe("CategorizePage interactions", () => {
     const categorySelect = screen.getByLabelText("Category") as HTMLSelectElement
     fireEvent.change(categorySelect, { target: { value: "1" } })
 
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
       const applyCall = fetchSpy.mock.calls.find(([url]) =>
@@ -422,7 +485,7 @@ describe("CategorizePage interactions", () => {
 
     const categorySelect = screen.getByLabelText("Category") as HTMLSelectElement
     fireEvent.change(categorySelect, { target: { value: "1" } })
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
       expect(
@@ -671,7 +734,22 @@ describe("CategorizePage rule graduation", () => {
         ],
       }),
       rulePreview: () => ({
-        data: { total: 3, uncategorized_count: 1, categorized_count: 2 },
+        data: {
+          total: 3,
+          uncategorized_count: 1,
+          categorized_count: 2,
+          sample: [
+            {
+              date: "2024-06-01",
+              amount: "10.00",
+              source_name: "Checking",
+              destination_name: "Amazon",
+              description: "AMZN ORDER",
+              budget_name: null,
+              category_name: null,
+            },
+          ],
+        },
       }),
       ruleCreate: () => ({ data: { rule_id: "55" } }),
     })
@@ -697,6 +775,8 @@ describe("CategorizePage rule graduation", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/1 uncategorized/i)).toBeTruthy()
+      expect(screen.getByText(/Matching transactions/i)).toBeTruthy()
+      expect(screen.getByText("AMZN ORDER")).toBeTruthy()
     })
 
     fireEvent.click(screen.getByRole("button", { name: /^Create rule$/i }))
@@ -748,7 +828,22 @@ describe("CategorizePage rule graduation", () => {
         ],
       }),
       rulePreview: () => ({
-        data: { total: 3, uncategorized_count: 1, categorized_count: 2 },
+        data: {
+          total: 3,
+          uncategorized_count: 1,
+          categorized_count: 2,
+          sample: [
+            {
+              date: "2024-06-01",
+              amount: "10.00",
+              source_name: "Checking",
+              destination_name: "Amazon",
+              description: "AMZN ORDER",
+              budget_name: null,
+              category_name: null,
+            },
+          ],
+        },
       }),
       ruleCreate: () => ({ data: { rule_id: "55" } }),
       ruleTrigger: () => ({ ok: true, rule_id: "55" }),
@@ -775,6 +870,8 @@ describe("CategorizePage rule graduation", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/1 uncategorized/i)).toBeTruthy()
+      expect(screen.getByText(/Matching transactions/i)).toBeTruthy()
+      expect(screen.getByText("AMZN ORDER")).toBeTruthy()
     })
 
     fireEvent.click(screen.getByLabelText(/Apply rule to existing/i))

@@ -86,7 +86,10 @@ async def test_preview_rule_matches_amount_filter():
         amount="9.99",
     )
     result = await preview_rule_matches(_Client(), "2024-01-01", "2024-01-31", draft)
-    assert result == {"total": 1, "uncategorized_count": 1, "categorized_count": 0}
+    assert result["total"] == 1
+    assert result["uncategorized_count"] == 1
+    assert result["categorized_count"] == 0
+    assert len(result["sample"]) == 1
 
 
 def test_build_firefly_rule_body_destination_account_trigger(monkeypatch):
@@ -156,7 +159,10 @@ async def test_preview_rule_matches_destination_contains():
         destination_match_type="contains",
     )
     result = await preview_rule_matches(_Client(), "2024-01-01", "2024-01-31", draft)
-    assert result == {"total": 1, "uncategorized_count": 1, "categorized_count": 0}
+    assert result["total"] == 1
+    assert result["uncategorized_count"] == 1
+    assert result["categorized_count"] == 0
+    assert len(result["sample"]) == 1
 
 
 @pytest.mark.asyncio
@@ -249,7 +255,83 @@ async def test_preview_rule_matches_counts():
         transaction_type="withdrawal",
     )
     result = await preview_rule_matches(_Client(), "2024-01-01", "2024-01-31", draft)
-    assert result == {"total": 2, "uncategorized_count": 1, "categorized_count": 1}
+    assert result == {
+        "total": 2,
+        "uncategorized_count": 1,
+        "categorized_count": 1,
+        "sample": [
+            {
+                "date": "",
+                "amount": "0.00",
+                "source_name": None,
+                "destination_name": None,
+                "description": "AMZN MKTP US",
+                "budget_name": None,
+                "category_name": None,
+            },
+            {
+                "date": "",
+                "amount": "0.00",
+                "source_name": None,
+                "destination_name": None,
+                "description": "amzn mktp order",
+                "budget_name": "Shopping",
+                "category_name": "Shopping",
+            },
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_matches_sample_capped_at_ten():
+    splits = [
+        {
+            "type": "withdrawal",
+            "description": f"AMZN {i}",
+            "date": f"2024-01-{i + 1:02d}",
+            "amount": "-10.00",
+            "category_name": None,
+        }
+        for i in range(12)
+    ]
+
+    class _Client:
+        async def fetch_splits(self, start, end):
+            return splits
+
+    draft = RuleDraft(title="Amazon", description_contains="AMZN")
+    result = await preview_rule_matches(_Client(), "2024-01-01", "2024-01-31", draft)
+    assert result["total"] == 12
+    assert len(result["sample"]) == 10
+    assert result["sample"][0]["date"] == "2024-01-01"
+    assert result["sample"][0]["amount"] == "10.00"
+
+
+@pytest.mark.asyncio
+async def test_preview_sample_row_includes_accounts():
+    splits = [
+        {
+            "type": "withdrawal",
+            "description": "AMZN",
+            "date": "2024-01-15T08:00:00",
+            "amount": "-42.5",
+            "source_name": "Checking",
+            "destination_name": "Amazon",
+            "category_name": None,
+        },
+    ]
+
+    class _Client:
+        async def fetch_splits(self, start, end):
+            return splits
+
+    draft = RuleDraft(title="Amazon", description_contains="AMZN")
+    result = await preview_rule_matches(_Client(), "2024-01-01", "2024-01-31", draft)
+    row = result["sample"][0]
+    assert row["date"] == "2024-01-15"
+    assert row["amount"] == "42.50"
+    assert row["source_name"] == "Checking"
+    assert row["destination_name"] == "Amazon"
 
 
 @pytest.mark.asyncio

@@ -50,6 +50,7 @@ def build_apply_mutate_fn(
     transaction_journal_id: str,
     category_id: str,
     budget_id: str | None,
+    description: str | None = None,
 ) -> Any:
     """Return mutate_fn for FireflyClient.update_transaction."""
 
@@ -61,6 +62,8 @@ def build_apply_mutate_fn(
                 split["category_id"] = category_id
                 if budget_id is not None:
                     split["budget_id"] = budget_id
+                if description is not None:
+                    split["description"] = description
                 _merge_tags(split, _ai_tag_name())
                 found = True
         if not found:
@@ -117,11 +120,14 @@ async def apply_category(
     transaction_journal_id: str,
     category_id: str,
     budget_id: str | None = None,
+    description: str | None = None,
     *,
     model: str | None = None,
 ) -> dict[str, Any]:
     """Write category/budget to one split and tag it with FF3ANALYTICS_AI_TAG."""
-    mutate = build_apply_mutate_fn(transaction_journal_id, category_id, budget_id)
+    mutate = build_apply_mutate_fn(
+        transaction_journal_id, category_id, budget_id, description
+    )
     result = await client.update_transaction(group_id, mutate)
     await sidecar_db.log_audit(
         "categorize_apply",

@@ -76,8 +76,12 @@ def normalize_transactions(flat_splits: list[dict[str, Any]]) -> list[dict[str, 
         category = tx.get("category_name") or tx.get("category")
         raw_journal_id = tx.get("journal_id")
         journal_id = raw_journal_id if raw_journal_id else None
+        raw_tjid = tx.get("transaction_journal_id")
+        transaction_journal_id = str(raw_tjid) if raw_tjid is not None else None
         record = {
             "journal_id": journal_id,
+            "transaction_journal_id": transaction_journal_id,
+            "description": tx.get("description") or "",
             "amount": amount,
             "type": tx.get("type"),
             "source_account": tx.get("source_name") or tx.get("source_account"),

@@ -1,4 +1,4 @@
-/** OMNI 11-field row from GET /api/normalized_transactions (Phase 2 API). */
+/** OMNI row from GET /api/normalized_transactions (Phase 2 API). */
 export type OmniRow = {
   amount: string | null
   type: string | null
@@ -11,6 +11,9 @@ export type OmniRow = {
   budget: string | null
   category: string | null
   date: string
+  description?: string | null
   /** Firefly transaction group id for /transactions/show/{id} */
   journal_id?: string | null
+  /** Firefly split id for PUT updates */
+  transaction_journal_id?: string | null
 }

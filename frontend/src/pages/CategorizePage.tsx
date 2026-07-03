@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { Link } from "react-router-dom"
+import { Table } from "lucide-react"
 
 import { FireflyTransactionLink } from "@/components/FireflyTransactionLink"
 import { Badge } from "@/components/ui/badge"
@@ -23,10 +25,17 @@ import {
   type PendingRow,
   type RuleDraft,
   type RulePreviewCounts,
+  type RulePreviewSampleRow,
   type SuggestionPayload,
   type DestinationMatchType,
 } from "@/lib/categorizeApi"
 import { invalidateReportCaches } from "@/lib/reportCache"
+import {
+  buildCategorizeExplorerPath,
+  buildExplorerPathFromPendingRow,
+  buildExplorerPathFromRuleDraft,
+} from "@/lib/explorerFilterUrl"
+import { formatDisplayAmount, formatDisplayDate } from "@/lib/formatDisplay"
 import { cn } from "@/lib/utils"
 
 type ApplyMode = "direct" | "rule"
@@ -37,6 +46,7 @@ type CardState = {
   budgetId: string
   error?: string
   mode: ApplyMode
+  applyDescription: string
   ruleTitle: string
   ruleDescriptionContains: string
   ruleDestinationAccount: string
@@ -100,11 +110,78 @@ function confidenceBadgeClass(confidence: number): string {
 }
 
 function selectClassName(): string {
-  return "border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-2 focus-visible:outline-hidden"
+  return "border-input bg-background ring-offset-background focus-visible:ring-ring flex h-8 w-full rounded-md border px-2 py-0.5 text-xs shadow-xs focus-visible:ring-2 focus-visible:outline-hidden"
 }
 
 function inputClassName(): string {
-  return "border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-2 focus-visible:outline-hidden"
+  return "border-input bg-background ring-offset-background focus-visible:ring-ring flex h-8 w-full rounded-md border px-2 py-0.5 text-xs shadow-xs focus-visible:ring-2 focus-visible:outline-hidden"
+}
+
+function previewCell(value: string | null | undefined): string {
+  if (value == null || value === "") return "—"
+  return value
+}
+
+function RuleMatchPreviewTable({ rows }: { rows: RulePreviewSampleRow[] }) {
+  if (rows.length === 0) return null
+  const head =
+    "px-2 py-1.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap"
+  const cell = "px-2 py-1.5 text-sm align-middle"
+  return (
+    <div className="overflow-x-auto rounded-md bg-muted/40">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border/50">
+            <th className={head}>Date</th>
+            <th className={cn(head, "text-right")}>Amount</th>
+            <th className={head}>From</th>
+            <th className={head}>To</th>
+            <th className={head}>Description</th>
+            <th className={head}>Budget</th>
+            <th className={head}>Category</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr
+              key={`${row.date}-${row.amount}-${index}`}
+              className="border-b border-border/30 last:border-0"
+            >
+              <td className={cn(cell, "text-muted-foreground whitespace-nowrap")}>
+                {formatDisplayDate(row.date)}
+              </td>
+              <td className={cn(cell, "text-right font-medium tabular-nums whitespace-nowrap")}>
+                {formatDisplayAmount(row.amount)}
+              </td>
+              <td className={cn(cell, "max-w-[8rem] truncate")} title={row.source_name ?? ""}>
+                {previewCell(row.source_name)}
+              </td>
+              <td className={cn(cell, "max-w-[8rem] truncate")} title={row.destination_name ?? ""}>
+                {previewCell(row.destination_name)}
+              </td>
+              <td className={cn(cell, "max-w-[12rem] truncate")} title={row.description}>
+                {row.description}
+              </td>
+              <td className={cn(cell, "max-w-[8rem] truncate")}>
+                {previewCell(row.budget_name)}
+              </td>
+              <td className={cn(cell, "max-w-[8rem] truncate")}>
+                {previewCell(row.category_name)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function effectiveApplyDescription(
+  state: CardState | undefined,
+  row: PendingRow,
+): string {
+  if (state === undefined) return row.description ?? ""
+  return state.applyDescription ?? row.description ?? ""
 }
 
 function defaultCardState(
@@ -120,6 +197,7 @@ function defaultCardState(
     categoryId: "",
     budgetId: "",
     mode,
+    applyDescription: row?.description ?? "",
     ruleTitle: suggestion?.rule?.title ?? "",
     ruleDescriptionContains: row?.description ?? "",
     ruleDestinationAccount:
@@ -136,6 +214,34 @@ function defaultCardState(
   }
 }
 
+function categorizeCardExplorerPath(
+  rangeStart: string,
+  rangeEnd: string,
+  row: PendingRow,
+  state: CardState | undefined,
+  mode: ApplyMode,
+): string {
+  if (mode === "rule" && state && hasRuleTrigger(state)) {
+    return buildExplorerPathFromRuleDraft(
+      rangeStart,
+      rangeEnd,
+      ruleDraftFromState(state),
+    )
+  }
+  return buildExplorerPathFromPendingRow(rangeStart, rangeEnd, row)
+}
+
+function CardExplorerLink({ to, label }: { to: string; label: string }) {
+  return (
+    <Button asChild variant="outline" size="sm" className="h-8">
+      <Link to={to}>
+        <Table className="mr-2 h-4 w-4" />
+        {label}
+      </Link>
+    </Button>
+  )
+}
+
 function TransactionCard({
   row,
   state,
@@ -149,6 +255,7 @@ function TransactionCard({
   onCategoryChange,
   onBudgetChange,
   onModeChange,
+  onApplyDescriptionChange,
   onRuleTitleChange,
   onRuleDescriptionChange,
   onRuleDestinationChange,
@@ -162,6 +269,8 @@ function TransactionCard({
   onIgnore,
   groupJournalIds,
   ignoringId,
+  rangeStart,
+  rangeEnd,
 }: {
   row: PendingRow
   state: CardState | undefined
@@ -175,6 +284,7 @@ function TransactionCard({
   onCategoryChange: (journalId: string, categoryId: string) => void
   onBudgetChange: (journalId: string, budgetId: string) => void
   onModeChange: (journalId: string, mode: ApplyMode) => void
+  onApplyDescriptionChange: (journalId: string, value: string) => void
   onRuleTitleChange: (journalId: string, title: string) => void
   onRuleDescriptionChange: (journalId: string, value: string) => void
   onRuleDestinationChange: (journalId: string, value: string) => void
@@ -194,73 +304,91 @@ function TransactionCard({
   onIgnore: (row: PendingRow) => void
   groupJournalIds: string[]
   ignoringId: string | null
+  rangeStart: string
+  rangeEnd: string
 }) {
   const mode = state?.mode ?? "direct"
   const previewReady = state?.preview != null && !state.previewError
+  const applyDescription = effectiveApplyDescription(state, row)
+  const explorerPath = categorizeCardExplorerPath(
+    rangeStart,
+    rangeEnd,
+    row,
+    state,
+    mode,
+  )
+  const explorerLinkLabel =
+    mode === "rule" && state?.preview ? "Open matches in Explorer" : "Open in Explorer"
 
   return (
-    <Card>
-      <CardHeader className="space-y-1 pb-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <span className="text-xs text-muted-foreground">{row.date}</span>
-          <div className="flex items-center gap-3">
+    <Card className="gap-0 py-0 shadow-xs">
+      <CardHeader className="gap-1 border-b px-4 py-2.5 pb-2">
+        <div className="flex items-center gap-2 text-xs">
+          <span className="shrink-0 text-muted-foreground">
+            {formatDisplayDate(row.date)}
+          </span>
+          <p className="min-w-0 truncate font-medium" title={row.description}>
+            {row.description}
+          </p>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="font-medium tabular-nums">
+              {formatDisplayAmount(row.amount)}
+            </span>
             <FireflyTransactionLink
               fireflyBaseUrl={fireflyBaseUrl}
-                        journalId={row.journal_id}
+              journalId={row.journal_id}
             />
-            <span className="font-medium">{row.amount}</span>
           </div>
         </div>
-        <p className="truncate text-sm font-medium" title={row.description}>
-          {row.description}
-        </p>
-        <p className="text-xs text-muted-foreground">
+        <p className="truncate text-xs text-muted-foreground">
           {row.source_name} → {row.destination_name}
         </p>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-2.5 px-4 py-3">
         {state?.suggestion?.rationale ? (
-          <p className="text-sm text-muted-foreground">{state.suggestion.rationale}</p>
+          <p className="text-xs text-muted-foreground">{state.suggestion.rationale}</p>
         ) : null}
         {state?.error ? (
-          <p className="text-sm text-destructive">
+          <p className="text-xs text-destructive">
             {state.error.includes("allowlist")
               ? "Category not recognized. Pick from the dropdown."
               : "Suggestion failed for this transaction."}
           </p>
         ) : null}
         {approveErrors[row.journal_id] ? (
-          <p className="text-sm text-destructive">{approveErrors[row.journal_id]}</p>
+          <p className="text-xs text-destructive">{approveErrors[row.journal_id]}</p>
         ) : null}
         {state?.ruleError ? (
-          <p className="text-sm text-destructive">{state.ruleError}</p>
+          <p className="text-xs text-destructive">{state.ruleError}</p>
         ) : null}
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-1.5">
           <Button
             type="button"
             size="sm"
+            className="h-7 px-2.5 text-xs"
             variant={mode === "direct" ? "default" : "outline"}
             onClick={() => {
               onModeChange(row.journal_id, "direct")
             }}
           >
-            Apply to transaction
+            Transaction
           </Button>
           <Button
             type="button"
             size="sm"
+            className="h-7 px-2.5 text-xs"
             variant={mode === "rule" ? "default" : "outline"}
             onClick={() => {
               onModeChange(row.journal_id, "rule")
             }}
           >
-            Rule mode
+            Rule
           </Button>
         </div>
 
-        <div className="flex flex-wrap items-end gap-4">
-          <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs font-medium">
+        <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <label className="flex flex-col gap-1 text-xs font-medium">
             Category
             <select
               className={selectClassName()}
@@ -277,7 +405,7 @@ function TransactionCard({
               ))}
             </select>
           </label>
-          <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs font-medium">
+          <label className="flex flex-col gap-1 text-xs font-medium">
             Budget
             <select
               className={selectClassName()}
@@ -297,7 +425,7 @@ function TransactionCard({
           {state?.suggestion != null ? (
             <Badge
               className={cn(
-                "shrink-0",
+                "h-7 shrink-0 self-end px-2 text-xs",
                 confidenceBadgeClass(state.suggestion.confidence),
               )}
             >
@@ -307,120 +435,135 @@ function TransactionCard({
         </div>
 
         {mode === "rule" ? (
-          <div className="space-y-3 rounded-lg border p-3">
+          <div className="space-y-2 rounded-md border p-2.5">
             <p className="text-xs text-muted-foreground">
               Rule matches when every condition below is met.
             </p>
-            <label className="flex flex-col gap-1 text-xs font-medium">
-              Rule title
-              <input
-                className={inputClassName()}
-                value={state?.ruleTitle ?? ""}
-                onChange={(e) => {
-                  onRuleTitleChange(row.journal_id, e.target.value)
-                }}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium">
-              Description contains
-              <input
-                className={inputClassName()}
-                placeholder="Defaults to transaction description"
-                value={state?.ruleDescriptionContains ?? ""}
-                onChange={(e) => {
-                  onRuleDescriptionChange(row.journal_id, e.target.value)
-                }}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium">
-              Amount (optional)
-              <span className="font-normal text-muted-foreground">
-                Transaction amount: {row.amount}
-              </span>
-              <input
-                className={inputClassName()}
-                type="text"
-                inputMode="decimal"
-                placeholder="Leave blank to match any amount"
-                value={state?.ruleAmount ?? ""}
-                onChange={(e) => {
-                  onRuleAmountChange(row.journal_id, e.target.value)
-                }}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium">
-              Destination account (payee)
-              <span className="font-normal text-muted-foreground">
-                Firefly account on this transaction: {row.destination_name}
-              </span>
-              <div className="flex gap-2">
-                <select
-                  className={cn(selectClassName(), "w-auto shrink-0")}
-                  value={state?.ruleDestinationMatchType ?? "is"}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs font-medium sm:col-span-2">
+                Rule title
+                <input
+                  className={inputClassName()}
+                  value={state?.ruleTitle ?? ""}
                   onChange={(e) => {
-                    onRuleDestinationMatchTypeChange(
+                    onRuleTitleChange(row.journal_id, e.target.value)
+                  }}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium">
+                Description contains
+                <input
+                  className={inputClassName()}
+                  placeholder="Transaction description"
+                  value={state?.ruleDescriptionContains ?? ""}
+                  onChange={(e) => {
+                    onRuleDescriptionChange(row.journal_id, e.target.value)
+                  }}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium">
+                Amount (optional)
+                <input
+                  className={inputClassName()}
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Any amount"
+                  value={state?.ruleAmount ?? ""}
+                  onChange={(e) => {
+                    onRuleAmountChange(row.journal_id, e.target.value)
+                  }}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium sm:col-span-2">
+                Destination (payee)
+                <div className="flex gap-2">
+                  <select
+                    className={cn(selectClassName(), "w-auto shrink-0")}
+                    value={state?.ruleDestinationMatchType ?? "is"}
+                    onChange={(e) => {
+                      onRuleDestinationMatchTypeChange(
+                        row.journal_id,
+                        e.target.value as DestinationMatchType,
+                      )
+                    }}
+                  >
+                    <option value="contains">Contains</option>
+                    <option value="starts_with">Starts with</option>
+                    <option value="ends_with">Ends with</option>
+                    <option value="is">Is exactly</option>
+                  </select>
+                  <input
+                    className={inputClassName()}
+                    placeholder={
+                      state?.ruleDestinationMatchType === "is"
+                        ? "Exact account name"
+                        : "Payee fragment"
+                    }
+                    value={state?.ruleDestinationAccount ?? ""}
+                    onChange={(e) => {
+                      onRuleDestinationChange(row.journal_id, e.target.value)
+                    }}
+                  />
+                </div>
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium">
+                Transaction type
+                <select
+                  className={selectClassName()}
+                  value={state?.ruleTransactionType ?? ""}
+                  onChange={(e) => {
+                    onRuleTransactionTypeChange(
                       row.journal_id,
-                      e.target.value as DestinationMatchType,
+                      e.target.value as "" | "withdrawal" | "deposit",
                     )
                   }}
                 >
-                  <option value="contains">Contains</option>
-                  <option value="starts_with">Starts with</option>
-                  <option value="ends_with">Ends with</option>
-                  <option value="is">Is exactly</option>
+                  <option value="">Any</option>
+                  <option value="withdrawal">Withdrawal</option>
+                  <option value="deposit">Deposit</option>
                 </select>
-                <input
-                  className={inputClassName()}
-                  placeholder={
-                    state?.ruleDestinationMatchType === "is"
-                      ? "Exact Firefly account name"
-                      : "Payee name fragment"
-                  }
-                  value={state?.ruleDestinationAccount ?? ""}
-                  onChange={(e) => {
-                    onRuleDestinationChange(row.journal_id, e.target.value)
-                  }}
-                />
-              </div>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium">
-              Transaction type
-              <select
-                className={selectClassName()}
-                value={state?.ruleTransactionType ?? ""}
-                onChange={(e) => {
-                  onRuleTransactionTypeChange(
-                    row.journal_id,
-                    e.target.value as "" | "withdrawal" | "deposit",
-                  )
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+                variant="outline"
+                disabled={!hasRuleTrigger(state) || previewingId === row.journal_id}
+                onClick={() => {
+                  onPreview(row.journal_id)
                 }}
               >
-                <option value="">Any</option>
-                <option value="withdrawal">Withdrawal</option>
-                <option value="deposit">Deposit</option>
-              </select>
-            </label>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!hasRuleTrigger(state) || previewingId === row.journal_id}
-              onClick={() => {
-                onPreview(row.journal_id)
-              }}
-            >
-              {previewingId === row.journal_id ? "Previewing…" : "Preview matches"}
-            </Button>
+                {previewingId === row.journal_id ? "Previewing…" : "Preview matches"}
+              </Button>
+              {state?.preview ? (
+                <span className="text-xs text-muted-foreground">
+                  {state.preview.total} matching · {state.preview.uncategorized_count}{" "}
+                  uncategorized · {state.preview.categorized_count} categorized
+                </span>
+              ) : null}
+            </div>
             {state?.previewError ? (
-              <p className="text-sm text-destructive">{state.previewError}</p>
+              <p className="text-xs text-destructive">{state.previewError}</p>
             ) : null}
-            {state?.preview ? (
-              <p className="text-sm text-muted-foreground">
-                {state.preview.total} total · {state.preview.uncategorized_count}{" "}
-                uncategorized · {state.preview.categorized_count} already categorized
-              </p>
+            {state?.preview?.sample?.length ? (
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Matching transactions
+                    {state.preview.total > state.preview.sample.length
+                      ? ` (showing ${state.preview.sample.length} of ${state.preview.total})`
+                      : null}
+                  </p>
+                  <CardExplorerLink to={explorerPath} label={explorerLinkLabel} />
+                </div>
+                <RuleMatchPreviewTable rows={state.preview.sample} />
+              </div>
+            ) : hasRuleTrigger(state) ? (
+              <CardExplorerLink to={explorerPath} label="Open in Explorer" />
             ) : null}
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-xs">
               <input
                 type="checkbox"
                 checked={state?.backfillOptIn ?? false}
@@ -432,6 +575,8 @@ function TransactionCard({
             </label>
             <Button
               type="button"
+              size="sm"
+              className="h-8"
               disabled={
                 !state?.categoryId ||
                 !previewReady ||
@@ -445,27 +590,44 @@ function TransactionCard({
             </Button>
           </div>
         ) : (
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              disabled={!state?.categoryId || approvingId === row.journal_id}
-              onClick={() => {
-                onApprove(row)
-              }}
-            >
-              Approve
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={ignoringId === row.journal_id}
-              onClick={() => {
-                onIgnore(row)
-              }}
-            >
-              Ignore
-            </Button>
-          </div>
+          <>
+            <label className="flex flex-col gap-1 text-xs font-medium">
+              Description
+              <input
+                className={inputClassName()}
+                value={applyDescription}
+                onChange={(e) => {
+                  onApplyDescriptionChange(row.journal_id, e.target.value)
+                }}
+              />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="h-8"
+                disabled={!state?.categoryId || approvingId === row.journal_id}
+                onClick={() => {
+                  onApprove(row)
+                }}
+              >
+                {approvingId === row.journal_id ? "Saving…" : "Save"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8"
+                variant="outline"
+                disabled={ignoringId === row.journal_id}
+                onClick={() => {
+                  onIgnore(row)
+                }}
+              >
+                Ignore
+              </Button>
+              <CardExplorerLink to={explorerPath} label="Open in Explorer" />
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
@@ -595,10 +757,15 @@ export function CategorizePage() {
       return next
     })
     try {
+      const applyDescription = effectiveApplyDescription(state, row)
       await applyCategorization(row.journal_id, {
         category_id: state.categoryId,
         transaction_journal_id: row.transaction_journal_id,
         budget_id: state.budgetId || null,
+        description:
+          applyDescription.trim() !== row.description.trim()
+            ? applyDescription
+            : null,
       })
       dismissJournalIds([row.journal_id])
       await invalidateAfterApply()
@@ -754,6 +921,17 @@ export function CategorizePage() {
     setCardState((prev) => ({
       ...prev,
       [journalId]: ensureCardState(prev[journalId], row, { mode }),
+    }))
+  }
+
+  function updateApplyDescription(journalId: string, value: string) {
+    const row = visibleRows.find((r) => r.journal_id === journalId)
+    if (!row) return
+    setCardState((prev) => ({
+      ...prev,
+      [journalId]: ensureCardState(prev[journalId], row, {
+        applyDescription: value,
+      }),
     }))
   }
 
@@ -936,6 +1114,28 @@ export function CategorizePage() {
         </div>
       ) : null}
 
+      {!isPending && !isError ? (
+        <Card className="border-muted bg-muted/20">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+            <p className="text-sm text-muted-foreground">
+              Filter, select, and bulk-update category or budget in Transaction
+              Explorer — pre-filtered to this queue.
+            </p>
+            <Button asChild variant="outline" size="sm">
+              <Link
+                to={buildCategorizeExplorerPath(
+                  committedRange.start,
+                  committedRange.end,
+                )}
+              >
+                <Table className="mr-2 h-4 w-4" />
+                Open in Explorer
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {!isPending && !isError && visibleRows.length === 0 ? (
         <div className="rounded-lg border p-8 text-center">
           <h2 className="text-lg font-semibold">Nothing to categorize</h2>
@@ -947,7 +1147,7 @@ export function CategorizePage() {
       ) : null}
 
       {!isPending && !isError && visibleRows.length > 0 ? (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {visibleGroups.map((group) => {
             const isMulti = group.count > 1
             const expanded = expandedGroups.has(group.fingerprint)
@@ -971,6 +1171,7 @@ export function CategorizePage() {
                   onCategoryChange={updateCategory}
                   onBudgetChange={updateBudget}
                   onModeChange={updateMode}
+                  onApplyDescriptionChange={updateApplyDescription}
                   onRuleTitleChange={updateRuleTitle}
                   onRuleDescriptionChange={updateRuleDescription}
                   onRuleDestinationChange={updateRuleDestination}
@@ -983,6 +1184,8 @@ export function CategorizePage() {
                   onCreateRule={handleCreateRule}
                   onIgnore={handleIgnore}
                   ignoringId={ignoringId}
+                  rangeStart={committedRange.start}
+                  rangeEnd={committedRange.end}
                 />
               )
             }
@@ -991,7 +1194,7 @@ export function CategorizePage() {
               <div key={group.fingerprint} className="space-y-3">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between gap-2 rounded-lg border bg-muted/30 px-4 py-3 text-left"
+                  className="flex w-full items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-left"
                   onClick={() => {
                     toggleGroup(group.fingerprint)
                   }}
@@ -1005,7 +1208,7 @@ export function CategorizePage() {
                   <Badge variant="secondary">{group.count} similar</Badge>
                 </button>
                 {expanded ? (
-                  <div className="space-y-4 pl-2">
+                  <div className="space-y-3 pl-2">
                     {group.rows.map((row) => (
                       <TransactionCard
                         key={row.journal_id}
@@ -1022,6 +1225,7 @@ export function CategorizePage() {
                         onCategoryChange={updateCategory}
                         onBudgetChange={updateBudget}
                         onModeChange={updateMode}
+                        onApplyDescriptionChange={updateApplyDescription}
                         onRuleTitleChange={updateRuleTitle}
                         onRuleDescriptionChange={updateRuleDescription}
                         onRuleDestinationChange={updateRuleDestination}
@@ -1034,6 +1238,8 @@ export function CategorizePage() {
                         onCreateRule={handleCreateRule}
                         onIgnore={handleIgnore}
                   ignoringId={ignoringId}
+                  rangeStart={committedRange.start}
+                  rangeEnd={committedRange.end}
                       />
                     ))}
                   </div>
