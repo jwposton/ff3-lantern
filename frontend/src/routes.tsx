@@ -17,6 +17,7 @@ import { LoanProfilePage } from "@/pages/LoanProfilePage"
 import { LoanSplitsQueuePage } from "@/pages/LoanSplitsQueuePage"
 import { AboutPage } from "@/pages/AboutPage"
 import { PaymentWorksheetPage } from "@/pages/PaymentWorksheetPage"
+import { PaymentSetupPage } from "@/pages/PaymentSetupPage"
 
 export const router = createBrowserRouter([
   {
@@ -47,6 +48,10 @@ export const router = createBrowserRouter([
       {
         path: "manage/payment-run",
         element: <PaymentWorksheetPage />,
+      },
+      {
+        path: "manage/payment-run/setup",
+        element: <PaymentSetupPage />,
       },
       {
         path: "reports/spending",

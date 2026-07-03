@@ -63,10 +63,14 @@ type RegisteredBillRow = {
 
 function toRegisteredBillRow(row: BillRow | LiabilityRow): RegisteredBillRow | null {
   if (!row.registry_id) return null
+  const worksheetSection =
+    "worksheet_section" in row && row.worksheet_section
+      ? row.worksheet_section
+      : "bills"
   return {
     registry_id: row.registry_id,
     name: row.row_label ?? ("name" in row ? row.name : null) ?? `Bill ${row.registry_id}`,
-    worksheet_section: row.worksheet_section ?? "bills",
+    worksheet_section: worksheetSection,
     payment_rail: row.payment_rail ?? "bank",
     funding_bucket_key: row.funding_bucket_key ?? null,
     credit_card_account_id: row.credit_card_account_id ?? null,

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Payment setup page** — manage bill registration and worksheet placement at `/manage/payment-run/setup`
 - **Bills and liabilities sections** — payment worksheet shows bills, liabilities, cash-plan subtotals, grand total footer, and inline bill registration wizard
 - **Bill registration API** — Register bills on the payment worksheet with a Firefly bill and matching rule in one user-confirmed action
 - **Bills and liabilities on worksheet** — Backend envelope includes bills and liabilities sections with cash-plan subtotals, grand totals, and liability auto-draft from loan profiles
