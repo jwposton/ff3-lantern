@@ -13,7 +13,29 @@ import pytest
 import sidecar_db
 from conftest import load_fixture
 from firefly_client import FireflyClient
+from loan_profiles import serialize_loan_profile_to_notes
+from payment_worksheet_liabilities import liability_row_key
 from payment_worksheet_refresh import run_refresh
+
+LOAN_PROFILE = {
+    "version": 1,
+    "enabled": True,
+    "match": {
+        "description_contains": "Mortgage",
+        "expected_amount": "427.18",
+        "amount_tolerance": "0.50",
+    },
+    "split": {
+        "escrow_amount": "0.00",
+        "components": [
+            {
+                "role": "principal",
+                "type": "transfer",
+                "destination_account_id": "42",
+            },
+        ],
+    },
+}
 
 
 @pytest.fixture
@@ -376,3 +398,84 @@ async def test_refresh_seeds_planned_amount(data_dir, payment_worksheet_env):
     cc_row = next(r for r in rows if r["row_key"] == "cc:3")
     assert cc_row["planned_amount"] == "200.00"
     assert cc_row["planned_amount_override"] == 0
+
+
+def _liability_fixture() -> dict:
+    fixture = _fixture()
+    mortgage_notes = serialize_loan_profile_to_notes(LOAN_PROFILE, "")
+    fixture = {
+        **fixture,
+        "accounts": {
+            **fixture["accounts"],
+            "42": {
+                "name": "Mortgage",
+                "type": "liabilities",
+                "account_role": "mortgage",
+                "current_balance": "-50000.00",
+                "interest": "6.5",
+                "notes": mortgage_notes,
+            },
+        },
+    }
+    return fixture
+
+
+@pytest.mark.asyncio
+async def test_liability_autodraft(data_dir, payment_worksheet_env):
+    fixture = _liability_fixture()
+    client = _build_client(fixture)
+    month = "2026-07"
+
+    await run_refresh(client, month)
+
+    rows = await sidecar_db.get_worksheet_state_for_month(month)
+    liability_row = next(r for r in rows if r["row_key"] == liability_row_key("42"))
+    assert liability_row["planned_amount"] == "427.18"
+    assert liability_row["planned_amount_override"] == 0
+
+    balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
+    assert "42" in balances["liabilities"]
+    assert balances["liabilities"]["42"]["owed"] == "50000.00"
+    assert balances["liabilities"]["42"]["est_interest"] is not None
+
+
+@pytest.mark.asyncio
+async def test_liability_override_preserved(data_dir, payment_worksheet_env):
+    fixture = _liability_fixture()
+    client = _build_client(fixture)
+    month = "2026-07"
+    row_key = liability_row_key("42")
+    await sidecar_db.upsert_worksheet_state_row(
+        row_key=row_key,
+        row_type="liability",
+        month=month,
+        planned_amount="999.00",
+        planned_amount_override=1,
+    )
+
+    await run_refresh(client, month)
+
+    rows = await sidecar_db.get_worksheet_state_for_month(month)
+    liability_row = next(r for r in rows if r["row_key"] == row_key)
+    assert liability_row["planned_amount"] == "999.00"
+    assert liability_row["planned_amount_override"] == 1
+
+
+@pytest.mark.asyncio
+async def test_excluded_liability(data_dir, payment_worksheet_env):
+    fixture = _liability_fixture()
+    exclude_notes = (
+        "<!-- ff3analytics:payment_worksheet.v1 -->\n"
+        '{"included": false}'
+    )
+    fixture["accounts"]["42"]["notes"] = (
+        fixture["accounts"]["42"]["notes"] + "\n\n" + exclude_notes
+    )
+    client = _build_client(fixture)
+    month = "2026-07"
+
+    await run_refresh(client, month)
+
+    balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
+    assert "42" not in balances["liabilities"]
+    assert balances["excluded_liabilities"]["42"]["name"] == "Mortgage"

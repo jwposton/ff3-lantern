@@ -10,7 +10,15 @@ from typing import Any
 
 import sidecar_db
 from firefly_client import FireflyClient
+from loan_profiles import parse_loan_profile_from_notes
 from payment_worksheet_cc import classify_cc_activity_category, is_credit_card_payment_flow
+from payment_worksheet_liabilities import (
+    compute_liability_display_fields,
+    draft_planned_amount,
+    is_liability_account,
+    is_liability_summary,
+    liability_row_key,
+)
 from payment_worksheet_profiles import (
     _due_day_from_monthly_payment_date,
     current_month_key,
@@ -225,6 +233,19 @@ async def _included_credit_card_ids(client: FireflyClient) -> list[tuple[str, di
     return cards
 
 
+async def _liability_accounts(client: FireflyClient) -> list[tuple[str, dict[str, Any]]]:
+    accounts = await client.fetch_accounts()
+    liabilities: list[tuple[str, dict[str, Any]]] = []
+    for account_id, summary in accounts.items():
+        if not is_liability_summary(summary):
+            continue
+        full = await client.fetch_account(account_id)
+        attrs = full.get("attributes", {})
+        if is_liability_account(attrs):
+            liabilities.append((account_id, full))
+    return liabilities
+
+
 async def run_refresh(
     client: FireflyClient, month: str | None = None
 ) -> dict[str, str]:
@@ -239,7 +260,14 @@ async def run_refresh(
     interest_cats = interest_categories()
     fee_cats = fee_categories()
 
-    balances: dict[str, Any] = {"buckets": {}, "credit_cards": {}, "excluded_credit_cards": {}}
+    balances: dict[str, Any] = {
+        "buckets": {},
+        "credit_cards": {},
+        "excluded_credit_cards": {},
+        "liabilities": {},
+        "excluded_liabilities": {},
+        "bills": {},
+    }
 
     for bucket in buckets:
         reported = Decimal("0")
@@ -318,6 +346,70 @@ async def run_refresh(
             )
 
     balances["excluded_credit_cards"] = excluded_credit_cards
+
+    excluded_liabilities: dict[str, Any] = {}
+    liability_accounts = await _liability_accounts(client)
+
+    for account_id, account in liability_accounts:
+        attrs = account.get("attributes", {})
+        notes = attrs.get("notes") or ""
+        worksheet_profile = effective_profile_from_notes(notes)
+        if worksheet_profile.get("included") is False:
+            excluded_liabilities[account_id] = {"name": attrs.get("name")}
+            continue
+
+        owed = abs(_decimal_amount(attrs.get("current_balance")))
+        loan_profile = parse_loan_profile_from_notes(notes)
+        payment_amount = _decimal_amount(
+            draft_planned_amount(loan_profile, worksheet_profile)
+        )
+        display = compute_liability_display_fields(
+            owed, loan_profile, attrs, payment_amount
+        )
+        balances["liabilities"][account_id] = {
+            "name": attrs.get("name"),
+            "funding_bucket_key": worksheet_profile.get("funding_bucket_key"),
+            "default_planned_payment": worksheet_profile.get("default_planned_payment"),
+            "owed": _format_decimal(owed),
+            "est_interest": display["est_interest"],
+            "remaining_payments": display["remaining_payments"],
+        }
+
+        row_key = liability_row_key(account_id)
+        existing_state = state_rows.get(row_key)
+        if existing_state and existing_state.get("planned_amount_override"):
+            continue
+        planned = draft_planned_amount(loan_profile, worksheet_profile)
+        await sidecar_db.upsert_worksheet_state_row(
+            row_key=row_key,
+            row_type="liability",
+            month=month,
+            planned_amount=planned,
+            planned_amount_override=0,
+        )
+
+    balances["excluded_liabilities"] = excluded_liabilities
+
+    registry_rows = await sidecar_db.list_worksheet_registry()
+    for reg in registry_rows:
+        bill_id = reg.get("firefly_bill_id")
+        if not bill_id:
+            continue
+        ff_bill = await client.fetch_bill(str(bill_id))
+        owed_raw = ff_bill.get("amount_min") or ff_bill.get("amount_max") or "0"
+        reg_id = str(reg["id"])
+        balances["bills"][reg_id] = {
+            "owed": _format_decimal(_decimal_amount(owed_raw)),
+            "firefly_bill_id": str(bill_id),
+            "name": ff_bill.get("name") or reg.get("row_label"),
+        }
+
+        if reg.get("amount_mode") == "intermittent":
+            continue
+        row_key = f"bill:{reg_id}"
+        existing_state = state_rows.get(row_key)
+        if existing_state and existing_state.get("planned_amount_override"):
+            continue
 
     await sidecar_db.upsert_worksheet_refresh(
         month=month,
