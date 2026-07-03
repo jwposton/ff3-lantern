@@ -300,6 +300,8 @@ async def update_account_worksheet(
     updates = body.model_dump(exclude_unset=True)
     merged = merge_payment_worksheet_profile(existing_profile, updates)
     await write_payment_worksheet_profile(client, account_id, merged)
-    await patch_worksheet_refresh_profile(current_month_key(), account_id, merged)
+    await patch_worksheet_refresh_profile(
+        current_month_key(), account_id, merged, updates
+    )
     firefly_reference_cache.clear()
     return {"account_id": account_id, "profile": merged}

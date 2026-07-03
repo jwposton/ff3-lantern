@@ -16,6 +16,12 @@ DEFAULT_PROFILE: dict[str, Any] = {
     "worksheet_section": "credit",
 }
 
+CLEARABLE_OPTIONAL_KEYS = (
+    "funding_bucket_key",
+    "credit_limit",
+    "default_planned_payment",
+)
+
 
 def _extract_json_after_marker(notes: str) -> str | None:
     idx = notes.find(PAYMENT_WORKSHEET_MARKER)
@@ -89,7 +95,12 @@ def merge_payment_worksheet_profile(
     if existing:
         base.update(existing)
     for key, value in updates.items():
-        if value is not None:
+        if key in CLEARABLE_OPTIONAL_KEYS:
+            if value is None:
+                base.pop(key, None)
+            else:
+                base[key] = value
+        elif value is not None:
             base[key] = value
     return base
 
@@ -105,7 +116,10 @@ def current_month_key() -> str:
 
 
 async def patch_worksheet_refresh_profile(
-    month: str, account_id: str, profile: dict[str, Any]
+    month: str,
+    account_id: str,
+    profile: dict[str, Any],
+    updates: dict[str, Any] | None = None,
 ) -> None:
     row = await sidecar_db.get_worksheet_refresh(month)
     if row is None:
@@ -116,9 +130,13 @@ async def patch_worksheet_refresh_profile(
         credit_cards.pop(account_id, None)
     else:
         entry = credit_cards.setdefault(account_id, {})
-        if "funding_bucket_key" in profile:
+        if updates is not None and "funding_bucket_key" in updates:
+            entry["funding_bucket_key"] = updates["funding_bucket_key"]
+        elif "funding_bucket_key" in profile:
             entry["funding_bucket_key"] = profile.get("funding_bucket_key")
-        if "credit_limit" in profile:
+        if updates is not None and "credit_limit" in updates:
+            entry["credit_limit"] = updates["credit_limit"]
+        elif "credit_limit" in profile:
             entry["credit_limit"] = profile.get("credit_limit")
     await sidecar_db.upsert_worksheet_refresh(
         month=month,
