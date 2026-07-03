@@ -19,17 +19,22 @@ import aiosqlite
 
 __all__ = [
     "delete_funding_bucket",
+    "delete_worksheet_registry",
     "get_bucket_balances_for_month",
     "get_data_dir",
     "get_db_path",
     "get_funding_bucket",
     "get_worksheet_refresh",
+    "get_worksheet_registry",
     "get_worksheet_state_for_month",
     "init_db",
+    "insert_worksheet_registry",
     "is_writable",
     "list_funding_buckets",
+    "list_worksheet_registry",
     "log_audit",
     "get_suggestion",
+    "update_worksheet_registry",
     "upsert_bucket_balance",
     "upsert_funding_bucket",
     "upsert_suggestion",
@@ -131,6 +136,12 @@ async def init_db() -> None:
     _ensure_data_dir(data_dir)
     async with aiosqlite.connect(get_db_path()) as db:
         await db.executescript(_SCHEMA)
+        try:
+            await db.execute(
+                "ALTER TABLE worksheet_registry ADD COLUMN credit_card_account_id TEXT"
+            )
+        except aiosqlite.OperationalError:
+            pass
         await db.commit()
 
 
@@ -261,6 +272,139 @@ async def delete_funding_bucket(bucket_id: str) -> None:
     await init_db()
     async with aiosqlite.connect(get_db_path()) as db:
         await db.execute("DELETE FROM funding_buckets WHERE id = ?", (bucket_id,))
+        await db.commit()
+
+
+def _counts_toward_cash_plan(payment_rail: str | None) -> int:
+    return 0 if (payment_rail or "").strip().lower() == "credit_card" else 1
+
+
+def _row_to_worksheet_registry(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "firefly_bill_id": row["firefly_bill_id"],
+        "worksheet_section": row["worksheet_section"],
+        "funding_bucket_key": row["funding_bucket_key"],
+        "amount_mode": row["amount_mode"],
+        "planned_sync": row["planned_sync"],
+        "payment_rail": row["payment_rail"],
+        "counts_toward_cash_plan": bool(row["counts_toward_cash_plan"]),
+        "rule_id": row["rule_id"],
+        "row_label": row["row_label"],
+        "credit_card_account_id": row["credit_card_account_id"],
+    }
+
+
+_REGISTRY_SELECT = """
+    SELECT id, firefly_bill_id, worksheet_section, funding_bucket_key,
+           amount_mode, planned_sync, payment_rail, counts_toward_cash_plan,
+           rule_id, row_label, credit_card_account_id
+    FROM worksheet_registry
+"""
+
+
+async def list_worksheet_registry() -> list[dict[str, Any]]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            f"{_REGISTRY_SELECT} ORDER BY id ASC"
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_worksheet_registry(row) for row in rows]
+
+
+async def get_worksheet_registry(registry_id: int) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            f"{_REGISTRY_SELECT} WHERE id = ?",
+            (registry_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_worksheet_registry(row) if row else None
+
+
+async def insert_worksheet_registry(data: dict[str, Any]) -> int:
+    await init_db()
+    payment_rail = data.get("payment_rail") or "bank"
+    counts = _counts_toward_cash_plan(payment_rail)
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO worksheet_registry (
+              firefly_bill_id, worksheet_section, funding_bucket_key,
+              amount_mode, planned_sync, payment_rail, counts_toward_cash_plan,
+              rule_id, row_label, credit_card_account_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data.get("firefly_bill_id"),
+                data.get("worksheet_section"),
+                data.get("funding_bucket_key"),
+                data.get("amount_mode"),
+                data.get("planned_sync"),
+                payment_rail,
+                counts,
+                data.get("rule_id"),
+                data.get("row_label"),
+                data.get("credit_card_account_id"),
+            ),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def update_worksheet_registry(registry_id: int, data: dict[str, Any]) -> None:
+    await init_db()
+    existing = await get_worksheet_registry(registry_id)
+    if existing is None:
+        return
+    merged = {**existing, **data, "id": registry_id}
+    payment_rail = merged.get("payment_rail") or "bank"
+    counts = _counts_toward_cash_plan(payment_rail)
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            UPDATE worksheet_registry SET
+              firefly_bill_id = ?,
+              worksheet_section = ?,
+              funding_bucket_key = ?,
+              amount_mode = ?,
+              planned_sync = ?,
+              payment_rail = ?,
+              counts_toward_cash_plan = ?,
+              rule_id = ?,
+              row_label = ?,
+              credit_card_account_id = ?
+            WHERE id = ?
+            """,
+            (
+                merged.get("firefly_bill_id"),
+                merged.get("worksheet_section"),
+                merged.get("funding_bucket_key"),
+                merged.get("amount_mode"),
+                merged.get("planned_sync"),
+                payment_rail,
+                counts,
+                merged.get("rule_id"),
+                merged.get("row_label"),
+                merged.get("credit_card_account_id"),
+                registry_id,
+            ),
+        )
+        await db.commit()
+
+
+async def delete_worksheet_registry(registry_id: int) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            "DELETE FROM worksheet_registry WHERE id = ?",
+            (registry_id,),
+        )
         await db.commit()
 
 
