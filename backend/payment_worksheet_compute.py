@@ -1,4 +1,4 @@
-"""Payment worksheet compute from sidecar snapshots only (PAY-04, PAY-09, PAY-11)."""
+"""Payment worksheet compute from sidecar snapshots only (PAY-04, PAY-09, PAY-11, PAY-14–PAY-16)."""
 
 from __future__ import annotations
 
@@ -7,10 +7,15 @@ from decimal import Decimal
 from typing import Any
 
 import sidecar_db
+from payment_worksheet_liabilities import liability_row_key
 
 
 def cc_row_key(account_id: str) -> str:
     return f"cc:{account_id}"
+
+
+def bill_row_key(registry_id: int | str) -> str:
+    return f"bill:{registry_id}"
 
 
 def _decimal_amount(value: Any) -> Decimal:
@@ -23,26 +28,64 @@ def _format_decimal(value: Decimal) -> str:
     return f"{value.quantize(Decimal('0.01'))}"
 
 
+def _row_type_from_key(row_key: str) -> str:
+    prefix = row_key.split(":", 1)[0]
+    if prefix == "bill":
+        return "bill"
+    if prefix == "liability":
+        return "liability"
+    return "credit_card"
+
+
+def _add_outflow(
+    outflow_by_bucket: dict[str, Decimal],
+    bucket_key: str | None,
+    amount: Decimal,
+    counts_toward: bool,
+) -> None:
+    if not bucket_key or not counts_toward or amount == 0:
+        return
+    outflow_by_bucket[bucket_key] = outflow_by_bucket.get(bucket_key, Decimal("0")) + amount
+
+
 def compute_bucket_rollups(
     buckets: list[dict[str, Any]],
     refresh_snapshot: dict[str, Any] | None,
     bucket_balances: list[dict[str, Any]],
     cc_rows: list[dict[str, Any]],
+    bill_rows: list[dict[str, Any]],
+    liability_rows: list[dict[str, Any]],
     worksheet_state: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Compute per-bucket rollups and footer totals from sidecar data."""
-    del worksheet_state  # merged into cc_rows by build_worksheet_envelope
+    del worksheet_state
 
     refresh_buckets = (refresh_snapshot or {}).get("buckets", {})
     balance_by_key = {row["bucket_key"]: row for row in bucket_balances}
 
     outflow_by_bucket: dict[str, Decimal] = {}
     for card in cc_rows:
-        bucket_key = card.get("funding_bucket_key")
-        if not bucket_key:
-            continue
-        planned = _decimal_amount(card.get("planned_amount"))
-        outflow_by_bucket[bucket_key] = outflow_by_bucket.get(bucket_key, Decimal("0")) + planned
+        _add_outflow(
+            outflow_by_bucket,
+            card.get("funding_bucket_key"),
+            _decimal_amount(card.get("planned_amount")),
+            True,
+        )
+    for bill in bill_rows:
+        _add_outflow(
+            outflow_by_bucket,
+            bill.get("funding_bucket_key"),
+            _decimal_amount(bill.get("planned_amount")),
+            bool(bill.get("counts_toward_cash_plan")),
+        )
+    for liability in liability_rows:
+        if liability.get("account_id"):
+            _add_outflow(
+                outflow_by_bucket,
+                liability.get("funding_bucket_key"),
+                _decimal_amount(liability.get("planned_amount")),
+                True,
+            )
 
     bucket_rows: list[dict[str, Any]] = []
     total_reported = Decimal("0")
@@ -94,6 +137,82 @@ def compute_bucket_rollups(
             "user_balance": _format_decimal(total_user),
             "remaining": _format_decimal(total_remaining),
         },
+    }
+
+
+def compute_section_subtotals(
+    bills: list[dict[str, Any]],
+    liabilities: list[dict[str, Any]],
+    credit_cards: list[dict[str, Any]],
+) -> dict[str, Any]:
+    bills_owed = Decimal("0")
+    bills_planned = Decimal("0")
+    on_card_informational = Decimal("0")
+    for row in bills:
+        owed = _decimal_amount(row.get("owed"))
+        bills_owed += owed
+        if row.get("payment_rail") == "credit_card":
+            on_card_informational += owed
+        if row.get("counts_toward_cash_plan"):
+            bills_planned += _decimal_amount(row.get("planned_amount"))
+
+    liabilities_owed = Decimal("0")
+    liabilities_planned = Decimal("0")
+    for row in liabilities:
+        if row.get("account_id"):
+            liabilities_owed += _decimal_amount(row.get("owed"))
+            liabilities_planned += _decimal_amount(row.get("planned_amount"))
+        else:
+            owed = _decimal_amount(row.get("owed"))
+            liabilities_owed += owed
+            if row.get("counts_toward_cash_plan"):
+                liabilities_planned += _decimal_amount(row.get("planned_amount"))
+
+    cc_planned = sum(
+        (_decimal_amount(card.get("planned_amount")) for card in credit_cards),
+        Decimal("0"),
+    )
+
+    bills_subtotal: dict[str, str] = {
+        "owed": _format_decimal(bills_owed),
+        "planned_cash": _format_decimal(bills_planned),
+    }
+    if on_card_informational > 0:
+        bills_subtotal["on_card_informational"] = _format_decimal(on_card_informational)
+
+    return {
+        "bills": bills_subtotal,
+        "liabilities": {
+            "owed": _format_decimal(liabilities_owed),
+            "planned_cash": _format_decimal(liabilities_planned),
+        },
+        "credit_cards": {
+            "planned_cash": _format_decimal(cc_planned),
+        },
+    }
+
+
+def compute_grand_totals(
+    credit_cards: list[dict[str, Any]],
+    section_subtotals: dict[str, Any],
+) -> dict[str, str]:
+    cc_owed = sum(
+        (_decimal_amount(card.get("owed")) for card in credit_cards),
+        Decimal("0"),
+    )
+    owed = (
+        cc_owed
+        + _decimal_amount(section_subtotals["bills"]["owed"])
+        + _decimal_amount(section_subtotals["liabilities"]["owed"])
+    )
+    planned_cash = (
+        _decimal_amount(section_subtotals["credit_cards"]["planned_cash"])
+        + _decimal_amount(section_subtotals["bills"]["planned_cash"])
+        + _decimal_amount(section_subtotals["liabilities"]["planned_cash"])
+    )
+    return {
+        "owed": _format_decimal(owed),
+        "planned_cash": _format_decimal(planned_cash),
     }
 
 
@@ -154,9 +273,97 @@ def _assemble_excluded_credit_cards(
     return rows
 
 
+def _assemble_excluded_liabilities(
+    refresh_snapshot: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if refresh_snapshot is None:
+        return []
+    excluded = refresh_snapshot.get("excluded_liabilities") or {}
+    rows = [
+        {
+            "account_id": account_id,
+            "name": meta.get("name"),
+        }
+        for account_id, meta in excluded.items()
+    ]
+    rows.sort(key=lambda row: (row.get("name") or "", row["account_id"]))
+    return rows
+
+
+def _assemble_liability_accounts(
+    refresh_snapshot: dict[str, Any] | None,
+    worksheet_state: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if refresh_snapshot is None:
+        return []
+    state_by_key = {row["row_key"]: row for row in worksheet_state}
+    rows: list[dict[str, Any]] = []
+    for account_id, snapshot in refresh_snapshot.get("liabilities", {}).items():
+        row_key = liability_row_key(account_id)
+        state = state_by_key.get(row_key, {})
+        rows.append(
+            {
+                "account_id": account_id,
+                "row_key": row_key,
+                "name": snapshot.get("name"),
+                "funding_bucket_key": snapshot.get("funding_bucket_key"),
+                "default_planned_payment": snapshot.get("default_planned_payment"),
+                "owed": snapshot.get("owed", "0.00"),
+                "est_interest": snapshot.get("est_interest"),
+                "remaining_payments": snapshot.get("remaining_payments"),
+                "planned_amount": state.get("planned_amount", "0.00"),
+                "planned_amount_override": bool(state.get("planned_amount_override")),
+                "paid_at": state.get("paid_at"),
+            }
+        )
+    rows.sort(key=lambda row: (row.get("name") or "", row["account_id"]))
+    return rows
+
+
+def _assemble_bill_rows(
+    registry_rows: list[dict[str, Any]],
+    refresh_snapshot: dict[str, Any] | None,
+    worksheet_state: list[dict[str, Any]],
+    worksheet_section: str,
+) -> list[dict[str, Any]]:
+    if refresh_snapshot is None:
+        return []
+    state_by_key = {row["row_key"]: row for row in worksheet_state}
+    bills_snapshot = refresh_snapshot.get("bills") or {}
+    rows: list[dict[str, Any]] = []
+    for reg in registry_rows:
+        if reg.get("worksheet_section") != worksheet_section:
+            continue
+        reg_id = reg["id"]
+        row_key = bill_row_key(reg_id)
+        state = state_by_key.get(row_key, {})
+        snap = bills_snapshot.get(str(reg_id), {})
+        rows.append(
+            {
+                "registry_id": reg_id,
+                "row_key": row_key,
+                "row_label": reg.get("row_label") or snap.get("name"),
+                "firefly_bill_id": reg.get("firefly_bill_id"),
+                "owed": snap.get("owed", "0.00"),
+                "planned_amount": state.get("planned_amount", "0.00"),
+                "planned_amount_override": bool(state.get("planned_amount_override")),
+                "paid_at": state.get("paid_at"),
+                "payment_rail": reg.get("payment_rail"),
+                "counts_toward_cash_plan": bool(reg.get("counts_toward_cash_plan")),
+                "funding_bucket_key": reg.get("funding_bucket_key"),
+                "credit_card_account_id": reg.get("credit_card_account_id"),
+                "amount_mode": reg.get("amount_mode"),
+                "worksheet_section": reg.get("worksheet_section"),
+            }
+        )
+    rows.sort(key=lambda row: (row.get("row_label") or "", row["registry_id"]))
+    return rows
+
+
 async def build_worksheet_envelope(month: str) -> dict[str, Any]:
     """Assemble worksheet JSON from sidecar only — never calls Firefly (D-07)."""
     buckets = await sidecar_db.list_funding_buckets()
+    registry_rows = await sidecar_db.list_worksheet_registry()
     refresh_row = await sidecar_db.get_worksheet_refresh(month)
     worksheet_state = await sidecar_db.get_worksheet_state_for_month(month)
     bucket_balances = await sidecar_db.get_bucket_balances_for_month(month)
@@ -169,13 +376,25 @@ async def build_worksheet_envelope(month: str) -> dict[str, Any]:
 
     credit_cards = _assemble_credit_cards(refresh_snapshot, worksheet_state)
     excluded_credit_cards = _assemble_excluded_credit_cards(refresh_snapshot)
+    excluded_liabilities = _assemble_excluded_liabilities(refresh_snapshot)
+    liability_accounts = _assemble_liability_accounts(refresh_snapshot, worksheet_state)
+    bills = _assemble_bill_rows(registry_rows, refresh_snapshot, worksheet_state, "bills")
+    bill_liabilities = _assemble_bill_rows(
+        registry_rows, refresh_snapshot, worksheet_state, "liabilities"
+    )
+    liabilities = liability_accounts + bill_liabilities
+
     rollups = compute_bucket_rollups(
         buckets,
         refresh_snapshot,
         bucket_balances,
         credit_cards,
+        bills + bill_liabilities,
+        liability_accounts,
         worksheet_state,
     )
+    section_subtotals = compute_section_subtotals(bills, liabilities, credit_cards)
+    grand_totals = compute_grand_totals(credit_cards, section_subtotals)
 
     return {
         "month": month,
@@ -183,6 +402,11 @@ async def build_worksheet_envelope(month: str) -> dict[str, Any]:
         "buckets": rollups["buckets"],
         "credit_cards": credit_cards,
         "excluded_credit_cards": excluded_credit_cards,
+        "bills": bills,
+        "liabilities": liabilities,
+        "excluded_liabilities": excluded_liabilities,
+        "section_subtotals": section_subtotals,
+        "grand_totals": grand_totals,
         "shortfall": rollups["shortfall"],
         "totals": rollups["totals"],
     }

@@ -10,8 +10,11 @@ import pytest
 import sidecar_db
 from payment_worksheet_compute import (
     build_worksheet_envelope,
+    bill_row_key,
     cc_row_key,
     compute_bucket_rollups,
+    compute_grand_totals,
+    compute_section_subtotals,
 )
 
 
@@ -19,6 +22,11 @@ from payment_worksheet_compute import (
 def data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
     return tmp_path
+
+
+def test_bill_row_key():
+    assert bill_row_key(7) == "bill:7"
+    assert bill_row_key("7") == "bill:7"
 
 
 def test_cc_row_key():
@@ -66,7 +74,7 @@ def test_compute_rollups():
         },
     ]
     result = compute_bucket_rollups(
-        buckets, refresh_snapshot, bucket_balances, cc_rows, []
+        buckets, refresh_snapshot, bucket_balances, cc_rows, [], [], []
     )
     checking = next(b for b in result["buckets"] if b["id"] == "checking")
     savings = next(b for b in result["buckets"] if b["id"] == "savings")
@@ -104,7 +112,7 @@ def test_shortfall():
             "paid_at": None,
         },
     ]
-    result = compute_bucket_rollups(buckets, refresh_snapshot, [], cc_rows, [])
+    result = compute_bucket_rollups(buckets, refresh_snapshot, [], cc_rows, [], [], [])
     checking = result["buckets"][0]
     assert checking["remaining"] == "-500.00"
     assert result["shortfall"] is True
@@ -174,3 +182,140 @@ async def test_build_worksheet_envelope_with_refresh(data_dir):
     assert card["paid_at"] == "2026-07-10T00:00:00Z"
     assert card["new_transactions"] == []
     assert envelope["buckets"][0]["planned_outflows"] == "500.00"
+
+
+def test_section_subtotals():
+    bills = [
+        {
+            "owed": "100.00",
+            "planned_amount": "80.00",
+            "counts_toward_cash_plan": True,
+            "payment_rail": "bank",
+        },
+        {
+            "owed": "50.00",
+            "planned_amount": "25.00",
+            "counts_toward_cash_plan": False,
+            "payment_rail": "credit_card",
+        },
+    ]
+    liabilities = [
+        {
+            "account_id": "m1",
+            "owed": "50000.00",
+            "planned_amount": "427.18",
+        },
+        {
+            "owed": "200.00",
+            "planned_amount": "0.00",
+            "counts_toward_cash_plan": False,
+            "payment_rail": "credit_card",
+        },
+    ]
+    credit_cards = [{"planned_amount": "400.00", "owed": "1200.00"}]
+    result = compute_section_subtotals(bills, liabilities, credit_cards)
+    assert result["bills"]["owed"] == "150.00"
+    assert result["bills"]["planned_cash"] == "80.00"
+    assert result["bills"]["on_card_informational"] == "50.00"
+    assert result["liabilities"]["owed"] == "50200.00"
+    assert result["liabilities"]["planned_cash"] == "427.18"
+    assert result["credit_cards"]["planned_cash"] == "400.00"
+    assert "owed" not in result["credit_cards"]
+
+
+def test_cc_rail_excluded():
+    buckets = [
+        {"id": "checking", "label": "Checking", "sort_order": 0, "firefly_account_ids": []},
+    ]
+    refresh_snapshot = {"buckets": {"checking": {"reported_balance": "5000.00"}}, "credit_cards": {}}
+    cc_rows = [
+        {
+            "account_id": "cc1",
+            "funding_bucket_key": "checking",
+            "planned_amount": "200.00",
+        },
+    ]
+    bill_rows = [
+        {
+            "funding_bucket_key": "checking",
+            "planned_amount": "150.00",
+            "counts_toward_cash_plan": False,
+            "payment_rail": "credit_card",
+        },
+    ]
+    liability_rows = [
+        {
+            "account_id": "m1",
+            "funding_bucket_key": "checking",
+            "planned_amount": "100.00",
+        },
+    ]
+    result = compute_bucket_rollups(
+        buckets, refresh_snapshot, [], cc_rows, bill_rows, liability_rows, []
+    )
+    checking = result["buckets"][0]
+    assert checking["planned_outflows"] == "300.00"
+
+
+def test_grand_totals_includes_cc_owed():
+    credit_cards = [
+        {"owed": "1200.00", "planned_amount": "400.00"},
+        {"owed": "800.00", "planned_amount": "200.00"},
+    ]
+    section_subtotals = {
+        "bills": {"owed": "150.00", "planned_cash": "80.00"},
+        "liabilities": {"owed": "50000.00", "planned_cash": "427.18"},
+        "credit_cards": {"planned_cash": "600.00"},
+    }
+    result = compute_grand_totals(credit_cards, section_subtotals)
+    assert result["owed"] == "52150.00"
+    assert result["planned_cash"] == "1107.18"
+
+
+@pytest.mark.asyncio
+async def test_build_worksheet_envelope_with_bills(data_dir):
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-1",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "recurring",
+            "planned_sync": "fixed",
+            "payment_rail": "bank",
+            "rule_id": "rule-1",
+            "row_label": "Electric",
+        }
+    )
+    balances = {
+        "buckets": {"checking": {"reported_balance": "3000.00"}},
+        "credit_cards": {},
+        "liabilities": {},
+        "excluded_liabilities": {},
+        "bills": {
+            str(reg_id): {
+                "owed": "125.50",
+                "firefly_bill_id": "bill-1",
+                "name": "Electric",
+            }
+        },
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month="2026-07",
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    assert len(envelope["bills"]) == 1
+    bill = envelope["bills"][0]
+    assert bill["row_key"] == bill_row_key(reg_id)
+    assert bill["owed"] == "125.50"
+    assert bill["row_label"] == "Electric"
+    assert envelope["section_subtotals"]["bills"]["owed"] == "125.50"
+    assert envelope["grand_totals"]["owed"] == "125.50"

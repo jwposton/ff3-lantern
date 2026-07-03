@@ -12,6 +12,7 @@ import sidecar_db
 from firefly_client import FireflyClient
 from loan_profiles import parse_loan_profile_from_notes
 from payment_worksheet_cc import classify_cc_activity_category, is_credit_card_payment_flow
+from payment_worksheet_compute import bill_row_key
 from payment_worksheet_liabilities import (
     compute_liability_display_fields,
     draft_planned_amount,
@@ -406,7 +407,7 @@ async def run_refresh(
 
         if reg.get("amount_mode") == "intermittent":
             continue
-        row_key = f"bill:{reg_id}"
+        row_key = bill_row_key(reg_id)
         existing_state = state_rows.get(row_key)
         if existing_state and existing_state.get("planned_amount_override"):
             continue

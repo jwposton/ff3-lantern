@@ -14,6 +14,7 @@ import sidecar_db
 from conftest import load_fixture
 from firefly_client import FireflyClient
 from loan_profiles import serialize_loan_profile_to_notes
+from payment_worksheet_compute import bill_row_key
 from payment_worksheet_liabilities import liability_row_key
 from payment_worksheet_refresh import run_refresh
 
@@ -479,3 +480,140 @@ async def test_excluded_liability(data_dir, payment_worksheet_env):
     balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
     assert "42" not in balances["liabilities"]
     assert balances["excluded_liabilities"]["42"]["name"] == "Mortgage"
+
+
+def _build_client_with_bills(fixture: dict, bills: dict[str, dict]) -> FireflyClient:
+    accounts_data = fixture["accounts"]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/accounts") and request.method == "GET":
+            data = [
+                {
+                    "type": "accounts",
+                    "id": aid,
+                    "attributes": {
+                        "name": attrs["name"],
+                        "type": attrs["type"],
+                        "account_role": attrs.get("account_role"),
+                    },
+                }
+                for aid, attrs in accounts_data.items()
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "data": data,
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        for aid, attrs in accounts_data.items():
+            if path == f"/api/v1/accounts/{aid}" and request.method == "GET":
+                return httpx.Response(
+                    200,
+                    json={"data": {"id": aid, "attributes": attrs}},
+                )
+        for bill_id, bill in bills.items():
+            if path == f"/api/v1/bills/{bill_id}" and request.method == "GET":
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": {
+                            "id": bill_id,
+                            "attributes": {
+                                "name": bill["name"],
+                                "amount_min": bill["amount_min"],
+                                "amount_max": bill.get("amount_max"),
+                                "repeat_freq": bill.get("repeat_freq", "monthly"),
+                            },
+                        }
+                    },
+                )
+        if path.endswith("/transactions") and request.method == "GET":
+            journals = []
+            for split in fixture["splits"]:
+                journals.append(
+                    {
+                        "type": "transactions",
+                        "id": split["journal_id"],
+                        "attributes": {
+                            "transactions": [
+                                {
+                                    "type": split["type"],
+                                    "amount": split["amount"],
+                                    "source_id": split["source_id"],
+                                    "destination_id": split["destination_id"],
+                                    "source_name": split.get("source_name"),
+                                    "destination_name": split.get("destination_name"),
+                                    "date": split["date"],
+                                    "category_name": split.get("category_name"),
+                                    "budget_name": split.get("budget_name"),
+                                }
+                            ]
+                        },
+                    }
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "data": journals,
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        return httpx.Response(404)
+
+    return FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+
+
+@pytest.mark.asyncio
+async def test_refresh_bill_owed(data_dir, payment_worksheet_env):
+    fixture = _fixture()
+    bills = {
+        "bill-99": {
+            "name": "Electric",
+            "amount_min": "89.50",
+            "amount_max": "89.50",
+        }
+    }
+    client = _build_client_with_bills(fixture, bills)
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-99",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "recurring",
+            "planned_sync": "fixed",
+            "payment_rail": "bank",
+            "rule_id": "rule-1",
+            "row_label": "Electric",
+        }
+    )
+    intermittent_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-99",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-2",
+            "row_label": "Heating oil",
+        }
+    )
+    month = "2026-07"
+
+    await run_refresh(client, month)
+
+    balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
+    assert balances["bills"][str(reg_id)]["owed"] == "89.50"
+    assert balances["bills"][str(intermittent_id)]["owed"] == "89.50"
+
+    rows = await sidecar_db.get_worksheet_state_for_month(month)
+    intermittent_rows = [
+        r for r in rows if r["row_key"] == bill_row_key(intermittent_id)
+    ]
+    assert not intermittent_rows
