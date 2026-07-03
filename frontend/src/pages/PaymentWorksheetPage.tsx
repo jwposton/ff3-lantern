@@ -3,7 +3,7 @@ import { Link, Navigate } from "react-router-dom"
 import { CircleHelp, RefreshCw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
-import { BillRegistrationSheet } from "@/components/payment-run/BillRegistrationSheet"
+import { BillRegistrationSheet, type BillRegistrationEditTarget } from "@/components/payment-run/BillRegistrationSheet"
 import { BillsTable, countPaidRows } from "@/components/payment-run/BillsTable"
 import { BucketSheet } from "@/components/payment-run/BucketSheet"
 import { CreditCardSheet } from "@/components/payment-run/CreditCardSheet"
@@ -42,6 +42,7 @@ import {
   putAccountWorksheet,
   refreshPaymentWorksheet,
   registerBill,
+  updateBillRegistry,
   updateFundingBucket,
   type AvailableFireflyBill,
   type BillRow,
@@ -78,6 +79,8 @@ export function PaymentWorksheetPage() {
   const [billRegistrationSection, setBillRegistrationSection] = useState<
     "bills" | "liabilities"
   >("bills")
+  const [billEditTarget, setBillEditTarget] =
+    useState<BillRegistrationEditTarget | null>(null)
   const [availableBills, setAvailableBills] = useState<AvailableFireflyBill[]>(
     [],
   )
@@ -276,6 +279,7 @@ export function PaymentWorksheetPage() {
   }
 
   async function openBillRegistration(section: "bills" | "liabilities") {
+    setBillEditTarget(null)
     setBillRegistrationSection(section)
     setBillRegistrationOpen(true)
     setLoadingAvailableBills(true)
@@ -289,8 +293,44 @@ export function PaymentWorksheetPage() {
     }
   }
 
+  function openEditBillRegistration(row: BillRow | LiabilityRow) {
+    if (!row.registry_id) return
+    const name =
+      row.row_label ??
+      ("name" in row ? row.name : null) ??
+      `Bill ${row.registry_id}`
+    const worksheetSection =
+      "worksheet_section" in row && row.worksheet_section
+        ? row.worksheet_section
+        : "bills"
+    setBillEditTarget({
+      registryId: row.registry_id,
+      row_label: name,
+      worksheet_section: worksheetSection,
+      payment_rail: row.payment_rail ?? "bank",
+      funding_bucket_key: row.funding_bucket_key ?? null,
+      credit_card_account_id: row.credit_card_account_id ?? null,
+      amount_mode: row.amount_mode ?? "recurring",
+    })
+    setBillRegistrationSection(
+      worksheetSection === "liabilities" ? "liabilities" : "bills",
+    )
+    setBillRegistrationOpen(true)
+  }
+
   async function handleRegisterBill(payload: RegisterBillPayload) {
-    await registerBill(payload)
+    if (billEditTarget) {
+      await updateBillRegistry(billEditTarget.registryId, {
+        worksheet_section: payload.worksheet_section,
+        payment_rail: payload.payment_rail,
+        funding_bucket_key: payload.funding_bucket_key,
+        credit_card_account_id: payload.credit_card_account_id,
+        row_label: payload.name,
+        amount_mode: payload.amount_mode,
+      })
+    } else {
+      await registerBill(payload)
+    }
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
   }
 
@@ -485,7 +525,7 @@ export function PaymentWorksheetPage() {
                   subtotals={data.section_subtotals.bills}
                   onPlannedBlur={handlePlannedBlur}
                   onPaidChange={handleBillPaidChange}
-                  onEditRegistration={() => void openBillRegistration("bills")}
+                  onEditRegistration={openEditBillRegistration}
                 />
               ) : (
                 <Card>
@@ -543,9 +583,7 @@ export function PaymentWorksheetPage() {
                   subtotals={data.section_subtotals.liabilities}
                   onPlannedBlur={handlePlannedBlur}
                   onPaidChange={handleLiabilityPaidChange}
-                  onEditRegistration={() =>
-                    void openBillRegistration("liabilities")
-                  }
+                  onEditRegistration={openEditBillRegistration}
                 />
               ) : (
                 <Card>
@@ -601,8 +639,12 @@ export function PaymentWorksheetPage() {
 
       <BillRegistrationSheet
         open={billRegistrationOpen}
-        onOpenChange={setBillRegistrationOpen}
+        onOpenChange={(open) => {
+          setBillRegistrationOpen(open)
+          if (!open) setBillEditTarget(null)
+        }}
         defaultSection={billRegistrationSection}
+        editTarget={billEditTarget}
         creditCards={data?.credit_cards ?? []}
         buckets={data?.buckets ?? []}
         availableBills={availableBills}

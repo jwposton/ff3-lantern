@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -12,7 +13,6 @@ import sidecar_db
 from firefly_client import FireflyClient
 from loan_profiles import parse_loan_profile_from_notes
 from payment_worksheet_cc import classify_cc_activity_category, is_credit_card_payment_flow
-from payment_worksheet_compute import bill_row_key
 from payment_worksheet_liabilities import (
     compute_liability_display_fields,
     draft_planned_amount,
@@ -28,6 +28,8 @@ from payment_worksheet_profiles import (
 
 DEFAULT_INTEREST_CATEGORIES = "Credit Card Interest"
 DEFAULT_FEE_CATEGORIES = "Credit Card Fee(s),Late Fee(s)"
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_category_list(env_key: str, default: str) -> list[str]:
@@ -396,9 +398,24 @@ async def run_refresh(
         bill_id = reg.get("firefly_bill_id")
         if not bill_id:
             continue
-        ff_bill = await client.fetch_bill(str(bill_id))
-        owed_raw = ff_bill.get("amount_min") or ff_bill.get("amount_max") or "0"
         reg_id = str(reg["id"])
+        try:
+            ff_bill = await client.fetch_bill(str(bill_id))
+        except RuntimeError as exc:
+            logger.warning(
+                "Skipping registry %s: Firefly bill %s unavailable: %s",
+                reg_id,
+                bill_id,
+                exc,
+            )
+            balances["bills"][reg_id] = {
+                "owed": "0.00",
+                "firefly_bill_id": str(bill_id),
+                "name": reg.get("row_label"),
+                "unavailable": True,
+            }
+            continue
+        owed_raw = ff_bill.get("amount_min") or ff_bill.get("amount_max") or "0"
         balances["bills"][reg_id] = {
             "owed": _format_decimal(_decimal_amount(owed_raw)),
             "firefly_bill_id": str(bill_id),
@@ -407,10 +424,7 @@ async def run_refresh(
 
         if reg.get("amount_mode") == "intermittent":
             continue
-        row_key = bill_row_key(reg_id)
-        existing_state = state_rows.get(row_key)
-        if existing_state and existing_state.get("planned_amount_override"):
-            continue
+        # Bill planned amounts are user-entered on the worksheet; only liabilities/CC auto-draft.
 
     await sidecar_db.upsert_worksheet_refresh(
         month=month,

@@ -29,7 +29,7 @@ from payment_worksheet_bills import (
     RegisterBillBody,
     register_bill,
 )
-from payment_worksheet_compute import _row_type_from_key, build_worksheet_envelope
+from payment_worksheet_compute import _row_type_from_key, bill_row_key, build_worksheet_envelope
 from payment_worksheet_liabilities import is_liability_account
 from payment_worksheet_refresh import run_refresh
 
@@ -506,6 +506,7 @@ async def delete_bill_registry(
     if existing is None:
         raise HTTPException(status_code=404, detail="Registry row not found.")
     await sidecar_db.delete_worksheet_registry(registry_id)
+    await sidecar_db.delete_worksheet_state_for_row_key(bill_row_key(registry_id))
     return {"ok": True}
 
 

@@ -34,6 +34,7 @@ type BillRegistrationSheetProps = {
   onOpenChange: (open: boolean) => void
   defaultSection?: "bills" | "liabilities"
   initialMode?: RegistrationMode
+  initialFireflyBillId?: string | null
   editTarget?: BillRegistrationEditTarget | null
   creditCards: CreditCardRow[]
   buckets: FundingBucketRollup[]
@@ -50,6 +51,7 @@ export function BillRegistrationSheet({
   onOpenChange,
   defaultSection = "bills",
   initialMode = "create_new",
+  initialFireflyBillId = null,
   editTarget = null,
   creditCards,
   buckets,
@@ -115,12 +117,13 @@ export function BillRegistrationSheet({
     setCreditCardAccountId(creditCards[0]?.account_id ?? "")
     setDescriptionContains("")
     setAmountExactly("")
-    setSelectedBillId("")
+    setSelectedBillId(initialFireflyBillId ?? "")
     setError(null)
   }, [
     open,
     defaultSection,
     initialMode,
+    initialFireflyBillId,
     editTarget,
     buckets,
     creditCards,

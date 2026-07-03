@@ -14,6 +14,7 @@ from payment_worksheet_bills import (
     RegisterBillBody,
     build_bill_link_rule_body,
     register_bill,
+    register_new_bill,
 )
 
 
@@ -246,3 +247,73 @@ async def test_link_existing_without_rule_or_trigger_raises_422(data_dir):
     with pytest.raises(BillRegistrationError) as exc:
         await register_bill(client, body)
     assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_register_new_bill_compensates_on_rule_failure(data_dir, monkeypatch):
+    monkeypatch.setenv(
+        "FF3ANALYTICS_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+    )
+    deleted_bills: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/rule-groups" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "rule-groups",
+                            "id": "1",
+                            "attributes": {"title": "Payment worksheet"},
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "POST":
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "bill-orphan",
+                        "attributes": {"name": "Water"},
+                    }
+                },
+            )
+        if path == "/api/v1/bills/bill-orphan" and request.method == "DELETE":
+            deleted_bills.append("bill-orphan")
+            return httpx.Response(204)
+        if path == "/api/v1/rules" and request.method == "POST":
+            return httpx.Response(500, json={"message": "rule create failed"})
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    body = RegisterBillBody(
+        mode="create_new",
+        name="Water",
+        amount="50.00",
+        amount_mode="recurring",
+        repeat_freq="monthly",
+        worksheet_section="bills",
+        payment_rail="bank",
+        funding_bucket_key="checking",
+        description_contains="CITY WATER",
+    )
+    with pytest.raises(BillRegistrationError):
+        await register_new_bill(client, body)
+    assert deleted_bills == ["bill-orphan"]
+    rows = await sidecar_db.list_worksheet_registry()
+    assert not [r for r in rows if r.get("firefly_bill_id") == "bill-orphan"]

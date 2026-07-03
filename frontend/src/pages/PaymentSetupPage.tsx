@@ -103,6 +103,7 @@ export function PaymentSetupPage() {
   const [billInitialMode, setBillInitialMode] = useState<
     "create_new" | "link_existing"
   >("create_new")
+  const [linkBillId, setLinkBillId] = useState<string | null>(null)
   const [editTarget, setEditTarget] = useState<BillRegistrationEditTarget | null>(
     null,
   )
@@ -206,9 +207,13 @@ export function PaymentSetupPage() {
     setBucketSheetOpen(true)
   }
 
-  function openRegisterBill(mode: "create_new" | "link_existing" = "create_new") {
+  function openRegisterBill(
+    mode: "create_new" | "link_existing" = "create_new",
+    fireflyBillId?: string,
+  ) {
     setEditTarget(null)
     setBillInitialMode(mode)
+    setLinkBillId(fireflyBillId ?? null)
     setBillRegistrationOpen(true)
   }
 
@@ -468,7 +473,7 @@ export function PaymentSetupPage() {
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => openRegisterBill("link_existing")}
+                      onClick={() => openRegisterBill("link_existing", bill.id)}
                     >
                       Link bill
                     </Button>
@@ -545,8 +550,12 @@ export function PaymentSetupPage() {
 
       <BillRegistrationSheet
         open={billRegistrationOpen}
-        onOpenChange={setBillRegistrationOpen}
+        onOpenChange={(open) => {
+          setBillRegistrationOpen(open)
+          if (!open) setLinkBillId(null)
+        }}
         initialMode={billInitialMode}
+        initialFireflyBillId={linkBillId}
         editTarget={editTarget}
         creditCards={data?.credit_cards ?? []}
         buckets={data?.buckets ?? []}

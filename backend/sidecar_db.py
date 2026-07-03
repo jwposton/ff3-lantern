@@ -20,6 +20,7 @@ import aiosqlite
 __all__ = [
     "delete_funding_bucket",
     "delete_worksheet_registry",
+    "delete_worksheet_state_for_row_key",
     "get_bucket_balances_for_month",
     "get_data_dir",
     "get_db_path",
@@ -404,6 +405,16 @@ async def delete_worksheet_registry(registry_id: int) -> None:
         await db.execute(
             "DELETE FROM worksheet_registry WHERE id = ?",
             (registry_id,),
+        )
+        await db.commit()
+
+
+async def delete_worksheet_state_for_row_key(row_key: str) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            "DELETE FROM worksheet_state WHERE row_key = ?",
+            (row_key,),
         )
         await db.commit()
 

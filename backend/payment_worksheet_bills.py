@@ -202,18 +202,42 @@ async def register_new_bill(
         amount_trigger = _format_amount(str(amount_trigger))
     else:
         amount_trigger = amount
-    rule_id = await _create_link_rule(
-        client,
-        bill_id=bill_id,
-        title=body.name,
-        description_contains=trigger_text,
-        amount_exactly=amount_trigger,
-    )
-    registry_id = await insert_worksheet_registry(
-        firefly_bill_id=bill_id,
-        rule_id=rule_id,
-        body=body,
-    )
+    try:
+        rule_id = await _create_link_rule(
+            client,
+            bill_id=bill_id,
+            title=body.name,
+            description_contains=trigger_text,
+            amount_exactly=amount_trigger,
+        )
+    except Exception as exc:
+        try:
+            await client.delete_bill(bill_id)
+        except RuntimeError:
+            pass
+        if isinstance(exc, BillRegistrationError):
+            raise
+        raise BillRegistrationError(str(exc), status_code=502) from exc
+    try:
+        registry_id = await insert_worksheet_registry(
+            firefly_bill_id=bill_id,
+            rule_id=rule_id,
+            body=body,
+        )
+    except Exception as exc:
+        try:
+            await client.delete_rule(rule_id)
+        except RuntimeError:
+            pass
+        try:
+            await client.delete_bill(bill_id)
+        except RuntimeError:
+            pass
+        raise BillRegistrationError(
+            f"Registry insert failed after creating Firefly bill {bill_id} "
+            f"and rule {rule_id}.",
+            status_code=500,
+        ) from exc
     return await _registry_response(registry_id)
 
 
@@ -232,6 +256,7 @@ async def register_linked_bill(
         await client.fetch_bill(bill_id)
     except RuntimeError as exc:
         raise BillRegistrationError(str(exc), status_code=422) from exc
+    created_rule = False
     if body.rule_id and str(body.rule_id).strip():
         rule_id = str(body.rule_id).strip()
         await _validate_existing_rule_links_bill(client, rule_id, bill_id)
@@ -243,15 +268,27 @@ async def register_linked_bill(
             description_contains=body.description_contains,
             amount_exactly=body.amount_exactly,
         )
+        created_rule = True
     else:
         raise BillRegistrationError(
             "link_existing requires rule_id or description_contains to create a rule."
         )
-    registry_id = await insert_worksheet_registry(
-        firefly_bill_id=bill_id,
-        rule_id=rule_id,
-        body=body,
-    )
+    try:
+        registry_id = await insert_worksheet_registry(
+            firefly_bill_id=bill_id,
+            rule_id=rule_id,
+            body=body,
+        )
+    except Exception as exc:
+        if created_rule:
+            try:
+                await client.delete_rule(rule_id)
+            except RuntimeError:
+                pass
+        raise BillRegistrationError(
+            f"Registry insert failed for Firefly bill {bill_id} and rule {rule_id}.",
+            status_code=500,
+        ) from exc
     return await _registry_response(registry_id)
 
 

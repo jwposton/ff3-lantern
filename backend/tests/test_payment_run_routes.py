@@ -948,3 +948,53 @@ def test_delete_bill_registry(monkeypatch, client, data_dir, payment_worksheet_e
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 
+
+def test_delete_bill_registry_cleans_worksheet_state(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from main import app
+    from payment_worksheet_compute import bill_row_key
+    from routes.payment_run import get_firefly_client
+
+    class _DeleteGuard(FireflyClient):
+        async def fetch_bills(self, *args, **kwargs):
+            raise AssertionError("DELETE must not call Firefly")
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-del-state",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-del-state",
+                "row_label": "State cleanup",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_worksheet_state_row(
+            row_key=bill_row_key(reg_id),
+            row_type="bill",
+            month="2026-07",
+            planned_amount="25.00",
+        )
+    )
+    app.dependency_overrides[get_firefly_client] = lambda: _DeleteGuard(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.delete(f"/api/payment-run/bills/{reg_id}")
+        assert response.status_code == 200
+        rows = asyncio.run(sidecar_db.get_worksheet_state_for_month("2026-07"))
+        assert not [r for r in rows if r["row_key"] == bill_row_key(reg_id)]
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+

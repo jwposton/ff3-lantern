@@ -387,6 +387,22 @@ class FireflyClient:
                 "attributes": data.get("attributes", {}),
             }
 
+    async def delete_bill(self, bill_id: str) -> None:
+        async with self._build_client() as client:
+            response = await client.delete(f"/api/v1/bills/{bill_id}")
+            if response.status_code not in (200, 204, 404):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+
+    async def delete_rule(self, rule_id: str) -> None:
+        async with self._build_client() as client:
+            response = await client.delete(f"/api/v1/rules/{rule_id}")
+            if response.status_code not in (200, 204, 404):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+
     async def create_rule_group(self, title: str) -> dict[str, Any]:
         async with self._build_client() as client:
             response = await client.post(

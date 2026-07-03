@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Payment worksheet refresh** — a stale registered bill missing in Firefly no longer aborts the entire refresh; other cards, bills, and liabilities still update
+- **Bill registration** — failed rule or registry steps roll back newly created Firefly bills and rules when possible
+- **Payment setup link bill** — Link bill on the setup page pre-selects the clicked Firefly bill in the registration wizard
+- **Worksheet bill edit** — the edit pencil on bill rows opens the registration sheet with that row’s settings instead of a blank create wizard
+- **Bill unregister** — removing a registered bill also clears its saved worksheet state rows
+
 ### Added
 
 - **Payment setup page** — manage bill registration and worksheet placement at `/manage/payment-run/setup`
