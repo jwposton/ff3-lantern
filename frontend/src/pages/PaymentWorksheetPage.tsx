@@ -1,15 +1,20 @@
 import { useMemo, useState } from "react"
-import { Navigate } from "react-router-dom"
+import { Link, Navigate } from "react-router-dom"
 import { CircleHelp, RefreshCw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
+import { BillRegistrationSheet } from "@/components/payment-run/BillRegistrationSheet"
+import { BillsTable, countPaidRows } from "@/components/payment-run/BillsTable"
 import { BucketSheet } from "@/components/payment-run/BucketSheet"
 import { CreditCardSheet } from "@/components/payment-run/CreditCardSheet"
 import type { CreditCardDetailsInput } from "@/components/payment-run/CreditCardSheet"
 import { CreditCardsTable } from "@/components/payment-run/CreditCardsTable"
+import { LiabilitiesTable } from "@/components/payment-run/LiabilitiesTable"
 import { ManageCardsSheet } from "@/components/payment-run/ManageCardsSheet"
+import { ManageLiabilitiesSheet } from "@/components/payment-run/ManageLiabilitiesSheet"
 import { FundingBucketBar } from "@/components/payment-run/FundingBucketBar"
 import { ShortfallBanner } from "@/components/payment-run/ShortfallBanner"
+import { WorksheetGrandTotal } from "@/components/payment-run/WorksheetGrandTotal"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -29,16 +34,22 @@ import {
   createFundingBucket,
   currentMonthKey,
   deleteFundingBucket,
+  fetchAvailableBills,
   fetchFundingBuckets,
   formatMonthLabel,
   putBucketBalance,
   putRowState,
   putAccountWorksheet,
   refreshPaymentWorksheet,
+  registerBill,
   updateFundingBucket,
+  type AvailableFireflyBill,
+  type BillRow,
   type FundingBucket,
   type FundingBucketRollup,
   type CreditCardRow,
+  type LiabilityRow,
+  type RegisterBillPayload,
 } from "@/lib/paymentRunApi"
 
 function formatRefreshedAt(value: string | null | undefined): string {
@@ -62,6 +73,15 @@ export function PaymentWorksheetPage() {
   const [cardSheetOpen, setCardSheetOpen] = useState(false)
   const [editingCard, setEditingCard] = useState<CreditCardRow | null>(null)
   const [manageCardsOpen, setManageCardsOpen] = useState(false)
+  const [manageLiabilitiesOpen, setManageLiabilitiesOpen] = useState(false)
+  const [billRegistrationOpen, setBillRegistrationOpen] = useState(false)
+  const [billRegistrationSection, setBillRegistrationSection] = useState<
+    "bills" | "liabilities"
+  >("bills")
+  const [availableBills, setAvailableBills] = useState<AvailableFireflyBill[]>(
+    [],
+  )
+  const [loadingAvailableBills, setLoadingAvailableBills] = useState(false)
 
   const bucketAssetAccounts = useMemo(
     () =>
@@ -178,15 +198,30 @@ export function PaymentWorksheetPage() {
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
   }
 
-  async function handlePaidChange(row: CreditCardRow, paid: boolean) {
+  async function handlePaidChange(
+    rowKey: string,
+    paid: boolean,
+  ) {
     if (paid) {
-      await putRowState(row.row_key, month, {
+      await putRowState(rowKey, month, {
         paid_at: new Date().toISOString(),
       })
     } else {
-      await putRowState(row.row_key, month, { clear_paid: true })
+      await putRowState(rowKey, month, { clear_paid: true })
     }
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
+  async function handleCardPaidChange(row: CreditCardRow, paid: boolean) {
+    await handlePaidChange(row.row_key, paid)
+  }
+
+  async function handleBillPaidChange(row: BillRow, paid: boolean) {
+    await handlePaidChange(row.row_key, paid)
+  }
+
+  async function handleLiabilityPaidChange(row: LiabilityRow, paid: boolean) {
+    await handlePaidChange(row.row_key, paid)
   }
 
   async function handleCardDetailsSave(
@@ -222,7 +257,7 @@ export function PaymentWorksheetPage() {
     }
   }
 
-  async function handleInclude(accountId: string) {
+  async function handleIncludeCard(accountId: string) {
     setCcActionError(null)
     try {
       await putAccountWorksheet(accountId, month, { included: true })
@@ -235,9 +270,38 @@ export function PaymentWorksheetPage() {
     }
   }
 
+  async function handleIncludeLiability(accountId: string) {
+    await putAccountWorksheet(accountId, month, { included: true })
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
+  async function openBillRegistration(section: "bills" | "liabilities") {
+    setBillRegistrationSection(section)
+    setBillRegistrationOpen(true)
+    setLoadingAvailableBills(true)
+    try {
+      const { data: bills } = await fetchAvailableBills()
+      setAvailableBills(bills)
+    } catch {
+      setAvailableBills([])
+    } finally {
+      setLoadingAvailableBills(false)
+    }
+  }
+
+  async function handleRegisterBill(payload: RegisterBillPayload) {
+    await registerBill(payload)
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
   const paidCount = data?.credit_cards.filter((row) => row.paid_at).length ?? 0
   const ccCount = data?.credit_cards.length ?? 0
   const excludedCount = data?.excluded_credit_cards.length ?? 0
+  const billsPaidCount = data ? countPaidRows(data.bills) : 0
+  const billsTotalCount = data?.bills.length ?? 0
+  const liabilitiesPaidCount = data ? countPaidRows(data.liabilities) : 0
+  const liabilitiesTotalCount = data?.liabilities.length ?? 0
+  const excludedLiabilitiesCount = data?.excluded_liabilities.length ?? 0
 
   return (
     <div className="space-y-8">
@@ -247,24 +311,31 @@ export function PaymentWorksheetPage() {
             Payment Worksheet
           </h1>
           <p className="text-muted-foreground text-sm">
-            Plan credit card paydowns for {formatMonthLabel(month)} — balances
-            from Firefly on Refresh.
+            Plan credit cards, bills, and liabilities for{" "}
+            {formatMonthLabel(month)} — balances from Firefly on Refresh.
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <span className="text-muted-foreground text-sm">
             {formatRefreshedAt(data?.refreshed_at)}
           </span>
-          <Button
-            type="button"
-            onClick={handleRefresh}
-            disabled={refreshing || isPending}
-          >
-            <RefreshCw
-              className={refreshing ? "mr-2 size-4 animate-spin" : "mr-2 size-4"}
-            />
-            {refreshing ? "Refreshing…" : "Refresh balances"}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="link" size="sm" asChild>
+              <Link to="/manage/payment-run/setup">Manage registration</Link>
+            </Button>
+            <Button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing || isPending}
+            >
+              <RefreshCw
+                className={
+                  refreshing ? "mr-2 size-4 animate-spin" : "mr-2 size-4"
+                }
+              />
+              {refreshing ? "Refreshing…" : "Refresh balances"}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -304,93 +375,204 @@ export function PaymentWorksheetPage() {
             onResetBalance={handleResetBalance}
           />
 
-          <section className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-xl font-semibold">
-                  Credit cards
-                  {ccCount > 0 ? ` · ${paidCount} / ${ccCount} paid` : ""}
-                </h2>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-foreground inline-flex rounded-sm"
-                      aria-label="Credit card table help"
-                    >
-                      <CircleHelp className="size-4" aria-hidden />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs">
-                    Card names open Firefly. Use the pencil to edit bucket,
-                    limits, and other account fields. Only Planned and Paid edit
-                    inline.
-                  </TooltipContent>
-                </Tooltip>
+          <div className="space-y-6">
+            <section className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-semibold">
+                    Credit cards
+                    {ccCount > 0 ? ` · ${paidCount} / ${ccCount} paid` : ""}
+                  </h2>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground inline-flex rounded-sm"
+                        aria-label="Credit card table help"
+                      >
+                        <CircleHelp className="size-4" aria-hidden />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs">
+                      Card names open Firefly. Use the pencil to edit bucket,
+                      limits, and other account fields. Only Planned and Paid edit
+                      inline.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                {data.refreshed_at ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setManageCardsOpen(true)}
+                  >
+                    Manage cards
+                    {excludedCount > 0 ? ` (${excludedCount} excluded)` : ""}
+                  </Button>
+                ) : null}
               </div>
-              {data.refreshed_at ? (
+              {ccGuidance ? (
+                <p className="text-muted-foreground text-sm">{ccGuidance}</p>
+              ) : null}
+              {ccActionError ? (
+                <p className="text-destructive text-sm" role="alert">
+                  {ccActionError}
+                </p>
+              ) : null}
+              {data.credit_cards.length > 0 ? (
+                <CreditCardsTable
+                  rows={data.credit_cards}
+                  buckets={data.buckets}
+                  month={data.month}
+                  fireflyBaseUrl={data.firefly_base_url}
+                  onPlannedBlur={handlePlannedBlur}
+                  onPaidChange={handleCardPaidChange}
+                  onEditDetails={openCardDetails}
+                />
+              ) : null}
+              {data.credit_cards.length === 0 && !data.refreshed_at ? (
+                <Card>
+                  <CardContent className="text-muted-foreground space-y-2 py-8 text-sm">
+                    <p className="font-medium text-foreground">
+                      Credit cards load on Refresh
+                    </p>
+                    <p>
+                      Firefly credit card accounts appear here automatically when
+                      you click <span className="font-medium">Refresh balances</span>.
+                      Add funding buckets first if you want to map cards to cash
+                      pools.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : null}
+              {data.credit_cards.length === 0 && data.refreshed_at ? (
+                <Card>
+                  <CardContent className="text-muted-foreground space-y-2 py-8 text-sm">
+                    <p className="font-medium text-foreground">
+                      No credit cards on this worksheet
+                    </p>
+                    <p>
+                      All cards may be excluded, or Firefly returned no credit card
+                      asset accounts. Open <span className="font-medium">Manage cards</span>{" "}
+                      to restore excluded cards, or refresh after fixing account roles
+                      in Firefly.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : null}
+            </section>
+
+            <section className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-semibold">
+                  Bills · {billsPaidCount} / {billsTotalCount} paid
+                </h2>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setManageCardsOpen(true)}
+                  onClick={() => void openBillRegistration("bills")}
                 >
-                  Manage cards
-                  {excludedCount > 0 ? ` (${excludedCount} excluded)` : ""}
+                  Add bill
                 </Button>
-              ) : null}
-            </div>
-            {ccGuidance ? (
-              <p className="text-muted-foreground text-sm">{ccGuidance}</p>
-            ) : null}
-            {ccActionError ? (
-              <p className="text-destructive text-sm" role="alert">
-                {ccActionError}
-              </p>
-            ) : null}
-            {data.credit_cards.length > 0 ? (
-              <CreditCardsTable
-                rows={data.credit_cards}
-                buckets={data.buckets}
-                month={data.month}
-                fireflyBaseUrl={data.firefly_base_url}
-                onPlannedBlur={handlePlannedBlur}
-                onPaidChange={handlePaidChange}
-                onEditDetails={openCardDetails}
-              />
-            ) : null}
-            {data.credit_cards.length === 0 && !data.refreshed_at ? (
-              <Card>
-                <CardContent className="text-muted-foreground space-y-2 py-8 text-sm">
-                  <p className="font-medium text-foreground">
-                    Credit cards load on Refresh
-                  </p>
-                  <p>
-                    Firefly credit card accounts appear here automatically when
-                    you click <span className="font-medium">Refresh balances</span>.
-                    Add funding buckets first if you want to map cards to cash
-                    pools.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : null}
-            {data.credit_cards.length === 0 && data.refreshed_at ? (
-              <Card>
-                <CardContent className="text-muted-foreground space-y-2 py-8 text-sm">
-                  <p className="font-medium text-foreground">
-                    No credit cards on this worksheet
-                  </p>
-                  <p>
-                    All cards may be excluded, or Firefly returned no credit card
-                    asset accounts. Open <span className="font-medium">Manage cards</span>{" "}
-                    to restore excluded cards, or refresh after fixing account roles
-                    in Firefly.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : null}
+              </div>
+              {data.bills.length > 0 ? (
+                <BillsTable
+                  rows={data.bills}
+                  buckets={data.buckets}
+                  creditCards={data.credit_cards}
+                  subtotals={data.section_subtotals.bills}
+                  onPlannedBlur={handlePlannedBlur}
+                  onPaidChange={handleBillPaidChange}
+                  onEditRegistration={() => void openBillRegistration("bills")}
+                />
+              ) : (
+                <Card>
+                  <CardContent className="space-y-3 py-12 text-center">
+                    <p className="font-medium">No bills on this worksheet</p>
+                    <p className="text-muted-foreground text-sm">
+                      Register recurring bills from Firefly or create new ones with
+                      a matching rule.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void openBillRegistration("bills")}
+                    >
+                      Add bill
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </section>
+
+            <section className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-semibold">
+                  Liabilities · {liabilitiesPaidCount} / {liabilitiesTotalCount}{" "}
+                  paid
+                </h2>
+                <div className="flex flex-wrap gap-2">
+                  {data.refreshed_at && excludedLiabilitiesCount > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setManageLiabilitiesOpen(true)}
+                    >
+                      Manage exclusions ({excludedLiabilitiesCount})
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void openBillRegistration("liabilities")}
+                  >
+                    Add bill
+                  </Button>
+                </div>
+              </div>
+              {data.liabilities.length > 0 ? (
+                <LiabilitiesTable
+                  rows={data.liabilities}
+                  buckets={data.buckets}
+                  creditCards={data.credit_cards}
+                  subtotals={data.section_subtotals.liabilities}
+                  onPlannedBlur={handlePlannedBlur}
+                  onPaidChange={handleLiabilityPaidChange}
+                  onEditRegistration={() =>
+                    void openBillRegistration("liabilities")
+                  }
+                />
+              ) : (
+                <Card>
+                  <CardContent className="space-y-3 py-12 text-center">
+                    <p className="font-medium">No liabilities on this worksheet</p>
+                    <p className="text-muted-foreground text-sm">
+                      Loan and mortgage accounts from Firefly appear here after
+                      Refresh. Register bills under Liabilities if you want rent or
+                      other items grouped with loans.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void openBillRegistration("liabilities")}
+                    >
+                      Add bill
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </section>
+
+            <WorksheetGrandTotal grandTotals={data.grand_totals} />
+
             {data.shortfall ? <ShortfallBanner buckets={data.buckets} /> : null}
-          </section>
+          </div>
         </>
       ) : null}
 
@@ -407,7 +589,25 @@ export function PaymentWorksheetPage() {
         open={manageCardsOpen}
         onOpenChange={setManageCardsOpen}
         excludedCards={data?.excluded_credit_cards ?? []}
-        onInclude={handleInclude}
+        onInclude={handleIncludeCard}
+      />
+
+      <ManageLiabilitiesSheet
+        open={manageLiabilitiesOpen}
+        onOpenChange={setManageLiabilitiesOpen}
+        excludedLiabilities={data?.excluded_liabilities ?? []}
+        onInclude={handleIncludeLiability}
+      />
+
+      <BillRegistrationSheet
+        open={billRegistrationOpen}
+        onOpenChange={setBillRegistrationOpen}
+        defaultSection={billRegistrationSection}
+        creditCards={data?.credit_cards ?? []}
+        buckets={data?.buckets ?? []}
+        availableBills={availableBills}
+        loadingAvailable={loadingAvailableBills}
+        onSubmit={handleRegisterBill}
       />
 
       <CreditCardSheet

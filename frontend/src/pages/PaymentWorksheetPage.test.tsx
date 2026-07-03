@@ -154,6 +154,91 @@ const SHORTFALL_ENVELOPE: PaymentWorksheetEnvelope = {
   },
 }
 
+function makeBillRow(
+  id: number,
+  label: string,
+  paid: boolean,
+): PaymentWorksheetEnvelope["bills"][number] {
+  return {
+    registry_id: id,
+    row_key: `bill:${id}`,
+    row_label: label,
+    firefly_bill_id: `ff-${id}`,
+    owed: "50.00",
+    planned_amount: "50.00",
+    planned_amount_override: false,
+    paid_at: paid ? "2026-07-01T12:00:00Z" : null,
+    payment_rail: "bank",
+    counts_toward_cash_plan: true,
+    funding_bucket_key: "checking",
+    credit_card_account_id: null,
+    amount_mode: "recurring",
+    worksheet_section: "bills",
+  }
+}
+
+const BILLS_LIABILITIES_ENVELOPE: PaymentWorksheetEnvelope = {
+  ...WORKSHEET_ENVELOPE,
+  bills: [
+    makeBillRow(1, "Electric", true),
+    makeBillRow(2, "Water", true),
+    makeBillRow(3, "Internet", false),
+    makeBillRow(4, "Gym", false),
+  ],
+  liabilities: [
+    {
+      account_id: "loan-1",
+      row_key: "liability:loan-1",
+      name: "Mortgage",
+      owed: "250000.00",
+      est_interest: "800.00",
+      remaining_payments: 142,
+      planned_amount: "1800.00",
+      planned_amount_override: false,
+      paid_at: "2026-07-02T12:00:00Z",
+      funding_bucket_key: "checking",
+      default_planned_payment: "1800.00",
+    },
+    {
+      account_id: "loan-2",
+      row_key: "liability:loan-2",
+      name: "Car loan",
+      owed: "12000.00",
+      est_interest: "45.00",
+      remaining_payments: 36,
+      planned_amount: "350.00",
+      planned_amount_override: false,
+      paid_at: null,
+      funding_bucket_key: "checking",
+      default_planned_payment: "350.00",
+    },
+    {
+      registry_id: 10,
+      row_key: "bill:10",
+      row_label: "Rent",
+      owed: "1500.00",
+      planned_amount: "1500.00",
+      planned_amount_override: false,
+      paid_at: null,
+      est_interest: null,
+      remaining_payments: null,
+      funding_bucket_key: "checking",
+      payment_rail: "bank",
+      counts_toward_cash_plan: true,
+      amount_mode: "recurring",
+    },
+  ],
+  section_subtotals: {
+    bills: { owed: "200.00", planned_cash: "200.00" },
+    liabilities: { owed: "263500.00", planned_cash: "3650.00" },
+    credit_cards: { planned_cash: "900.00" },
+  },
+  grand_totals: {
+    owed: "264700.00",
+    planned_cash: "4750.00",
+  },
+}
+
 function TestProviders({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -374,6 +459,62 @@ describe("PaymentWorksheetPage", () => {
       expect(
         screen.queryByText(/Card names open Firefly/i),
       ).toBeNull()
+    })
+  })
+
+  it("renders bills and liabilities sections with paid-progress headers", async () => {
+    mockPaymentFetch({ envelope: BILLS_LIABILITIES_ENVELOPE })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Bills · 2 / 4 paid")).toBeTruthy()
+      expect(screen.getByText("Liabilities · 1 / 3 paid")).toBeTruthy()
+      expect(screen.getByText("Electric")).toBeTruthy()
+      expect(screen.getByText("Mortgage")).toBeTruthy()
+      expect(screen.getByText("Rent")).toBeTruthy()
+    })
+  })
+
+  it("renders grand total footer with owed and planned cash", async () => {
+    mockPaymentFetch({ envelope: BILLS_LIABILITIES_ENVELOPE })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("grand-total-owed").textContent).toBe("264,700.00")
+      expect(screen.getByTestId("grand-total-planned-cash").textContent).toBe(
+        "4,750.00",
+      )
+    })
+  })
+
+  it("places shortfall banner after grand total", async () => {
+    mockPaymentFetch({
+      envelope: { ...BILLS_LIABILITIES_ENVELOPE, shortfall: true },
+    })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const grandTotal = screen.getByTestId("worksheet-grand-total")
+      const shortfall = screen.getByText("Shortfall in funding buckets")
+      expect(
+        grandTotal.compareDocumentPosition(shortfall) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
     })
   })
 })
