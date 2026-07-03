@@ -688,3 +688,263 @@ def test_get_worksheet_bills(monkeypatch, client, data_dir, payment_worksheet_en
     assert body["section_subtotals"]["bills"]["owed"] == "99.00"
     assert body["grand_totals"]["owed"] == "99.00"
     assert body["grand_totals"]["planned_cash"] == "99.00"
+
+
+def test_register_bill(monkeypatch, client, data_dir, payment_worksheet_env):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    bill_posts: list[dict] = []
+    rule_posts: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/rule-groups" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "rule-groups",
+                            "id": "1",
+                            "attributes": {"title": "Payment worksheet"},
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "POST":
+            bill_posts.append(json.loads(request.content.decode()))
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "bill-api",
+                        "attributes": {"name": bill_posts[-1]["name"]},
+                    }
+                },
+            )
+        if path == "/api/v1/rules" and request.method == "POST":
+            rule_posts.append(json.loads(request.content.decode()))
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "rule-api",
+                        "attributes": {"title": rule_posts[-1]["title"]},
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    mock_client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    app.dependency_overrides[get_firefly_client] = lambda: mock_client
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+    monkeypatch.setenv(
+        "FF3ANALYTICS_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+    )
+
+    try:
+        response = client.post(
+            "/api/payment-run/bills/register",
+            json={
+                "mode": "create_new",
+                "name": "Electric",
+                "amount": "99.00",
+                "amount_mode": "recurring",
+                "repeat_freq": "monthly",
+                "worksheet_section": "bills",
+                "payment_rail": "bank",
+                "funding_bucket_key": "checking",
+                "description_contains": "POWER CO",
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["firefly_bill_id"] == "bill-api"
+        assert body["rule_id"] == "rule-api"
+        assert body["counts_toward_cash_plan"] is True
+        assert len(bill_posts) == 1
+        assert len(rule_posts) == 1
+
+        duplicate = client.post(
+            "/api/payment-run/bills/register",
+            json={
+                "mode": "link_existing",
+                "name": "Electric",
+                "amount": "99.00",
+                "amount_mode": "recurring",
+                "worksheet_section": "bills",
+                "payment_rail": "bank",
+                "funding_bucket_key": "checking",
+                "description_contains": "POWER CO",
+                "firefly_bill_id": "bill-api",
+            },
+        )
+        assert duplicate.status_code == 422
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_available_bills(monkeypatch, client, data_dir, payment_worksheet_env):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "bills",
+                            "id": "1",
+                            "attributes": {
+                                "name": "Water",
+                                "amount_min": "50.00",
+                                "repeat_freq": "monthly",
+                            },
+                        },
+                        {
+                            "type": "bills",
+                            "id": "2",
+                            "attributes": {
+                                "name": "Internet",
+                                "amount_min": "80.00",
+                                "repeat_freq": "monthly",
+                            },
+                        },
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        return httpx.Response(404)
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "1",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "r1",
+                "row_label": "Water",
+            }
+        )
+    )
+
+    try:
+        response = client.get("/api/payment-run/available")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert len(data) == 1
+        assert data[0]["id"] == "2"
+        assert data[0]["name"] == "Internet"
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_update_bill_registry(monkeypatch, client, data_dir, payment_worksheet_env):
+    import asyncio
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-upd",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-upd",
+                "row_label": "Gas",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={
+            "worksheet_section": "liabilities",
+            "row_label": "Gas bill",
+            "amount_mode": "intermittent",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["worksheet_section"] == "liabilities"
+    assert body["row_label"] == "Gas bill"
+    assert body["amount_mode"] == "intermittent"
+    assert body["planned_sync"] == "manual"
+    assert body["firefly_bill_id"] == "bill-upd"
+
+
+def test_delete_bill_registry(monkeypatch, client, data_dir, payment_worksheet_env):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    class _DeleteGuard(FireflyClient):
+        async def fetch_bills(self, *args, **kwargs):
+            raise AssertionError("DELETE must not call Firefly")
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-del",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-del",
+                "row_label": "Trash",
+            }
+        )
+    )
+    app.dependency_overrides[get_firefly_client] = lambda: _DeleteGuard(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.delete(f"/api/payment-run/bills/{reg_id}")
+        assert response.status_code == 200
+        assert response.json() == {"ok": True}
+        assert asyncio.run(sidecar_db.get_worksheet_registry(reg_id)) is None
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
