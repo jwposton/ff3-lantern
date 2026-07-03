@@ -5,11 +5,21 @@ from __future__ import annotations
 import os
 import uuid
 
+import firefly_reference_cache
 import sidecar_db
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
 from firefly_client import FireflyClient
+from payment_worksheet_profiles import (
+    current_month_key,
+    effective_profile_from_notes,
+    is_credit_card_asset,
+    merge_payment_worksheet_profile,
+    parse_payment_worksheet_from_notes,
+    patch_worksheet_refresh_profile,
+    write_payment_worksheet_profile,
+)
 
 router = APIRouter()
 
@@ -60,6 +70,15 @@ class FundingBucketRow(BaseModel):
     label: str
     sort_order: int
     firefly_account_ids: list[str]
+
+
+class PaymentWorksheetBody(BaseModel):
+    included: bool | None = None
+    worksheet_section: str | None = None
+    funding_bucket_key: str | None = None
+    credit_limit: str | None = None
+    default_planned_payment: str | None = None
+    sort_order: int | None = None
 
 
 def _row_from_db(row: dict) -> FundingBucketRow:
@@ -131,3 +150,26 @@ async def delete_bucket(
         raise HTTPException(status_code=404, detail="Bucket not found.")
     await sidecar_db.delete_funding_bucket(bucket_id)
     return {"ok": True}
+
+
+@router.put("/payment-run/accounts/{account_id}/worksheet")
+async def update_account_worksheet(
+    account_id: str,
+    body: PaymentWorksheetBody,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    account = await client.fetch_account(account_id)
+    attrs = account.get("attributes", {})
+    if not is_credit_card_asset(attrs):
+        raise HTTPException(
+            status_code=422, detail="Account must be an asset credit card."
+        )
+    existing_notes = attrs.get("notes") or ""
+    existing_profile = parse_payment_worksheet_from_notes(existing_notes)
+    updates = body.model_dump(exclude_unset=True)
+    merged = merge_payment_worksheet_profile(existing_profile, updates)
+    await write_payment_worksheet_profile(client, account_id, merged)
+    await patch_worksheet_refresh_profile(current_month_key(), account_id, merged)
+    firefly_reference_cache.clear()
+    return {"account_id": account_id, "profile": merged}
