@@ -33,9 +33,22 @@ function TestProviders({
   )
 }
 
-function mockPendingFetch(categorizeCount: number, loanSplitCount: number) {
+function mockPendingFetch(categorizeCount: number, loanSplitCount: number, paymentEnabled = false) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input)
+    if (url.includes("/health")) {
+      return new Response(
+        JSON.stringify({
+          status: "ok",
+          firefly_base_url_configured: true,
+          firefly_api_token_configured: true,
+          openrouter_configured: false,
+          sidecar_writable: true,
+          payment_worksheet_enabled: paymentEnabled,
+        }),
+        { status: 200 },
+      )
+    }
     if (url.includes("/api/categorize/pending")) {
       return new Response(
         JSON.stringify({
@@ -193,6 +206,35 @@ describe("AppSidebar Manage section", () => {
 
     await waitFor(() => {
       expect(document.querySelector('[data-sidebar="menu-badge"]')).toBeNull()
+    })
+  })
+
+  it("hides Payment Worksheet nav when payment_worksheet_enabled is false", async () => {
+    mockPendingFetch(0, 0, false)
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Manage")).toBeTruthy()
+    })
+    expect(document.querySelector('a[href="/manage/payment-run"]')).toBeNull()
+  })
+
+  it("shows Payment Worksheet nav when payment_worksheet_enabled is true", async () => {
+    mockPendingFetch(0, 0, true)
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(document.querySelector('a[href="/manage/payment-run"]')).toBeTruthy()
     })
   })
 })

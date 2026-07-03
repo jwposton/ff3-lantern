@@ -6,6 +6,7 @@ import {
   Table,
   Tags,
   TrendingUp,
+  Wallet,
   type LucideIcon,
 } from "lucide-react"
 import { useMemo } from "react"
@@ -15,6 +16,7 @@ import { AppVersionBadge } from "@/components/AppVersionBadge"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
 import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
 import { Button } from "@/components/ui/button"
+import { useHealth } from "@/hooks/useHealth"
 import { useManageQueueCounts } from "@/hooks/useManageQueueCounts"
 import {
   CHART_NAV_ENTRIES,
@@ -59,7 +61,7 @@ const chartNavMeta: Record<
   "/mom": { label: "Variance", icon: ComparisonGraphIcon },
 }
 
-const manageNavItems = [
+const baseManageNavItems = [
   {
     to: "/manage/categorize",
     label: "Categorize",
@@ -73,6 +75,13 @@ const manageNavItems = [
     end: true,
   },
 ] as const
+
+const paymentWorksheetNavItem = {
+  to: "/manage/payment-run",
+  label: "Payment Worksheet",
+  icon: Wallet,
+  end: true,
+} as const
 
 function formatBadgeCount(count: number): string {
   return count > 99 ? "99+" : String(count)
@@ -198,10 +207,16 @@ function ManageNavItem({
 function ManageNavItems({
   categorizeCount,
   loanSplitCount,
+  paymentWorksheetEnabled,
 }: {
   categorizeCount: number
   loanSplitCount: number
+  paymentWorksheetEnabled: boolean
 }) {
+  const manageNavItems = paymentWorksheetEnabled
+    ? [...baseManageNavItems, paymentWorksheetNavItem]
+    : baseManageNavItems
+
   const badgeCounts: Record<string, number> = {
     "/manage/categorize": categorizeCount,
     "/manage/loans/queue": loanSplitCount,
@@ -222,6 +237,8 @@ function ManageNavItems({
 
 export function AppSidebar() {
   const { categorizeCount, loanSplitCount } = useManageQueueCounts()
+  const { data: health } = useHealth()
+  const paymentWorksheetEnabled = health?.payment_worksheet_enabled ?? false
 
   return (
     <Sidebar collapsible="icon">
@@ -251,6 +268,7 @@ export function AppSidebar() {
               <ManageNavItems
                 categorizeCount={categorizeCount}
                 loanSplitCount={loanSplitCount}
+                paymentWorksheetEnabled={paymentWorksheetEnabled}
               />
             </SidebarMenu>
           </SidebarGroupContent>

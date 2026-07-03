@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Refresh balances** — Manual refresh pulls Firefly balances and credit card activity columns (New, interest, fees, owed)
 - **Payment worksheet API** — View endpoint returns sidecar snapshot without live Firefly pull; inline profile edits visible on GET without refresh
 - **Payment worksheet mutations** — Row planned/paid and bucket user balance endpoints
+- **Payment worksheet page** — Manage screen at `/manage/payment-run` with manual Refresh and GET-only load on open
+- **Funding bucket bar** — Sticky bucket cards with reported, user, planned outflows, remaining, and footer totals
 - **Categorize transaction description** — Optional description edit when saving a single transaction; field pre-fills with the Firefly bank description (not a placeholder)
 - **Transaction Explorer mass edit** — Advanced filters (description, destination, type, exact amount, uncategorized only), row selection, and bulk category/budget updates via Firefly API
 - **Transaction Explorer AI filters** — Optional natural-language filter parsing via OpenRouter; `OPENROUTER_FILTER_MODEL` overrides the categorize model when set
