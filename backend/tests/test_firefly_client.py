@@ -559,3 +559,166 @@ def test_fetch_account_returns_notes():
     account = asyncio.run(client.fetch_account("42"))
     assert account["id"] == "42"
     assert account["attributes"]["notes"] == "loan profile here"
+
+
+def test_fetch_bills_paginates_and_maps_fields():
+    page = {"current": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/bills") and request.method == "GET":
+            page["current"] += 1
+            if page["current"] == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {
+                                "type": "bills",
+                                "id": "1",
+                                "attributes": {
+                                    "name": "Rent",
+                                    "amount_min": "1200.00",
+                                    "amount_max": "1200.00",
+                                    "repeat_freq": "monthly",
+                                },
+                            }
+                        ],
+                        "meta": {
+                            "pagination": {"current_page": 1, "total_pages": 2}
+                        },
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "bills",
+                            "id": "2",
+                            "attributes": {
+                                "name": "Internet",
+                                "amount_min": "80.00",
+                                "amount_max": "80.00",
+                                "repeat_frequency": "monthly",
+                            },
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 2, "total_pages": 2}},
+                },
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    bills = asyncio.run(client.fetch_bills())
+    assert len(bills) == 2
+    assert bills[0] == {
+        "id": "1",
+        "name": "Rent",
+        "amount_min": "1200.00",
+        "amount_max": "1200.00",
+        "repeat_freq": "monthly",
+    }
+    assert bills[1]["id"] == "2"
+    assert bills[1]["repeat_freq"] == "monthly"
+
+
+def test_fetch_bill_returns_single_bill():
+    payload = {
+        "data": {
+            "type": "bills",
+            "id": "5",
+            "attributes": {
+                "name": "Electric",
+                "amount_min": "90.00",
+                "amount_max": "150.00",
+                "repeat_freq": "monthly",
+            },
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills/5":
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    bill = asyncio.run(client.fetch_bill("5"))
+    assert bill["id"] == "5"
+    assert bill["name"] == "Electric"
+    assert bill["amount_min"] == "90.00"
+
+
+def test_fetch_bill_raises_on_404():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills/99":
+            return httpx.Response(404, text="Not found")
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    with pytest.raises(RuntimeError, match="404"):
+        asyncio.run(client.fetch_bill("99"))
+
+
+def test_create_bill_posts_and_returns_id():
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills" and request.method == "POST":
+            seen.append(json.loads(request.content.decode()))
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "15",
+                        "attributes": {
+                            "name": seen[-1]["name"],
+                            "amount_min": "50.00",
+                            "amount_max": "50.00",
+                            "repeat_freq": "monthly",
+                        },
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    body = {"name": "Water", "amount_min": "50.00", "amount_max": "50.00"}
+    result = asyncio.run(client.create_bill(body))
+    assert result["id"] == "15"
+    assert result["attributes"]["name"] == "Water"
+    assert seen[0] == body
+
+
+def test_create_bill_raises_on_422():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills" and request.method == "POST":
+            return httpx.Response(
+                422,
+                json={"message": "The name field is required."},
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    with pytest.raises(RuntimeError, match="name field is required"):
+        asyncio.run(client.create_bill({"amount_min": "10.00"}))
