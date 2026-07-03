@@ -173,6 +173,7 @@ def test_put_worksheet_updates_get_envelope(monkeypatch, client, data_dir, payme
     try:
         put_response = client.put(
             "/api/payment-run/accounts/cc1/worksheet",
+            params={"month": month},
             json={"funding_bucket_key": "checking"},
         )
         assert put_response.status_code == 200
@@ -185,12 +186,86 @@ def test_put_worksheet_updates_get_envelope(monkeypatch, client, data_dir, payme
 
         exclude_response = client.put(
             "/api/payment-run/accounts/cc1/worksheet",
+            params={"month": month},
             json={"included": False},
         )
         assert exclude_response.status_code == 200
 
         after_exclude = client.get("/api/payment-run", params={"month": month})
         assert after_exclude.json()["credit_cards"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_put_worksheet_respects_month_param(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    view_month = "2026-06"
+    utc_month = "2026-07"
+    monkeypatch.setattr(
+        "routes.payment_run.current_month_key", lambda: utc_month
+    )
+    import asyncio
+
+    asyncio.run(_seed_worksheet_snapshot(view_month))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/accounts/cc1" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "cc1",
+                        "attributes": {
+                            "name": "Chase VISA",
+                            "type": "asset",
+                            "account_role": "creditCard",
+                            "notes": "",
+                        },
+                    }
+                },
+            )
+        if request.url.path == "/api/v1/accounts/cc1" and request.method == "PUT":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "cc1",
+                        "attributes": json.loads(request.content),
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    from routes import payment_run as payment_run_mod
+    from main import app
+
+    app.dependency_overrides[payment_run_mod.get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    try:
+        put_response = client.put(
+            "/api/payment-run/accounts/cc1/worksheet",
+            params={"month": view_month},
+            json={"funding_bucket_key": "savings"},
+        )
+        assert put_response.status_code == 200
+
+        view_row = asyncio.run(sidecar_db.get_worksheet_refresh(view_month))
+        assert view_row is not None
+        view_balances = json.loads(view_row["balances_json"])
+        assert (
+            view_balances["credit_cards"]["cc1"]["funding_bucket_key"] == "savings"
+        )
+
+        utc_row = asyncio.run(sidecar_db.get_worksheet_refresh(utc_month))
+        assert utc_row is None
+
+        get_response = client.get("/api/payment-run", params={"month": view_month})
+        assert get_response.status_code == 200
+        assert get_response.json()["credit_cards"][0]["funding_bucket_key"] == "savings"
     finally:
         app.dependency_overrides.clear()
 
