@@ -195,6 +195,92 @@ def test_put_worksheet_updates_get_envelope(monkeypatch, client, data_dir, payme
         app.dependency_overrides.clear()
 
 
+def test_put_worksheet_clears_bucket_unassign(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    month = current_month_key()
+    import asyncio
+
+    from payment_worksheet_profiles import (
+        PAYMENT_WORKSHEET_MARKER,
+        parse_payment_worksheet_from_notes,
+    )
+
+    asyncio.run(_seed_worksheet_snapshot(month))
+
+    put_bodies: list[dict] = []
+    notes_state = {"notes": ""}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/accounts/cc1" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "cc1",
+                        "attributes": {
+                            "name": "Chase VISA",
+                            "type": "asset",
+                            "account_role": "creditCard",
+                            "notes": notes_state["notes"],
+                        },
+                    }
+                },
+            )
+        if request.url.path == "/api/v1/accounts/cc1" and request.method == "PUT":
+            body = json.loads(request.content)
+            put_bodies.append(body)
+            notes_state["notes"] = body.get("notes", "")
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "cc1",
+                        "attributes": body,
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    from routes import payment_run as payment_run_mod
+    from main import app
+
+    app.dependency_overrides[payment_run_mod.get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    try:
+        assign_response = client.put(
+            "/api/payment-run/accounts/cc1/worksheet",
+            json={"funding_bucket_key": "checking"},
+        )
+        assert assign_response.status_code == 200
+
+        after_assign = client.get("/api/payment-run", params={"month": month})
+        assert after_assign.status_code == 200
+        assert after_assign.json()["credit_cards"][0]["funding_bucket_key"] == "checking"
+
+        unassign_response = client.put(
+            "/api/payment-run/accounts/cc1/worksheet",
+            json={"funding_bucket_key": None},
+        )
+        assert unassign_response.status_code == 200
+
+        after_unassign = client.get("/api/payment-run", params={"month": month})
+        assert after_unassign.status_code == 200
+        assert after_unassign.json()["credit_cards"][0]["funding_bucket_key"] is None
+
+        assert len(put_bodies) == 2
+        last_notes = put_bodies[-1].get("notes", "")
+        assert PAYMENT_WORKSHEET_MARKER in last_notes
+        parsed = parse_payment_worksheet_from_notes(last_notes)
+        assert parsed is not None
+        assert "funding_bucket_key" not in parsed
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_put_row_state(monkeypatch, client, data_dir, payment_worksheet_env):
     month = current_month_key()
     import asyncio

@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Categorize → Explorer per item** — **Open in Explorer** on each transaction card pre-filters by description and destination (Transaction mode) or rule triggers (Rule mode), matching rule preview behavior for bulk edit without creating a rule
 
 ### Fixed
+
+- **Credit card bucket unassign** — selecting Unassigned clears funding bucket on the worksheet without editing Firefly notes manually
 - **AI filter parse** — Account allowlist for natural-language filter parsing no longer crashes when reading Firefly accounts
 
 ## [1.1.12] - 2026-07-02
