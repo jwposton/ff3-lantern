@@ -7,6 +7,7 @@ from api_normalized_transactions import router as api_router
 from routes.cache import router as cache_router
 from routes.categorize import router as categorize_router
 from routes.loans import router as loans_router
+from routes.payment_run import payment_worksheet_enabled, router as payment_run_router
 from routes.transactions import router as transactions_router
 from cors import parse_cors_origins
 from fastapi import FastAPI
@@ -24,6 +25,7 @@ app = FastAPI(title="FF3Analytics API", version="1.0.2", lifespan=lifespan)
 app.include_router(api_router, prefix="/api")
 app.include_router(categorize_router, prefix="/api")
 app.include_router(loans_router, prefix="/api")
+app.include_router(payment_run_router, prefix="/api")
 app.include_router(transactions_router, prefix="/api")
 app.include_router(cache_router, prefix="/api")
 
@@ -42,6 +44,7 @@ class HealthResponse(BaseModel):
     firefly_api_token_configured: bool
     openrouter_configured: bool
     sidecar_writable: bool
+    payment_worksheet_enabled: bool
 
 
 def _is_set(name: str) -> bool:
@@ -56,4 +59,5 @@ async def health() -> HealthResponse:
         firefly_api_token_configured=_is_set("FIREFLY_API_TOKEN"),
         openrouter_configured=_is_set("OPENROUTER_API_KEY"),
         sidecar_writable=await sidecar_db.is_writable(),
+        payment_worksheet_enabled=payment_worksheet_enabled(),
     )
