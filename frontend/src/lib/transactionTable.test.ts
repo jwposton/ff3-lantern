@@ -4,6 +4,7 @@ import {
   creditCardWithdrawal,
   mainCheckingWithdrawal,
   transportWithdrawal,
+  uncategorizedWithdrawal,
 } from "@/test/fixtures/omniRows"
 import type { OmniRow } from "@/types/NormalizedTransaction"
 
@@ -75,6 +76,28 @@ describe("transactionTable", () => {
       search: "grocery",
     })
     expect(filtered).toEqual([mainCheckingWithdrawal])
+  })
+
+  it("applyFilters description_contains matches description field", () => {
+    const rows = [
+      { ...mainCheckingWithdrawal, description: "AMZN MKTP US" },
+      { ...transportWithdrawal, description: "Shell Gas" },
+    ]
+    const filtered = applyFilters(rows, {
+      ...EMPTY_FILTERS,
+      description_contains: "amzn",
+    })
+    expect(filtered).toHaveLength(1)
+    expect(filtered[0].description).toContain("AMZN")
+  })
+
+  it("applyFilters uncategorized_only excludes categorized rows", () => {
+    const rows = [mainCheckingWithdrawal, uncategorizedWithdrawal]
+    const filtered = applyFilters(rows, {
+      ...EMPTY_FILTERS,
+      uncategorized_only: true,
+    })
+    expect(filtered).toEqual([uncategorizedWithdrawal])
   })
 
   it("hasActiveFilters is false for empty filters", () => {

@@ -1,24 +1,19 @@
 import { isSpendingWithdrawal } from "@/lib/spending"
 import type { OmniRow } from "@/types/NormalizedTransaction"
 
-export const PAGE_SIZE = 50
-
-export type SortKey =
-  | "date"
-  | "amount"
-  | "type"
-  | "category"
-  | "budget"
-  | "source_account"
-  | "destination_account"
-
-export type SortDir = "asc" | "desc"
+export type DestinationMatchType = "contains" | "starts_with" | "ends_with" | "is"
 
 export type FilterState = {
   categories: string[]
   budget: string | null
   account: string | null
   search: string
+  description_contains: string
+  destination_account: string
+  destination_match_type: DestinationMatchType
+  transaction_type: string | null
+  amount_exact: string
+  uncategorized_only: boolean
 }
 
 export const EMPTY_FILTERS: FilterState = {
@@ -26,6 +21,12 @@ export const EMPTY_FILTERS: FilterState = {
   budget: null,
   account: null,
   search: "",
+  description_contains: "",
+  destination_account: "",
+  destination_match_type: "contains",
+  transaction_type: null,
+  amount_exact: "",
+  uncategorized_only: false,
 }
 
 export function hasActiveFilters(filters: FilterState): boolean {
@@ -33,8 +34,21 @@ export function hasActiveFilters(filters: FilterState): boolean {
     filters.categories.length > 0 ||
     filters.budget != null ||
     filters.account != null ||
-    filters.search.trim() !== ""
+    filters.search.trim() !== "" ||
+    filters.description_contains.trim() !== "" ||
+    filters.destination_account.trim() !== "" ||
+    filters.transaction_type != null ||
+    filters.amount_exact.trim() !== "" ||
+    filters.uncategorized_only
   )
+}
+
+export function rowKey(row: OmniRow): string {
+  return `${row.journal_id ?? ""}:${row.transaction_journal_id ?? ""}`
+}
+
+export function isRowEditable(row: OmniRow): boolean {
+  return Boolean(row.journal_id && row.transaction_journal_id)
 }
 
 function distinctField(
@@ -63,6 +77,35 @@ export function distinctSourceAccounts(rows: OmniRow[]): string[] {
   return distinctField(rows, "source_account")
 }
 
+function normalizeAmount(value: string): number | null {
+  const raw = value.trim().replace(",", ".")
+  if (!raw) return null
+  const n = parseFloat(raw)
+  return Number.isFinite(n) ? Math.abs(n) : null
+}
+
+function destinationMatches(
+  destName: string,
+  needle: string,
+  matchType: DestinationMatchType,
+): boolean {
+  const haystack = destName.trim()
+  const n = needle.trim()
+  if (!n) return true
+  if (matchType === "is") return haystack === n
+  const haystackLower = haystack.toLowerCase()
+  const nLower = n.toLowerCase()
+  if (matchType === "contains") return haystackLower.includes(nLower)
+  if (matchType === "starts_with") return haystackLower.startsWith(nLower)
+  if (matchType === "ends_with") return haystackLower.endsWith(nLower)
+  return false
+}
+
+function isUncategorizedRow(row: OmniRow): boolean {
+  const category = row.category?.trim()
+  return !category
+}
+
 export function applyFilters(
   rows: OmniRow[],
   filters: FilterState,
@@ -84,6 +127,40 @@ export function applyFilters(
     result = result.filter((row) => row.source_account === filters.account)
   }
 
+  if (filters.transaction_type != null) {
+    result = result.filter((row) => row.type === filters.transaction_type)
+  }
+
+  if (filters.uncategorized_only) {
+    result = result.filter(isUncategorizedRow)
+  }
+
+  const descNeedle = filters.description_contains.trim().toLowerCase()
+  if (descNeedle !== "") {
+    result = result.filter((row) =>
+      (row.description ?? "").toLowerCase().includes(descNeedle),
+    )
+  }
+
+  const destNeedle = filters.destination_account.trim()
+  if (destNeedle !== "") {
+    result = result.filter((row) =>
+      destinationMatches(
+        row.destination_account ?? "",
+        destNeedle,
+        filters.destination_match_type,
+      ),
+    )
+  }
+
+  const amountExact = normalizeAmount(filters.amount_exact)
+  if (amountExact != null) {
+    result = result.filter((row) => {
+      const rowAmount = normalizeAmount(row.amount ?? "")
+      return rowAmount != null && rowAmount === amountExact
+    })
+  }
+
   const search = filters.search.trim().toLowerCase()
   if (search !== "") {
     result = result.filter((row) => {
@@ -92,6 +169,7 @@ export function applyFilters(
         row.budget,
         row.source_account,
         row.destination_account,
+        row.description,
         row.amount,
         row.date,
       ]
@@ -138,6 +216,19 @@ function compareValues(
   const bv = String(b[key] ?? "")
   return av.localeCompare(bv) * sign
 }
+
+export type SortKey =
+  | "date"
+  | "amount"
+  | "type"
+  | "category"
+  | "budget"
+  | "source_account"
+  | "destination_account"
+
+export type SortDir = "asc" | "desc"
+
+export const PAGE_SIZE = 50
 
 export function sortRows(
   rows: OmniRow[],

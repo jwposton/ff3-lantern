@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import type { FilterState } from "@/lib/transactionTable"
+import type { DestinationMatchType, FilterState } from "@/lib/transactionTable"
 import { hasActiveFilters } from "@/lib/transactionTable"
 
 export type FilterOptions = {
@@ -29,6 +29,21 @@ function filterSummary(filters: FilterState): string[] {
   }
   if (filters.account) {
     parts.push(`Account: ${filters.account}`)
+  }
+  if (filters.transaction_type) {
+    parts.push(`Type: ${filters.transaction_type}`)
+  }
+  if (filters.description_contains.trim()) {
+    parts.push(`Description contains: "${filters.description_contains.trim()}"`)
+  }
+  if (filters.destination_account.trim()) {
+    parts.push(`Destination: ${filters.destination_account.trim()}`)
+  }
+  if (filters.amount_exact.trim()) {
+    parts.push(`Amount: ${filters.amount_exact.trim()}`)
+  }
+  if (filters.uncategorized_only) {
+    parts.push("Uncategorized only")
   }
   if (filters.search.trim()) {
     parts.push(`Search: "${filters.search.trim()}"`)
@@ -59,6 +74,12 @@ export function TransactionFilters({
       budget: null,
       account: null,
       search: "",
+      description_contains: "",
+      destination_account: "",
+      destination_match_type: "contains",
+      transaction_type: null,
+      amount_exact: "",
+      uncategorized_only: false,
     })
   }
 
@@ -139,6 +160,24 @@ export function TransactionFilters({
           ))}
         </select>
 
+        <select
+          aria-label="Transaction type filter"
+          className="h-9 rounded-md border border-input bg-transparent px-3 text-sm disabled:opacity-50"
+          value={filters.transaction_type ?? ""}
+          disabled={disabled}
+          onChange={(e) =>
+            onChange({
+              ...filters,
+              transaction_type: e.target.value === "" ? null : e.target.value,
+            })
+          }
+        >
+          <option value="">All types</option>
+          <option value="withdrawal">Withdrawal</option>
+          <option value="deposit">Deposit</option>
+          <option value="transfer">Transfer</option>
+        </select>
+
         <Input
           type="search"
           placeholder="Search…"
@@ -171,6 +210,80 @@ export function TransactionFilters({
           </Button>
         ) : null}
       </div>
+
+      <details className="rounded-md border border-dashed p-2">
+        <summary className="cursor-pointer text-sm font-medium">
+          Advanced filters
+        </summary>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+            Description contains
+            <Input
+              value={filters.description_contains}
+              disabled={disabled}
+              onChange={(e) =>
+                onChange({ ...filters, description_contains: e.target.value })
+              }
+              className="h-9"
+            />
+          </label>
+          <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+            Destination account
+            <Input
+              value={filters.destination_account}
+              disabled={disabled}
+              onChange={(e) =>
+                onChange({ ...filters, destination_account: e.target.value })
+              }
+              className="h-9"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Destination match
+            <select
+              aria-label="Destination match type"
+              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm disabled:opacity-50"
+              value={filters.destination_match_type}
+              disabled={disabled}
+              onChange={(e) =>
+                onChange({
+                  ...filters,
+                  destination_match_type: e.target.value as DestinationMatchType,
+                })
+              }
+            >
+              <option value="contains">Contains</option>
+              <option value="starts_with">Starts with</option>
+              <option value="ends_with">Ends with</option>
+              <option value="is">Is</option>
+            </select>
+          </label>
+          <label className="flex min-w-[8rem] flex-col gap-1 text-xs text-muted-foreground">
+            Exact amount
+            <Input
+              inputMode="decimal"
+              value={filters.amount_exact}
+              disabled={disabled}
+              onChange={(e) =>
+                onChange({ ...filters, amount_exact: e.target.value })
+              }
+              className="h-9"
+            />
+          </label>
+          <label className="flex h-9 items-center gap-2 self-end text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={filters.uncategorized_only}
+              disabled={disabled}
+              onChange={(e) =>
+                onChange({ ...filters, uncategorized_only: e.target.checked })
+              }
+              className="rounded border"
+            />
+            Uncategorized only
+          </label>
+        </div>
+      </details>
 
       {active ? (
         <div className="flex flex-wrap gap-1">
