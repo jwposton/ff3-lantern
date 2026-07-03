@@ -14,6 +14,7 @@ from firefly_client import FireflyClient
 from payment_worksheet_profiles import (
     PAYMENT_WORKSHEET_MARKER,
     current_month_key,
+    merge_payment_worksheet_profile,
     parse_payment_worksheet_from_notes,
     patch_worksheet_refresh_profile,
     serialize_payment_worksheet_to_notes,
@@ -61,6 +62,44 @@ def test_parse_included_false():
 def test_parse_returns_none_without_marker():
     assert parse_payment_worksheet_from_notes("plain notes") is None
     assert parse_payment_worksheet_from_notes("") is None
+
+
+def test_merge_clears_funding_bucket_key_on_null():
+    existing = {**SAMPLE_PROFILE, "funding_bucket_key": "checking"}
+    merged = merge_payment_worksheet_profile(existing, {"funding_bucket_key": None})
+    assert "funding_bucket_key" not in merged
+    assert merged["included"] is True
+    assert merged["worksheet_section"] == "credit"
+
+
+def test_merge_clears_credit_limit_on_null():
+    existing = {**SAMPLE_PROFILE, "credit_limit": "10000.00"}
+    merged = merge_payment_worksheet_profile(existing, {"credit_limit": None})
+    assert "credit_limit" not in merged
+    assert merged["funding_bucket_key"] == "checking"
+
+
+def test_merge_clears_default_planned_payment_on_null():
+    existing = {**SAMPLE_PROFILE, "default_planned_payment": "500.00"}
+    merged = merge_payment_worksheet_profile(existing, {"default_planned_payment": None})
+    assert "default_planned_payment" not in merged
+
+
+def test_merge_preserves_unmentioned_keys():
+    existing = {
+        **SAMPLE_PROFILE,
+        "funding_bucket_key": "checking",
+        "credit_limit": "10000.00",
+    }
+    merged = merge_payment_worksheet_profile(existing, {"funding_bucket_key": None})
+    assert "funding_bucket_key" not in merged
+    assert merged["credit_limit"] == "10000.00"
+
+
+def test_merge_included_false_not_treated_as_clear():
+    existing = {**SAMPLE_PROFILE, "included": True}
+    merged = merge_payment_worksheet_profile(existing, {"included": False})
+    assert merged["included"] is False
 
 
 def test_put_worksheet_writes_marker_to_firefly(monkeypatch, client, firefly_env):
@@ -154,6 +193,74 @@ async def test_patch_refresh_snapshot_bucket_assign(data_dir):
     assert updated["credit_cards"]["cc1"]["funding_bucket_key"] == "checking"
     assert updated["credit_cards"]["cc1"]["credit_limit"] == "8000.00"
     assert row["refreshed_at"] == "2026-07-03T12:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_patch_refresh_clears_bucket_when_updates_null(data_dir):
+    import sidecar_db
+
+    month = current_month_key()
+    balances = {
+        "buckets": {},
+        "credit_cards": {
+            "cc1": {
+                "name": "Chase VISA",
+                "funding_bucket_key": "checking",
+                "owed": "1200.00",
+            }
+        },
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month=month,
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+
+    await patch_worksheet_refresh_profile(
+        month,
+        "cc1",
+        {"included": True, "worksheet_section": "credit"},
+        {"funding_bucket_key": None},
+    )
+
+    row = await sidecar_db.get_worksheet_refresh(month)
+    assert row is not None
+    updated = json.loads(row["balances_json"])
+    assert updated["credit_cards"]["cc1"]["funding_bucket_key"] is None
+
+
+@pytest.mark.asyncio
+async def test_patch_refresh_omitted_bucket_leaves_snapshot_unchanged(data_dir):
+    import sidecar_db
+
+    month = current_month_key()
+    balances = {
+        "buckets": {},
+        "credit_cards": {
+            "cc1": {
+                "name": "Chase VISA",
+                "funding_bucket_key": "checking",
+                "owed": "1200.00",
+            }
+        },
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month=month,
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+
+    await patch_worksheet_refresh_profile(
+        month,
+        "cc1",
+        {"included": True, "worksheet_section": "credit", "credit_limit": "5000.00"},
+        {"credit_limit": "5000.00"},
+    )
+
+    row = await sidecar_db.get_worksheet_refresh(month)
+    updated = json.loads(row["balances_json"])
+    assert updated["credit_cards"]["cc1"]["funding_bucket_key"] == "checking"
+    assert updated["credit_cards"]["cc1"]["credit_limit"] == "5000.00"
 
 
 @pytest.mark.asyncio
