@@ -21,6 +21,76 @@ const EMPTY_ENVELOPE: PaymentWorksheetEnvelope = {
   },
 }
 
+const WORKSHEET_ENVELOPE: PaymentWorksheetEnvelope = {
+  month: "2026-07",
+  refreshed_at: "2026-07-03T12:00:00Z",
+  buckets: [
+    {
+      id: "checking",
+      label: "Checking",
+      sort_order: 0,
+      reported_balance: "5000.00",
+      user_balance: "5000.00",
+      user_balance_override: false,
+      planned_outflows: "900.00",
+      remaining: "4100.00",
+    },
+  ],
+  credit_cards: [
+    {
+      account_id: "cc1",
+      row_key: "cc:cc1",
+      name: "Chase VISA",
+      credit_limit: "10000.00",
+      funding_bucket_key: "checking",
+      owed: "1200.00",
+      new_total: "100.00",
+      interest_accrued: "20.00",
+      fees: "5.00",
+      last_payment_date: null,
+      planned_amount: "400.00",
+      planned_amount_override: false,
+      paid_at: null,
+    },
+    {
+      account_id: "cc2",
+      row_key: "cc:cc2",
+      name: "AmEx",
+      credit_limit: "5000.00",
+      funding_bucket_key: "checking",
+      owed: "800.00",
+      new_total: "50.00",
+      interest_accrued: "10.00",
+      fees: "0.00",
+      last_payment_date: null,
+      planned_amount: "500.00",
+      planned_amount_override: false,
+      paid_at: "2026-07-15T12:00:00Z",
+    },
+  ],
+  shortfall: false,
+  totals: {
+    reported_balance: "5000.00",
+    user_balance: "5000.00",
+    remaining: "4100.00",
+  },
+}
+
+const SHORTFALL_ENVELOPE: PaymentWorksheetEnvelope = {
+  ...WORKSHEET_ENVELOPE,
+  shortfall: true,
+  buckets: [
+    {
+      ...WORKSHEET_ENVELOPE.buckets[0],
+      remaining: "-100.00",
+    },
+  ],
+  totals: {
+    ...WORKSHEET_ENVELOPE.totals,
+    remaining: "-100.00",
+  },
+}
+
 function TestProviders({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -131,6 +201,80 @@ describe("PaymentWorksheetPage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Add funding bucket" })).toBeTruthy()
+    })
+  })
+
+  it("renders bucket bar and credit card rows from mock envelope", async () => {
+    mockPaymentFetch({ envelope: WORKSHEET_ENVELOPE })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("funding-bucket-bar")).toBeTruthy()
+      expect(screen.getByText("Chase VISA")).toBeTruthy()
+      expect(screen.getByText("AmEx")).toBeTruthy()
+    })
+  })
+
+  it("applies paid row styling with data-state=paid", async () => {
+    mockPaymentFetch({ envelope: WORKSHEET_ENVELOPE })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const paidRow = screen.getByText("AmEx").closest("tr")
+      expect(paidRow?.getAttribute("data-state")).toBe("paid")
+    })
+  })
+
+  it("shows shortfall banner when envelope shortfall is true", async () => {
+    mockPaymentFetch({ envelope: SHORTFALL_ENVELOPE })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Shortfall in funding buckets")).toBeTruthy()
+    })
+  })
+
+  it("subtotal includes paid row planned amount", async () => {
+    mockPaymentFetch({ envelope: WORKSHEET_ENVELOPE })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Planned payments subtotal")).toBeTruthy()
+      expect(screen.getByText("900.00")).toBeTruthy()
+    })
+  })
+
+  it("mark paid does not reduce bucket remaining in fixture", async () => {
+    mockPaymentFetch({ envelope: WORKSHEET_ENVELOPE })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("4,100.00")).toBeTruthy()
     })
   })
 })
