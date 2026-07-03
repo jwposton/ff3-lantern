@@ -21,9 +21,117 @@ export type CreditCardActivityTransaction = {
   amount: string
 }
 
-export type CreditCardRow = {
-  account_id: string
+export type PlannedAmountRow = {
   row_key: string
+  planned_amount: string
+  planned_amount_override: boolean
+}
+
+export type BillRow = PlannedAmountRow & {
+  registry_id: number
+  row_label: string | null
+  firefly_bill_id: string | null
+  owed: string
+  paid_at: string | null
+  payment_rail: string
+  counts_toward_cash_plan: boolean
+  funding_bucket_key: string | null
+  credit_card_account_id: string | null
+  amount_mode: string
+  worksheet_section: string
+}
+
+export type LiabilityRow = PlannedAmountRow & {
+  account_id?: string
+  registry_id?: number
+  name?: string | null
+  row_label?: string | null
+  owed: string
+  paid_at: string | null
+  est_interest: string | null
+  remaining_payments: number | null
+  funding_bucket_key: string | null
+  default_planned_payment?: string | null
+  payment_rail?: string
+  counts_toward_cash_plan?: boolean
+  credit_card_account_id?: string | null
+  amount_mode?: string
+}
+
+export type SectionSubtotals = {
+  bills: {
+    owed: string
+    planned_cash: string
+    on_card_informational?: string
+  }
+  liabilities: {
+    owed: string
+    planned_cash: string
+  }
+  credit_cards: {
+    planned_cash: string
+  }
+}
+
+export type GrandTotals = {
+  owed: string
+  planned_cash: string
+}
+
+export type ExcludedLiability = {
+  account_id: string
+  name: string | null
+}
+
+export type AvailableFireflyBill = {
+  id: string
+  name: string | null
+  amount_min?: string | null
+  amount_max?: string | null
+  repeat_freq?: string | null
+}
+
+export type BillRegistryRow = {
+  id: number
+  firefly_bill_id: string | null
+  worksheet_section: string
+  funding_bucket_key: string | null
+  amount_mode: string
+  planned_sync: string
+  payment_rail: string
+  counts_toward_cash_plan: boolean
+  rule_id: string | null
+  row_label: string | null
+  credit_card_account_id: string | null
+}
+
+export type RegisterBillPayload = {
+  mode: "create_new" | "link_existing"
+  name: string
+  amount: string
+  amount_mode: "recurring" | "intermittent"
+  repeat_freq?: string | null
+  worksheet_section: "bills" | "liabilities"
+  payment_rail: "bank" | "credit_card"
+  funding_bucket_key?: string | null
+  credit_card_account_id?: string | null
+  description_contains: string
+  amount_exactly?: string | null
+  firefly_bill_id?: string | null
+  rule_id?: string | null
+}
+
+export type UpdateBillRegistryPayload = {
+  worksheet_section?: "bills" | "liabilities"
+  payment_rail?: "bank" | "credit_card"
+  funding_bucket_key?: string | null
+  credit_card_account_id?: string | null
+  row_label?: string | null
+  amount_mode?: "recurring" | "intermittent"
+}
+
+export type CreditCardRow = PlannedAmountRow & {
+  account_id: string
   name: string | null
   credit_limit: string | null
   funding_bucket_key: string | null
@@ -53,6 +161,11 @@ export type PaymentWorksheetEnvelope = {
   buckets: FundingBucketRollup[]
   credit_cards: CreditCardRow[]
   excluded_credit_cards: ExcludedCreditCard[]
+  bills: BillRow[]
+  liabilities: LiabilityRow[]
+  excluded_liabilities: ExcludedLiability[]
+  section_subtotals: SectionSubtotals
+  grand_totals: GrandTotals
   shortfall: boolean
   firefly_base_url?: string
   totals: {
@@ -231,6 +344,54 @@ export async function putRowState(
     month: string
     planned_amount: string
     paid_at: string | null
+  }
+}
+
+export async function fetchAvailableBills(): Promise<{
+  data: AvailableFireflyBill[]
+}> {
+  const res = await fetch("/api/payment-run/available")
+  if (!res.ok) {
+    await parseError(res, `Failed to fetch available bills (${res.status})`)
+  }
+  return (await res.json()) as { data: AvailableFireflyBill[] }
+}
+
+export async function registerBill(
+  body: RegisterBillPayload,
+): Promise<BillRegistryRow> {
+  const res = await fetch("/api/payment-run/bills/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to register bill (${res.status})`)
+  }
+  return (await res.json()) as BillRegistryRow
+}
+
+export async function updateBillRegistry(
+  registryId: number,
+  body: UpdateBillRegistryPayload,
+): Promise<BillRegistryRow> {
+  const res = await fetch(`/api/payment-run/bills/${registryId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to update bill registration (${res.status})`)
+  }
+  return (await res.json()) as BillRegistryRow
+}
+
+export async function deleteBillRegistry(registryId: number): Promise<void> {
+  const res = await fetch(`/api/payment-run/bills/${registryId}`, {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to remove bill registration (${res.status})`)
   }
 }
 

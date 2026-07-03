@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { PlannedAmountInput } from "./PlannedAmountInput"
-import type { CreditCardRow } from "@/lib/paymentRunApi"
+import type { BillRow, CreditCardRow } from "@/lib/paymentRunApi"
 
 const BASE_ROW: CreditCardRow = {
   account_id: "42",
@@ -61,6 +61,42 @@ describe("PlannedAmountInput", () => {
 
     await waitFor(() => {
       expect(onCommit).toHaveBeenCalledWith("cc:42", { planned_amount: "425" })
+    })
+  })
+
+  it("renders for BillRow without CreditCardRow cast", async () => {
+    const billRow: BillRow = {
+      registry_id: 1,
+      row_key: "bill:1",
+      row_label: "Electric",
+      firefly_bill_id: "ff-1",
+      owed: "99.00",
+      planned_amount: "0.00",
+      planned_amount_override: false,
+      paid_at: null,
+      payment_rail: "bank",
+      counts_toward_cash_plan: true,
+      funding_bucket_key: "checking",
+      credit_card_account_id: null,
+      amount_mode: "recurring",
+      worksheet_section: "bills",
+    }
+    const onCommit = vi.fn(async () => {})
+
+    render(
+      <PlannedAmountInput row={billRow} isPaid={false} onCommit={onCommit} />,
+    )
+
+    const input = screen.getByPlaceholderText("0.00") as HTMLInputElement
+    expect(input.value).toBe("")
+
+    fireEvent.change(input, { target: { value: "125.50" } })
+    fireEvent.blur(input)
+
+    await waitFor(() => {
+      expect(onCommit).toHaveBeenCalledWith("bill:1", {
+        planned_amount: "125.50",
+      })
     })
   })
 

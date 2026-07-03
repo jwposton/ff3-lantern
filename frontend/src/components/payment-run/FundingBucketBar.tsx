@@ -19,7 +19,7 @@ type FundingBucketBarProps = {
   onBalanceBlur: (
     bucketId: string,
     body: { user_balance: string; reset_to_reported?: boolean },
-  ) => void
+  ) => Promise<void>
   onResetBalance: (bucketId: string) => void
 }
 

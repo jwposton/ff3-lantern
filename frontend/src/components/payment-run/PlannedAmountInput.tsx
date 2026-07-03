@@ -6,11 +6,11 @@ import {
   resolvePlannedAmountCommit,
   SOFT_PLANNED_AMOUNT_PLACEHOLDER,
 } from "@/lib/paymentRunFormat"
-import type { CreditCardRow } from "@/lib/paymentRunApi"
+import type { PlannedAmountRow } from "@/lib/paymentRunApi"
 import { cn } from "@/lib/utils"
 
 type PlannedAmountInputProps = {
-  row: CreditCardRow
+  row: PlannedAmountRow
   isPaid: boolean
   onCommit: (
     rowKey: string,

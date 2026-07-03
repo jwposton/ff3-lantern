@@ -9,12 +9,25 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { PaymentWorksheetPage } from "./PaymentWorksheetPage"
 import type { PaymentWorksheetEnvelope } from "@/lib/paymentRunApi"
 
+const EMPTY_SECTION_SUBTOTALS = {
+  bills: { owed: "0.00", planned_cash: "0.00" },
+  liabilities: { owed: "0.00", planned_cash: "0.00" },
+  credit_cards: { planned_cash: "0.00" },
+}
+
+const EMPTY_GRAND_TOTALS = { owed: "0.00", planned_cash: "0.00" }
+
 const EMPTY_ENVELOPE: PaymentWorksheetEnvelope = {
   month: "2026-07",
   refreshed_at: null,
   buckets: [],
   credit_cards: [],
   excluded_credit_cards: [],
+  bills: [],
+  liabilities: [],
+  excluded_liabilities: [],
+  section_subtotals: EMPTY_SECTION_SUBTOTALS,
+  grand_totals: EMPTY_GRAND_TOTALS,
   shortfall: false,
   totals: {
     reported_balance: "0.00",
@@ -113,6 +126,11 @@ const WORKSHEET_ENVELOPE: PaymentWorksheetEnvelope = {
   ],
   shortfall: false,
   excluded_credit_cards: [],
+  bills: [],
+  liabilities: [],
+  excluded_liabilities: [],
+  section_subtotals: EMPTY_SECTION_SUBTOTALS,
+  grand_totals: EMPTY_GRAND_TOTALS,
   firefly_base_url: "https://ff.example",
   totals: {
     reported_balance: "5000.00",
