@@ -157,6 +157,7 @@ class ApplyRequest(BaseModel):
     category_id: str
     transaction_journal_id: str
     budget_id: str | None = None
+    description: str | None = None
 
 
 class IgnoreRequest(BaseModel):
@@ -180,6 +181,7 @@ async def post_categorize_apply(
             body.transaction_journal_id,
             body.category_id,
             body.budget_id,
+            body.description,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

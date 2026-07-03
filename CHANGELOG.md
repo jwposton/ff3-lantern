@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Date and amount display** — Transaction dates show as `YYYY-MM-DD` (no timestamps) in the explorer, categorize queue, loan splits, and rule preview; amounts use two decimal places
+- **Click affordance** — Pointer cursor on buttons, links, and other standard interactive controls
+- **Categorize cards** — Tighter layout on transaction tiles; mode toggle **Transaction** / **Rule**; direct apply uses **Save** instead of Approve
+- **Categorize rule preview** — Matching transactions shown as a compact table (up to 10 rows: date, amount, from, to, description, budget, category) on a plain background; amounts and dates formatted consistently app-wide
+
 ### Added
 
+- **Categorize transaction description** — Optional description edit when saving a single transaction; field pre-fills with the Firefly bank description (not a placeholder)
 - **Transaction Explorer mass edit** — Advanced filters (description, destination, type, exact amount, uncategorized only), row selection, and bulk category/budget updates via Firefly API
 - **Transaction Explorer AI filters** — Optional natural-language filter parsing via OpenRouter; `OPENROUTER_FILTER_MODEL` overrides the categorize model when set
 

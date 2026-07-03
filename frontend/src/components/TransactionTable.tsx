@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { buildFireflyTransactionUrl } from "@/lib/fireflyLinks"
+import { formatDisplayDate } from "@/lib/formatDisplay"
 import { formatCurrency, isSpendingWithdrawal } from "@/lib/spending"
 import { isRowEditable, rowKey, type SortDir, type SortKey } from "@/lib/transactionTable"
 import type { OmniRow } from "@/types/NormalizedTransaction"
@@ -183,7 +184,7 @@ export function TransactionTable({
                   <TableCell>
                     <input
                       type="checkbox"
-                      aria-label={`Select transaction ${row.date}`}
+                      aria-label={`Select transaction ${formatDisplayDate(row.date)}`}
                       checked={selectedKeys?.has(key) ?? false}
                       disabled={!editable}
                       onChange={(e) => onToggleRow?.(key, e.target.checked)}
@@ -191,7 +192,7 @@ export function TransactionTable({
                     />
                   </TableCell>
                 ) : null}
-                <TableCell>{row.date}</TableCell>
+                <TableCell>{formatDisplayDate(row.date)}</TableCell>
                 <TableCell className={amount.className}>{amount.text}</TableCell>
                 <TableCell>
                   {showAllTypes && row.type ? (

@@ -69,10 +69,21 @@ export type GroupedPendingResponse = {
   }
 }
 
+export type RulePreviewSampleRow = {
+  date: string
+  amount: string
+  source_name: string | null
+  destination_name: string | null
+  description: string
+  budget_name: string | null
+  category_name: string | null
+}
+
 export type RulePreviewCounts = {
   total: number
   uncategorized_count: number
   categorized_count: number
+  sample: RulePreviewSampleRow[]
 }
 
 function apiErrorDetail(payload: { detail?: unknown }, fallback: string): string {
@@ -154,6 +165,7 @@ export async function applyCategorization(
     category_id: string
     transaction_journal_id: string
     budget_id?: string | null
+    description?: string | null
   },
 ): Promise<{ ok: boolean; journal_id: string }> {
   const res = await fetch(`/api/categorize/${journalId}/apply`, {

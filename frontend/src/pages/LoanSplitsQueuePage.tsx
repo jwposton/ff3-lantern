@@ -16,6 +16,7 @@ import {
   type SplitAmounts,
 } from "@/lib/loanApi"
 import { invalidateReportCaches } from "@/lib/reportCache"
+import { formatDisplayAmount, formatDisplayDate } from "@/lib/formatDisplay"
 
 type AmountState = Record<string, SplitAmounts>
 
@@ -170,10 +171,14 @@ export function LoanSplitsQueuePage() {
                       fireflyBaseUrl={fireflyBaseUrl}
                       journalId={row.journal_id}
                     />
-                    <span className="font-medium">{row.amount}</span>
+                    <span className="font-medium tabular-nums">
+                      {formatDisplayAmount(row.amount)}
+                    </span>
                   </div>
                 </div>
-                <p className="text-muted-foreground text-xs">{row.date}</p>
+                <p className="text-muted-foreground text-xs">
+                  {formatDisplayDate(row.date)}
+                </p>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-3">

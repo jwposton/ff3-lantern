@@ -135,16 +135,48 @@ def _matches_draft(split: dict[str, Any], draft: RuleDraft) -> bool:
     return desc_ok and dest_ok
 
 
+_PREVIEW_SAMPLE_LIMIT = 10
+
+
+def _format_preview_amount(value: Any) -> str:
+    amount = _normalize_amount(str(value) if value is not None else None)
+    if amount is None:
+        return "0.00"
+    return f"{amount:.2f}"
+
+
+def _format_preview_date(value: Any) -> str:
+    raw = str(value or "").strip()
+    return raw[:10] if raw else ""
+
+
+def _preview_sample_row(split: dict[str, Any]) -> dict[str, Any]:
+    budget = split.get("budget_name") or split.get("budget")
+    category = split.get("category_name") or split.get("category")
+    source = split.get("source_name")
+    destination = split.get("destination_name")
+    return {
+        "date": _format_preview_date(split.get("date")),
+        "amount": _format_preview_amount(split.get("amount")),
+        "source_name": source if source else None,
+        "destination_name": destination if destination else None,
+        "description": split.get("description") or "",
+        "budget_name": budget if budget else None,
+        "category_name": category if category else None,
+    }
+
+
 async def preview_rule_matches(
     client: FireflyClient,
     start: str,
     end: str,
     draft: RuleDraft,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """Count splits matching draft triggers in date range."""
     validate_rule_triggers(draft)
     splits = await client.fetch_splits(start, end)
     total = uncategorized_count = categorized_count = 0
+    sample: list[dict[str, Any]] = []
     for split in splits:
         if not _matches_draft(split, draft):
             continue
@@ -153,10 +185,13 @@ async def preview_rule_matches(
             uncategorized_count += 1
         else:
             categorized_count += 1
+        if len(sample) < _PREVIEW_SAMPLE_LIMIT:
+            sample.append(_preview_sample_row(split))
     return {
         "total": total,
         "uncategorized_count": uncategorized_count,
         "categorized_count": categorized_count,
+        "sample": sample,
     }
 
 
