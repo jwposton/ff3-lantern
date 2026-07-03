@@ -344,6 +344,7 @@ class FireflyClient:
                 "id": str(entry.get("id")),
                 "title": entry.get("attributes", {}).get("title"),
                 "triggers": entry.get("attributes", {}).get("triggers") or [],
+                "actions": entry.get("attributes", {}).get("actions") or [],
             },
         )
 

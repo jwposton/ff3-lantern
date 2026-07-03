@@ -360,7 +360,14 @@ def test_fetch_rules_returns_id_and_title():
         api_token="tok",
     )
     rules = asyncio.run(client.fetch_rules())
-    assert rules == [{"id": "7", "title": "Auto categorize groceries", "triggers": []}]
+    assert rules == [
+        {
+            "id": "7",
+            "title": "Auto categorize groceries",
+            "triggers": [],
+            "actions": [],
+        }
+    ]
 
 
 def test_create_rule_posts_active_body():
