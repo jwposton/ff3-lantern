@@ -20,6 +20,7 @@ from payment_worksheet_profiles import (
     patch_worksheet_refresh_profile,
     write_payment_worksheet_profile,
 )
+from payment_worksheet_refresh import run_refresh
 
 router = APIRouter()
 
@@ -93,6 +94,18 @@ def _row_from_db(row: dict) -> FundingBucketRow:
 @router.get("/payment-run")
 async def get_payment_run_stub(_: None = Depends(require_payment_worksheet)):
     return {"ok": True}
+
+
+@router.post("/payment-run/refresh")
+async def refresh_payment_worksheet(
+    month: str | None = None,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    target_month = month or current_month_key()
+    if len(target_month) != 7 or target_month[4] != "-":
+        raise HTTPException(status_code=422, detail="month must be YYYY-MM.")
+    return await run_refresh(client, target_month)
 
 
 @router.get("/payment-run/buckets")

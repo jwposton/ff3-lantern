@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Payment worksheet foundation** — Sidecar tables and funding-bucket API behind `FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED` feature flag
 - **Credit card worksheet profiles** — Include-all-by-default credit cards with exclude via account notes; inline bucket assign and exclude update the worksheet snapshot without a full refresh
+- **Refresh balances** — Manual refresh pulls Firefly balances and credit card activity columns (New, interest, fees, owed)
 - **Categorize transaction description** — Optional description edit when saving a single transaction; field pre-fills with the Firefly bank description (not a placeholder)
 - **Transaction Explorer mass edit** — Advanced filters (description, destination, type, exact amount, uncategorized only), row selection, and bulk category/budget updates via Firefly API
 - **Transaction Explorer AI filters** — Optional natural-language filter parsing via OpenRouter; `OPENROUTER_FILTER_MODEL` overrides the categorize model when set
