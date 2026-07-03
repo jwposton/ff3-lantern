@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Transaction Explorer mass edit** — Advanced filters (description, destination, type, exact amount, uncategorized only), row selection, and bulk category/budget updates via Firefly API
+- **Transaction Explorer AI filters** — Optional natural-language filter parsing via OpenRouter; `OPENROUTER_FILTER_MODEL` overrides the categorize model when set
 
 ## [1.1.12] - 2026-07-02
 
