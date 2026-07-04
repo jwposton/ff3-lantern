@@ -17,6 +17,16 @@ import {
 } from "@/lib/deltaHeatmap"
 import { formatCurrency } from "@/lib/spending"
 
+/** Opaque equivalents of TableRow's muted/30 and hover muted/50 stripes (sticky cells cannot use alpha). */
+const VARIANCE_ROW_STRIPE =
+  "odd:!bg-background even:!bg-[color-mix(in_oklch,var(--muted)_30%,var(--background)_70%)] hover:!bg-[color-mix(in_oklch,var(--muted)_50%,var(--background)_50%)]"
+
+const VARIANCE_STICKY_CELL_STRIPE =
+  "group-odd:bg-background group-even:bg-[color-mix(in_oklch,var(--muted)_30%,var(--background)_70%)] group-hover:bg-[color-mix(in_oklch,var(--muted)_50%,var(--background)_50%)]"
+
+const VARIANCE_STICKY_SHADOW =
+  "shadow-[4px_0_6px_-4px_rgba(0,0,0,0.12)]"
+
 function formatSignedCurrency(value: number): string {
   const prefix = value >= 0 ? "+" : ""
   return `${prefix}${formatCurrency(value)}`
@@ -75,7 +85,9 @@ export function MomVarianceDataTable({
     <Table data-testid={embedded ? "mom-variance-table-embedded" : "mom-variance-table"}>
       <TableHeader>
         <TableRow>
-          <TableHead className="sticky left-0 z-10 bg-muted/50">
+          <TableHead
+            className={`sticky left-0 z-20 bg-[color-mix(in_oklch,var(--muted)_50%,var(--background)_50%)] ${VARIANCE_STICKY_SHADOW}`}
+          >
             {tableData.rowLabel}
           </TableHead>
           {tableData.columns.map((column) => (
@@ -89,10 +101,18 @@ export function MomVarianceDataTable({
         {tableData.rows.map((row) => (
           <TableRow
             key={row.name}
-            className={onRowSelect ? "cursor-pointer" : undefined}
+            className={[
+              "group",
+              VARIANCE_ROW_STRIPE,
+              onRowSelect ? "cursor-pointer" : undefined,
+            ]
+              .filter(Boolean)
+              .join(" ")}
             onClick={onRowSelect ? () => onRowSelect(row.name) : undefined}
           >
-            <TableCell className="sticky left-0 z-10 bg-inherit font-medium">
+            <TableCell
+              className={`sticky left-0 z-20 font-medium ${VARIANCE_STICKY_SHADOW} ${VARIANCE_STICKY_CELL_STRIPE}`}
+            >
               {row.name}
             </TableCell>
             {tableData.columns.map((column) => {

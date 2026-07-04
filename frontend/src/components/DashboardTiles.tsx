@@ -35,7 +35,6 @@ import {
 import {
   isCashFlowOutflow,
   isSpendingExpense,
-  isSpendingWithdrawal,
   monthCashFlowKpi,
 } from "@/lib/spending"
 import type { OmniRow } from "@/types/NormalizedTransaction"
@@ -131,7 +130,7 @@ export function DashboardTiles({
   )
 
   const averageSpendingRows = useMemo(
-    () => averageRows.filter(isSpendingWithdrawal),
+    () => averageRows.filter(isSpendingExpense),
     [averageRows],
   )
   const currentMonthRows = useMemo(

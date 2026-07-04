@@ -63,15 +63,20 @@ vi.mock("@/components/BudgetCurrentVsAverageChart", () => ({
   BudgetCurrentVsAverageChart: ({
     chartTitle,
     chartSubtitle,
+    sortedNames,
     onSelect,
   }: {
     chartTitle?: string
     chartSubtitle?: string
+    sortedNames?: string[]
     onSelect?: (name: string) => void
   }) => (
     <div data-testid="budget-current-vs-average-chart">
       <span>{chartTitle}</span>
       <span>{chartSubtitle}</span>
+      {sortedNames?.map((name) => (
+        <span key={name}>{name}</span>
+      ))}
       {onSelect ? (
         <button
           type="button"
@@ -256,6 +261,35 @@ describe("DashboardTiles", () => {
     expect(mockNavigate).toHaveBeenCalledWith(
       "/manage/categorize?start=2024-01-01&end=2024-01-31",
     )
+  })
+
+  it("includes credit card spending in budget vs average bar ranking", () => {
+    const ccInterestWithdrawal = {
+      ...creditCardWithdrawal,
+      amount: "67.00",
+      budget: "Credit card interest",
+      category: "Interest",
+      date: "2024-01-10",
+    }
+
+    render(
+      <MemoryRouter>
+        <DashboardTiles
+          rangeRows={spendingRowsForTotal}
+          rangeStart="2024-01-01"
+          rangeEnd="2024-01-31"
+          averageRows={[ccInterestWithdrawal, mainCheckingWithdrawal]}
+          averageStart="2023-01-01"
+          averageEnd="2024-01-31"
+          isRangeLoading={false}
+          isAverageLoading={false}
+          isError={false}
+          onRetry={() => {}}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText("Credit card interest")).toBeTruthy()
   })
 
   it("navigates to spending bar when bar row is selected", () => {

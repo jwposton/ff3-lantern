@@ -186,6 +186,25 @@ export type UpdateBillRegistryPayload = {
   credit_card_account_id?: string | null
   row_label?: string | null
   amount_mode?: "recurring" | "intermittent"
+  name?: string
+  amount_min?: string
+  amount_max?: string
+  repeat_freq?: string
+}
+
+export type BillRegistryEditDetails = {
+  registry_id: number
+  row_label: string | null
+  firefly_bill_id: string | null
+  worksheet_section: string
+  payment_rail: string
+  amount_mode: string
+  funding_bucket_key: string | null
+  credit_card_account_id: string | null
+  name: string | null
+  amount_min: string | null
+  amount_max: string | null
+  repeat_freq: string | null
 }
 
 export type CreditCardRow = PlannedAmountRow & {
@@ -599,6 +618,16 @@ export async function registerBill(
     await parseError(res, `Failed to register bill (${res.status})`)
   }
   return (await res.json()) as BillRegistryRow
+}
+
+export async function fetchBillRegistry(
+  registryId: number,
+): Promise<BillRegistryEditDetails> {
+  const res = await fetch(`/api/payment-run/bills/${registryId}`)
+  if (!res.ok) {
+    await parseError(res, `Failed to load bill registration (${res.status})`)
+  }
+  return (await res.json()) as BillRegistryEditDetails
 }
 
 export async function updateBillRegistry(

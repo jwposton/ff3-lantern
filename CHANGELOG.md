@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Budget vs 12-month average tile** — credit card charges (interest, purchases) now count toward the bar chart using the same spending definition as the pie chart (#57)
+- **Variance detail table** — sticky budget column stays opaque and matches row striping while scrolling horizontally (#56)
+- **Transaction Explorer filters** — filter panel scrolls with the page instead of staying pinned (#38)
+- **Bill edit registration** — editing a registered bill pre-fills amount min/max from Firefly and saves amount changes back to the linked bill (#40)
+
+### Removed
+
+- **Transaction Explorer AI filter** — removed the natural-language “Describe what you're looking for…” panel, `POST /api/transactions/parse-filter`, and `OPENROUTER_FILTER_MODEL`; manual and Advanced filters unchanged (#39)
+
 ## [2.1.1] - 2026-07-04
 
 ### Added

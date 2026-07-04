@@ -14,6 +14,7 @@ import {
 import { useCategorizeMeta } from "@/hooks/useCategorizeMeta"
 import {
   fetchBillLinkRules,
+  fetchBillRegistry,
   type AvailableFireflyBill,
   type BillLinkRule,
   type BillRegistrationPrefill,
@@ -32,6 +33,9 @@ export type BillRegistrationEditTarget = {
   funding_bucket_key: string | null
   credit_card_account_id: string | null
   amount_mode: string
+  amount_min?: string | null
+  amount_max?: string | null
+  repeat_freq?: string | null
 }
 
 type BillRegistrationSheetProps = {
@@ -145,6 +149,7 @@ export function BillRegistrationSheet({
   const [linkRulesError, setLinkRulesError] = useState<string | null>(null)
   const [useExistingRule, setUseExistingRule] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [loadingEditDetails, setLoadingEditDetails] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [suggestedFields, setSuggestedFields] = useState<Set<string>>(
     () => new Set(),
@@ -160,12 +165,12 @@ export function BillRegistrationSheet({
     if (editTarget) {
       setMode("create_new")
       setName(editTarget.row_label ?? "")
-      setAmountMin("")
-      setAmountMax("")
+      setAmountMin(editTarget.amount_min ?? "")
+      setAmountMax(editTarget.amount_max ?? editTarget.amount_min ?? "")
       setAmountMode(
         editTarget.amount_mode === "intermittent" ? "intermittent" : "recurring",
       )
-      setRepeatFreq("monthly")
+      setRepeatFreq(editTarget.repeat_freq ?? "monthly")
       setWorksheetSection(
         editTarget.worksheet_section === "liabilities" ? "liabilities" : "bills",
       )
@@ -247,6 +252,55 @@ export function BillRegistrationSheet({
     creditCards,
     paymentSourceHint,
   ])
+
+  useEffect(() => {
+    if (!open || !editTarget) {
+      setLoadingEditDetails(false)
+      return
+    }
+
+    let cancelled = false
+    setLoadingEditDetails(true)
+    setError(null)
+    void fetchBillRegistry(editTarget.registryId)
+      .then((details) => {
+        if (cancelled) return
+        setName(details.name ?? details.row_label ?? "")
+        setAmountMin(details.amount_min ?? "")
+        setAmountMax(details.amount_max ?? details.amount_min ?? "")
+        setRepeatFreq(details.repeat_freq ?? "monthly")
+        setAmountMode(
+          details.amount_mode === "intermittent" ? "intermittent" : "recurring",
+        )
+        setWorksheetSection(
+          details.worksheet_section === "liabilities" ? "liabilities" : "bills",
+        )
+        setPaymentRail(
+          details.payment_rail === "credit_card" ? "credit_card" : "bank",
+        )
+        setFundingBucketKey(
+          details.funding_bucket_key ?? buckets[0]?.id ?? "",
+        )
+        setCreditCardAccountId(
+          details.credit_card_account_id ?? creditCards[0]?.account_id ?? "",
+        )
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Could not load bill details for editing.",
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingEditDetails(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, editTarget, buckets, creditCards])
 
   useEffect(() => {
     if (!open) {
@@ -919,6 +973,10 @@ export function BillRegistrationSheet({
             {trimmedNamePreview(name) || "New bill"}
           </p>
 
+          {loadingEditDetails ? (
+            <p className="text-muted-foreground text-sm">Loading bill details…</p>
+          ) : null}
+
           {error ? <p className="text-destructive text-sm">{error}</p> : null}
         </div>
 
@@ -937,7 +995,7 @@ export function BillRegistrationSheet({
           <Button
             type="button"
             size="sm"
-            disabled={saving}
+            disabled={saving || loadingEditDetails}
             onClick={() => void handleSubmit()}
           >
             {saving ? "Saving…" : submitLabel}

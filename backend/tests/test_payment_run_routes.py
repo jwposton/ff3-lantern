@@ -937,6 +937,125 @@ def test_update_bill_registry(monkeypatch, client, data_dir, payment_worksheet_e
     assert body["firefly_bill_id"] == "bill-upd"
 
 
+def test_get_bill_registry(monkeypatch, client, data_dir, payment_worksheet_env):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-get",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-get",
+                "row_label": "Water",
+            }
+        )
+    )
+
+    class _FetchBillClient(FireflyClient):
+        async def fetch_bill(self, bill_id: str):
+            assert bill_id == "bill-get"
+            return {
+                "id": bill_id,
+                "name": "Water",
+                "amount_min": "45.00",
+                "amount_max": "45.00",
+                "repeat_freq": "monthly",
+            }
+
+    app.dependency_overrides[get_firefly_client] = lambda: _FetchBillClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = client.get(f"/api/payment-run/bills/{reg_id}")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["registry_id"] == reg_id
+        assert body["amount_min"] == "45.00"
+        assert body["amount_max"] == "45.00"
+        assert body["repeat_freq"] == "monthly"
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_update_bill_registry_persists_firefly_amounts(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-amt",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-amt",
+                "row_label": "Internet",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    seen_updates: list[dict] = []
+
+    class _UpdateBillClient(FireflyClient):
+        async def fetch_bill(self, bill_id: str):
+            return {
+                "id": bill_id,
+                "name": "Internet",
+                "amount_min": "50.00",
+                "amount_max": "50.00",
+                "repeat_freq": "monthly",
+            }
+
+        async def update_bill(self, bill_id: str, body: dict):
+            seen_updates.append({"bill_id": bill_id, "body": body})
+            return {"id": bill_id, "attributes": body}
+
+    app.dependency_overrides[get_firefly_client] = lambda: _UpdateBillClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = client.put(
+            f"/api/payment-run/bills/{reg_id}",
+            json={
+                "name": "Internet",
+                "amount_min": "79.99",
+                "amount_max": "79.99",
+            },
+        )
+        assert response.status_code == 200
+        assert len(seen_updates) == 1
+        assert seen_updates[0]["bill_id"] == "bill-amt"
+        assert seen_updates[0]["body"]["amount_min"] == "79.99"
+        assert seen_updates[0]["body"]["amount_max"] == "79.99"
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
 def test_delete_bill_registry(monkeypatch, client, data_dir, payment_worksheet_env):
     import asyncio
 
