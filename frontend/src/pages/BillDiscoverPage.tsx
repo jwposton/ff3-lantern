@@ -99,8 +99,14 @@ export function BillDiscoverPage() {
     if (!selectedSuggestion) return
     const merchant = selectedSuggestion.merchant
     await registerBill(payload)
-    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
-    await refetch()
+    try {
+      await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+      await refetch()
+    } catch {
+      // Registration succeeded; refresh failure should not block success UX
+      void queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+      void refetch()
+    }
     setSheetOpen(false)
     toast.success(`${merchant} registered`, { duration: 4000 })
   }
