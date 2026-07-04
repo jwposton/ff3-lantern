@@ -105,6 +105,37 @@ export type AvailableFireflyBill = {
   repeat_freq?: string | null
 }
 
+export type RegisteredBillListItem = {
+  registry_id: number
+  row_label: string | null
+  firefly_bill_id: string
+  worksheet_section: string
+  payment_rail: string
+  amount_mode: string
+}
+
+export type BillHistoryTransaction = {
+  journal_id: string
+  date: string
+  description: string | null
+  payee: string | null
+  amount: string
+}
+
+export type BillHistoryEnvelope = {
+  registry_id: number
+  row_label: string | null
+  firefly_bill_id: string
+  firefly_base_url?: string
+  window: { start: string; end: string }
+  total: string
+  calendar_average: string
+  active_month_average: string
+  active_month_count: number
+  monthly_totals: { month: string; total: string }[]
+  transactions: BillHistoryTransaction[]
+}
+
 export type BillRegistryRow = {
   id: number
   firefly_bill_id: string | null
@@ -401,6 +432,26 @@ export async function fetchAvailableBills(): Promise<{
     await parseError(res, `Failed to fetch available bills (${res.status})`)
   }
   return (await res.json()) as { data: AvailableFireflyBill[] }
+}
+
+export async function fetchRegisteredBills(): Promise<{
+  data: RegisteredBillListItem[]
+}> {
+  const res = await fetch("/api/payment-run/bills")
+  if (!res.ok) {
+    await parseError(res, `Failed to fetch registered bills (${res.status})`)
+  }
+  return (await res.json()) as { data: RegisteredBillListItem[] }
+}
+
+export async function fetchBillHistory(
+  registryId: number,
+): Promise<BillHistoryEnvelope> {
+  const res = await fetch(`/api/payment-run/bills/${registryId}/history`)
+  if (!res.ok) {
+    await parseError(res, `Failed to fetch bill history (${res.status})`)
+  }
+  return (await res.json()) as BillHistoryEnvelope
 }
 
 export async function registerBill(
