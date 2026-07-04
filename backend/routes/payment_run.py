@@ -281,6 +281,28 @@ async def _enrich_bill_group(row: dict) -> BillGroupRow:
     )
 
 
+_BILL_GROUP_MEMBER_SECTIONS = frozenset({"bills", "liabilities"})
+
+
+async def _validate_bill_group_member_ids(member_ids: list[int]) -> None:
+    for registry_id in member_ids:
+        row = await sidecar_db.get_worksheet_registry(registry_id)
+        if row is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown registry id: {registry_id}",
+            )
+        section = row.get("worksheet_section")
+        if section not in _BILL_GROUP_MEMBER_SECTIONS:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Registry row {registry_id} cannot join a bill group "
+                    f"(worksheet_section must be bills or liabilities)."
+                ),
+            )
+
+
 @router.get("/payment-run")
 async def get_payment_worksheet(
     month: str | None = None,
@@ -489,6 +511,44 @@ async def create_bill_group(
     if row is None:
         raise HTTPException(status_code=500, detail="Failed to create group.")
     return (await _enrich_bill_group(row)).model_dump()
+
+
+@router.patch("/payment-run/bill-groups/{group_id}")
+async def patch_bill_group(
+    group_id: str,
+    body: BillGroupPatchBody,
+    _: None = Depends(require_payment_worksheet),
+):
+    existing = await sidecar_db.get_bill_group(group_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Group not found.")
+    updates = body.model_dump(exclude_unset=True)
+    if "member_ids" in updates:
+        member_ids = updates.pop("member_ids")
+        await _validate_bill_group_member_ids(member_ids)
+        await sidecar_db.replace_bill_group_members(group_id, member_ids)
+    if updates:
+        await sidecar_db.upsert_bill_group(
+            id=group_id,
+            label=updates.get("label", existing["label"]),
+            sort_order=updates.get("sort_order", existing["sort_order"]),
+        )
+    row = await sidecar_db.get_bill_group(group_id)
+    if row is None:
+        raise HTTPException(status_code=500, detail="Failed to update group.")
+    return (await _enrich_bill_group(row)).model_dump()
+
+
+@router.delete("/payment-run/bill-groups/{group_id}")
+async def delete_bill_group_route(
+    group_id: str,
+    _: None = Depends(require_payment_worksheet),
+):
+    existing = await sidecar_db.get_bill_group(group_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Group not found.")
+    await sidecar_db.delete_bill_group(group_id)
+    return {"ok": True}
 
 
 @router.put("/payment-run/accounts/{account_id}/worksheet")

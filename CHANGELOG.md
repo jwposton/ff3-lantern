@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Bill groups API** — CRUD at /payment-run/bill-groups with registry bill_group_id and show_in_group fields on bill register and update (#42)
+
 ### Fixed
 
 - **Budget vs 12-month average tile** — credit card charges (interest, purchases) now count toward the bar chart using the same spending definition as the pie chart (#57)
