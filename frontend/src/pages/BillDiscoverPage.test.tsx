@@ -139,6 +139,66 @@ const SUGGESTIONS_FIXTURE: BillSuggestionsEnvelope = {
   },
 }
 
+const TXN_ENVELOPES: Record<
+  string,
+  { data: Array<{
+    date: string
+    amount: string
+    description: string
+    category: string | null
+    payee: string | null
+    budget: string | null
+  }> }
+> = {
+  spotify: {
+    data: [
+      {
+        date: "2026-06-15",
+        amount: "10.99",
+        description: "SPOTIFY USA CHARGE JUNE",
+        category: "Music Streaming",
+        payee: "Spotify USA Inc",
+        budget: "Entertainment",
+      },
+      {
+        date: "2026-05-15",
+        amount: "10.99",
+        description: "SPOTIFY USA CHARGE MAY",
+        category: "Music Streaming",
+        payee: "Spotify USA Inc",
+        budget: "Entertainment",
+      },
+    ],
+  },
+  netflix: {
+    data: [
+      {
+        date: "2026-06-10",
+        amount: "15.49",
+        description: "NETFLIX.COM MONTHLY",
+        category: "Streaming",
+        payee: "Netflix Inc",
+        budget: "Entertainment",
+      },
+      {
+        date: "2026-05-10",
+        amount: "15.49",
+        description: "NETFLIX.COM PRIOR MONTH",
+        category: "Streaming",
+        payee: "Netflix Inc",
+        budget: "Entertainment",
+      },
+    ],
+  },
+}
+
+function suggestionTransactionsUrl(url: string): string | null {
+  const match = url.match(
+    /\/api\/payment-run\/bill-suggestions\/([^/?]+)\/transactions/,
+  )
+  return match ? decodeURIComponent(match[1]) : null
+}
+
 function TestProviders({
   children,
   initialEntry = "/manage/payment-run/discover",
@@ -174,11 +234,14 @@ function mockDiscoverFetch(options: {
   suggestionsStatus?: number
   delaySuggestions?: boolean
   worksheet?: PaymentWorksheetEnvelope
+  transactionEnvelopes?: typeof TXN_ENVELOPES
 }) {
   const paymentEnabled = options.paymentEnabled ?? true
   const suggestions = options.suggestions ?? SUGGESTIONS_FIXTURE
   const worksheet = options.worksheet ?? EMPTY_WORKSHEET
+  const transactionEnvelopes = options.transactionEnvelopes ?? TXN_ENVELOPES
   let suggestionsCalls = 0
+  let transactionCalls = 0
   let worksheetCalls = 0
   let registerCalls = 0
   let resolveSuggestions: (() => void) | null = null
@@ -221,6 +284,24 @@ function mockDiscoverFetch(options: {
             { id: "2", name: "Rent" },
           ],
           suggested_ignored_categories: ["Gas", "Restaurants"],
+        }),
+        { status: 200 },
+      )
+    }
+
+    const suggestionId = suggestionTransactionsUrl(url)
+    if (suggestionId != null) {
+      transactionCalls += 1
+      const envelope = transactionEnvelopes[suggestionId] ?? { data: [] }
+      return new Response(
+        JSON.stringify({
+          data: envelope.data,
+          meta: {
+            suggestion_id: suggestionId,
+            transaction_count: envelope.data.length,
+            period_start: "2025-07-04",
+            period_end: "2026-07-04",
+          },
         }),
         { status: 200 },
       )
@@ -280,12 +361,17 @@ function mockDiscoverFetch(options: {
   return {
     fetchSpy,
     getSuggestionsCalls: () => suggestionsCalls,
+    getTransactionCalls: () => transactionCalls,
     getWorksheetCalls: () => worksheetCalls,
     getRegisterCalls: () => registerCalls,
     getSuggestionUrls: () =>
       fetchSpy.mock.calls
         .map(([input]) => String(input))
         .filter((url) => url.includes("/api/payment-run/bill-suggestions")),
+    getTransactionUrls: () =>
+      fetchSpy.mock.calls
+        .map(([input]) => String(input))
+        .filter((url) => suggestionTransactionsUrl(url) != null),
     releaseSuggestions: () => resolveSuggestions?.(),
   }
 }
@@ -947,5 +1033,258 @@ describe("BillDiscoverPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Gas")).toBeTruthy()
     })
+  })
+
+  it("expand drill-down fetches transactions and shows mini-table rows", async () => {
+    const { getTransactionUrls, getTransactionCalls } = mockDiscoverFetch({
+      suggestions: MULTI_PAYEE_SUGGESTIONS,
+    })
+
+    render(
+      <TestProviders initialEntry="/manage/payment-run/discover?lookback=12">
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", {
+          name: "Show withdrawals for Spotify",
+        }).length,
+      ).toBeGreaterThan(0)
+    })
+
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Show withdrawals for Spotify",
+      })[0],
+    )
+
+    await waitFor(() => {
+      expect(getTransactionCalls()).toBeGreaterThan(0)
+    })
+    expect(
+      getTransactionUrls().some(
+        (url) =>
+          url.includes("/bill-suggestions/spotify/transactions") &&
+          url.includes("lookback_months=12"),
+      ),
+    ).toBe(true)
+    await waitFor(() => {
+      expect(
+        screen.getAllByText("SPOTIFY USA CHARGE JUNE").length,
+      ).toBeGreaterThan(0)
+    })
+  })
+
+  it("adopt drill-down expand does not open registration sheet", async () => {
+    mockDiscoverFetch({ suggestions: MULTI_PAYEE_SUGGESTIONS })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", {
+          name: "Show withdrawals for Spotify",
+        }).length,
+      ).toBeGreaterThan(0)
+    })
+
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Show withdrawals for Spotify",
+      })[0],
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText("SPOTIFY USA CHARGE JUNE").length,
+      ).toBeGreaterThan(0)
+    })
+    expect(screen.queryByRole("heading", { name: "Register a bill" })).toBeNull()
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Adopt Spotify as bill" })[0],
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register a bill" })).toBeTruthy()
+    })
+  })
+
+  it("lookback change collapses expanded drill-down and clears txn cache", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const removeQueriesSpy = vi.spyOn(queryClient, "removeQueries")
+    const { getTransactionCalls } = mockDiscoverFetch({
+      suggestions: MULTI_PAYEE_SUGGESTIONS,
+    })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/manage/payment-run/discover?lookback=12"]}>
+          <DateRangeProvider>
+            <TooltipProvider>
+              <Routes>
+                <Route path="/" element={<div>Home page</div>} />
+                <Route
+                  path="/manage/payment-run/discover"
+                  element={<BillDiscoverPage />}
+                />
+              </Routes>
+            </TooltipProvider>
+          </DateRangeProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", {
+          name: "Show withdrawals for Spotify",
+        }).length,
+      ).toBeGreaterThan(0)
+    })
+
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Show withdrawals for Spotify",
+      })[0],
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText("SPOTIFY USA CHARGE JUNE").length,
+      ).toBeGreaterThan(0)
+    })
+    const txnCallsBeforeLookback = getTransactionCalls()
+
+    const lookbackSelect = screen.getByLabelText("Lookback") as HTMLSelectElement
+    fireEvent.change(lookbackSelect, { target: { value: "6" } })
+
+    await waitFor(() => {
+      expect(screen.queryAllByText("SPOTIFY USA CHARGE JUNE")).toHaveLength(0)
+    })
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", {
+          name: "Show withdrawals for Spotify",
+        }).length,
+      ).toBeGreaterThan(0)
+    })
+    expect(
+      screen.getAllByRole("button", {
+        name: "Show withdrawals for Spotify",
+      })[0].getAttribute("aria-expanded"),
+    ).toBe("false")
+    expect(
+      removeQueriesSpy.mock.calls.some(
+        ([args]) =>
+          JSON.stringify(args?.queryKey) ===
+          JSON.stringify(["paymentRun", "billSuggestionTransactions"]),
+      ),
+    ).toBe(true)
+
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Show withdrawals for Spotify",
+      })[0],
+    )
+
+    await waitFor(() => {
+      expect(getTransactionCalls()).toBeGreaterThan(txnCallsBeforeLookback)
+    })
+    expect(
+      queryClient
+        .getQueryCache()
+        .findAll({ queryKey: ["paymentRun", "billSuggestionTransactions"] })
+        .some((query) => String(query.queryKey).includes("6")),
+    ).toBe(true)
+  })
+
+  it("keyboard expand toggles chevron aria-expanded on Enter", async () => {
+    mockDiscoverFetch({ suggestions: MULTI_PAYEE_SUGGESTIONS })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", {
+          name: "Show withdrawals for Spotify",
+        }).length,
+      ).toBeGreaterThan(0)
+    })
+
+    const chevron = screen.getAllByRole("button", {
+      name: "Show withdrawals for Spotify",
+    })[0]
+    expect(chevron.getAttribute("aria-expanded")).toBe("false")
+    chevron.focus()
+    expect(document.activeElement).toBe(chevron)
+    fireEvent.click(chevron)
+
+    await waitFor(() => {
+      expect(chevron.getAttribute("aria-expanded")).toBe("true")
+    })
+
+    chevron.focus()
+    fireEvent.click(chevron)
+
+    await waitFor(() => {
+      expect(chevron.getAttribute("aria-expanded")).toBe("false")
+    })
+  })
+
+  it("multi_expand shows sibling drill-down panels simultaneously", async () => {
+    mockDiscoverFetch({ suggestions: MULTI_PAYEE_SUGGESTIONS })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", {
+          name: "Show withdrawals for Spotify",
+        }).length,
+      ).toBeGreaterThan(0)
+    })
+
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Show withdrawals for Spotify",
+      })[0],
+    )
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Show withdrawals for Netflix",
+      })[0],
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText("SPOTIFY USA CHARGE JUNE").length,
+      ).toBeGreaterThan(0)
+      expect(
+        screen.getAllByText("NETFLIX.COM MONTHLY").length,
+      ).toBeGreaterThan(0)
+    })
+    expect(
+      screen.getAllByRole("region", { name: /Withdrawals for Spotify/ }).length,
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getAllByRole("region", { name: /Withdrawals for Netflix/ }).length,
+    ).toBeGreaterThan(0)
   })
 })
