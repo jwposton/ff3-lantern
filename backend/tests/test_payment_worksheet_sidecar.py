@@ -218,3 +218,22 @@ def test_bill_group_crud_round_trip(data_dir):
     remaining = asyncio.run(sidecar_db.list_bill_groups())
     assert len(remaining) == 1
     assert remaining[0]["id"] == "mobile-apps"
+
+
+def test_insert_bill_group_if_absent_conflict(data_dir):
+    asyncio.run(sidecar_db.init_db())
+    asyncio.run(
+        sidecar_db.insert_bill_group_if_absent(
+            id="utilities",
+            label="Utilities",
+            sort_order=0,
+        )
+    )
+    with pytest.raises(sidecar_db.ConflictError):
+        asyncio.run(
+            sidecar_db.insert_bill_group_if_absent(
+                id="utilities",
+                label="Other",
+                sort_order=1,
+            )
+        )

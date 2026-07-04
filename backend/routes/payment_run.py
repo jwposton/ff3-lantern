@@ -261,14 +261,20 @@ def _slugify_label(label: str) -> str:
     return text.strip("-")[:64].strip("-")
 
 
-async def _allocate_group_id(label: str) -> str:
+async def _allocate_bill_group_id(label: str, sort_order: int) -> str:
     base = _slugify_label(label) or "group"
-    candidate = base
-    suffix = 2
-    while await sidecar_db.get_bill_group(candidate) is not None:
-        candidate = f"{base}-{suffix}"
-        suffix += 1
-    return candidate
+    for attempt in range(100):
+        candidate = base if attempt == 0 else f"{base}-{attempt + 1}"
+        try:
+            await sidecar_db.insert_bill_group_if_absent(
+                id=candidate,
+                label=label,
+                sort_order=sort_order,
+            )
+            return candidate
+        except sidecar_db.ConflictError:
+            continue
+    raise HTTPException(status_code=500, detail="Failed to allocate group id.")
 
 
 async def _enrich_bill_group(row: dict) -> BillGroupRow:
@@ -504,12 +510,7 @@ async def create_bill_group(
     body: BillGroupCreateBody,
     _: None = Depends(require_payment_worksheet),
 ):
-    group_id = await _allocate_group_id(body.label)
-    await sidecar_db.upsert_bill_group(
-        id=group_id,
-        label=body.label,
-        sort_order=body.sort_order,
-    )
+    group_id = await _allocate_bill_group_id(body.label, body.sort_order)
     row = await sidecar_db.get_bill_group(group_id)
     if row is None:
         raise HTTPException(status_code=500, detail="Failed to create group.")

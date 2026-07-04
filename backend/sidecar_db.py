@@ -17,7 +17,13 @@ from typing import Any
 
 import aiosqlite
 
+
+class ConflictError(Exception):
+    """Raised when an insert would conflict with an existing row."""
+
+
 __all__ = [
+    "ConflictError",
     "delete_bill_group",
     "delete_funding_bucket",
     "delete_worksheet_registry",
@@ -40,6 +46,7 @@ __all__ = [
     "list_worksheet_registry",
     "log_audit",
     "get_suggestion",
+    "insert_bill_group_if_absent",
     "replace_bill_group_members",
     "update_discover_ignored_categories",
     "update_worksheet_registry",
@@ -486,6 +493,27 @@ async def upsert_bill_group(
             (id, label, sort_order),
         )
         await db.commit()
+
+
+async def insert_bill_group_if_absent(
+    *,
+    id: str,
+    label: str,
+    sort_order: int,
+) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        try:
+            await db.execute(
+                """
+                INSERT INTO worksheet_bill_groups (id, label, sort_order)
+                VALUES (?, ?, ?)
+                """,
+                (id, label, sort_order),
+            )
+            await db.commit()
+        except aiosqlite.IntegrityError as exc:
+            raise ConflictError(f"Bill group id already exists: {id}") from exc
 
 
 async def list_bill_group_members(group_id: str) -> list[dict[str, Any]]:
