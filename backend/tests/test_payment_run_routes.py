@@ -954,6 +954,9 @@ def test_bills_disabled(monkeypatch, client):
     list_response = client.get("/api/payment-run/bills")
     assert list_response.status_code == 404
     assert list_response.json()["detail"] == "Payment worksheet is not enabled."
+    history_response = client.get("/api/payment-run/bills/1/history")
+    assert history_response.status_code == 404
+    assert history_response.json()["detail"] == "Payment worksheet is not enabled."
 
 
 def test_list_registered_bills(monkeypatch, client, data_dir, payment_worksheet_env):
@@ -1027,6 +1030,180 @@ def test_list_registered_bills(monkeypatch, client, data_dir, payment_worksheet_
         assert cc_row["payment_rail"] == "credit_card"
         assert cc_row["firefly_bill_id"] == "bill-cc"
         assert not any(row["registry_id"] == unregistered_id for row in data)
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_bill_history(monkeypatch, client, data_dir, payment_worksheet_env):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "7",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-hist",
+                "row_label": "Electric",
+            }
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills/7/transactions" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "transactions",
+                            "id": "200",
+                            "attributes": {
+                                "description": "Jan payment",
+                                "transactions": [
+                                    {
+                                        "type": "withdrawal",
+                                        "amount": "-100.00",
+                                        "destination_name": "Utility Co",
+                                        "date": "2026-01-15",
+                                        "description": "Jan payment",
+                                        "transaction_journal_id": "2001",
+                                    }
+                                ],
+                            },
+                        },
+                        {
+                            "type": "transactions",
+                            "id": "201",
+                            "attributes": {
+                                "description": "Feb payment",
+                                "transactions": [
+                                    {
+                                        "type": "withdrawal",
+                                        "amount": "-50.00",
+                                        "destination_name": "Utility Co",
+                                        "date": "2026-02-10",
+                                        "description": "Feb payment",
+                                        "transaction_journal_id": "2002",
+                                    }
+                                ],
+                            },
+                        },
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        return httpx.Response(404)
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.get(f"/api/payment-run/bills/{reg_id}/history")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["registry_id"] == reg_id
+        assert body["row_label"] == "Electric"
+        assert body["firefly_bill_id"] == "7"
+        assert body["window"]["start"]
+        assert body["window"]["end"]
+        assert body["total"] == "150.00"
+        assert body["calendar_average"] == "12.50"
+        assert body["active_month_average"] == "75.00"
+        assert body["active_month_count"] == 2
+        assert len(body["transactions"]) == 2
+        assert body["transactions"][0]["date"] == "2026-02-10"
+        assert body["transactions"][1]["date"] == "2026-01-15"
+        assert body["firefly_base_url"] == "https://firefly.example"
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_bill_history_not_found(monkeypatch, client, data_dir, payment_worksheet_env):
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    firefly_called = {"value": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        firefly_called["value"] = True
+        return httpx.Response(404)
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.get("/api/payment-run/bills/99999/history")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Registered bill not found."
+        assert firefly_called["value"] is False
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_empty_history(monkeypatch, client, data_dir, payment_worksheet_env):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "empty-bill",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-empty",
+                "row_label": "New bill",
+            }
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if (
+            request.url.path == "/api/v1/bills/empty-bill/transactions"
+            and request.method == "GET"
+        ):
+            return httpx.Response(
+                200,
+                json={
+                    "data": [],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        return httpx.Response(404)
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.get(f"/api/payment-run/bills/{reg_id}/history")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == "0.00"
+        assert body["calendar_average"] == "0.00"
+        assert body["active_month_average"] == "0.00"
+        assert body["active_month_count"] == 0
+        assert body["transactions"] == []
+        assert body["monthly_totals"] == []
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 

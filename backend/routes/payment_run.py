@@ -30,6 +30,10 @@ from payment_worksheet_bills import (
     RegisterBillBody,
     register_bill,
 )
+from payment_worksheet_bill_history import (
+    bill_history_date_window,
+    compute_bill_history_stats,
+)
 from payment_worksheet_compute import _row_type_from_key, bill_row_key, build_worksheet_envelope
 from payment_worksheet_liabilities import is_liability_account
 from payment_worksheet_refresh import run_refresh
@@ -564,6 +568,38 @@ async def list_registered_bills(_: None = Depends(require_payment_worksheet)):
     ]
     bills.sort(key=lambda bill: (bill.get("row_label") or "").casefold())
     return {"data": bills}
+
+
+@router.get("/payment-run/bills/{registry_id}/history")
+async def bill_history(
+    registry_id: int,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    existing = await sidecar_db.get_worksheet_registry(registry_id)
+    if existing is None or not existing.get("firefly_bill_id"):
+        raise HTTPException(status_code=404, detail="Registered bill not found.")
+    start, end = bill_history_date_window()
+    try:
+        rows = await client.fetch_bill_transactions(
+            str(existing["firefly_bill_id"]), start, end
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    stats = compute_bill_history_stats(rows)
+    transactions = sorted(rows, key=lambda row: row.get("date") or "", reverse=True)
+    payload: dict[str, Any] = {
+        "registry_id": registry_id,
+        "row_label": existing.get("row_label"),
+        "firefly_bill_id": existing["firefly_bill_id"],
+        "window": {"start": start, "end": end},
+        **stats,
+        "transactions": transactions,
+    }
+    base = os.environ.get("FIREFLY_BASE_URL", "").strip().rstrip("/")
+    if base:
+        payload["firefly_base_url"] = base
+    return payload
 
 
 @router.get("/payment-run/available")
