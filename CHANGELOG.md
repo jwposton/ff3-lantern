@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Bill history registration** — Bills page lets you link an existing Firefly bill or register a new one from the header or empty state, using the same registration wizard as discover and the payment worksheet
+
 ## [2.1.0] - 2026-07-04
 
 ### Added
