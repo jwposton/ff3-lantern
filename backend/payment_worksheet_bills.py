@@ -462,6 +462,11 @@ async def register_new_bill(
     _validate_rail_fields(body)
     if body.payment_rail == "bank":
         await _validate_bucket_exists(str(body.funding_bucket_key))
+    await _validate_bill_group_fields(
+        body.bill_group_id,
+        body.show_in_group,
+        body.worksheet_section,
+    )
     trigger_desc, trigger_payee, trigger_category = _validate_rule_triggers(
         body.description_contains, body.destination_account, body.category_name
     )
@@ -537,6 +542,11 @@ async def register_linked_bill(
     _validate_rail_fields(body)
     if body.payment_rail == "bank":
         await _validate_bucket_exists(str(body.funding_bucket_key))
+    await _validate_bill_group_fields(
+        body.bill_group_id,
+        body.show_in_group,
+        body.worksheet_section,
+    )
     if bill_id in await _registered_bill_ids():
         raise BillRegistrationError("Bill is already registered on the worksheet.")
     try:
@@ -607,6 +617,8 @@ async def insert_worksheet_registry(
             "rule_id": rule_id,
             "row_label": body.name,
             "credit_card_account_id": body.credit_card_account_id,
+            "bill_group_id": body.bill_group_id,
+            "show_in_group": body.show_in_group,
         }
     )
     await sidecar_db.log_audit(
@@ -736,4 +748,6 @@ def serialize_bill_registry_for_edit(
         "amount_min": firefly_bill.get("amount_min"),
         "amount_max": firefly_bill.get("amount_max"),
         "repeat_freq": firefly_bill.get("repeat_freq"),
+        "bill_group_id": registry.get("bill_group_id"),
+        "show_in_group": registry.get("show_in_group"),
     }
