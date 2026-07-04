@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-03
+
 ### Added
 
 - **Bill history** — open `/manage/bills` from Manage sidebar to view 12-month payment history, monthly averages, and Firefly links for worksheet-registered bills
@@ -259,7 +261,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.1.12...HEAD
+[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jwposton/FF3Analytics/compare/v1.1.12...v1.2.0
 [1.1.12]: https://github.com/jwposton/FF3Analytics/compare/v1.1.11...v1.1.12
 [1.1.11]: https://github.com/jwposton/FF3Analytics/compare/v1.1.10...v1.1.11
 [1.1.10]: https://github.com/jwposton/FF3Analytics/compare/v1.1.9...v1.1.10
