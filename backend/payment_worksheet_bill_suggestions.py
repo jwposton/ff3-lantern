@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
-from datetime import date
+import statistics
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Literal
 
 from transaction_normalization import description_fingerprint
 
@@ -109,6 +110,182 @@ def _group_withdrawals(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, A
     return groups
 
 
+def _format_decimal(value: Decimal) -> str:
+    return f"{value.quantize(Decimal('0.01'))}"
+
+
+def _parse_date(value: str) -> date | None:
+    text = (value or "")[:10]
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _analyze_group(key: str, txns: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Compute recurrence metrics for a grouped withdrawal cluster."""
+    _ = key
+    dated: list[tuple[date, dict[str, Any]]] = []
+    for txn in txns:
+        parsed = _parse_date(str(txn.get("date") or ""))
+        if parsed is not None:
+            dated.append((parsed, txn))
+
+    unique_dates = sorted({d for d, _ in dated})
+    if len(unique_dates) < 2:
+        return None
+
+    amounts = [txn["amount"] for _, txn in dated if isinstance(txn.get("amount"), Decimal)]
+    if not amounts:
+        return None
+
+    amount_min = min(amounts)
+    amount_max = max(amounts)
+    amount_avg = sum(amounts, Decimal("0")) / Decimal(len(amounts))
+
+    if amount_avg > 0:
+        max_dev = max(abs(a - amount_avg) for a in amounts)
+        amt_variance_pct = float((max_dev / amount_avg) * Decimal("100"))
+    else:
+        amt_variance_pct = 0.0
+
+    gaps: list[int] = []
+    for prev, curr in zip(unique_dates, unique_dates[1:]):
+        gaps.append((curr - prev).days)
+
+    avg_gap_days = sum(gaps) / len(gaps) if gaps else 0.0
+    gap_std = statistics.pstdev(gaps) if len(gaps) >= 2 else 0.0
+    if avg_gap_days > 0:
+        regularity = 1.0 - min(gap_std / avg_gap_days, 1.0)
+    else:
+        regularity = 0.0
+
+    latest_txn = max(dated, key=lambda item: item[0])[1]
+    last_date = unique_dates[-1].isoformat()
+    first_date = unique_dates[0].isoformat()
+    payment_source = str(latest_txn.get("source_name") or "")
+    category = str(latest_txn.get("category_name") or "")
+    merchant = str(latest_txn.get("destination_name") or "").strip() or key
+    descriptions = sorted({
+        str(txn.get("description") or "").strip()
+        for _, txn in dated
+        if str(txn.get("description") or "").strip()
+    })
+
+    freq = _classify_freq(avg_gap_days)
+
+    return {
+        "occurrences": len(unique_dates),
+        "amount_min": amount_min,
+        "amount_max": amount_max,
+        "amount_avg": amount_avg,
+        "amt_variance_pct": amt_variance_pct,
+        "gaps": gaps,
+        "avg_gap_days": avg_gap_days,
+        "gap_std": gap_std,
+        "regularity": regularity,
+        "freq": freq,
+        "last_date": last_date,
+        "first_date": first_date,
+        "payment_source": payment_source,
+        "category": category,
+        "merchant": merchant,
+        "sample_descriptions": descriptions[:3],
+    }
+
+
+def _classify_freq(avg_gap_days: float) -> str:
+    if 25 <= avg_gap_days <= 35:
+        return "monthly"
+    if 12 <= avg_gap_days <= 18:
+        return "biweekly"
+    if 85 <= avg_gap_days <= 100:
+        return "quarterly"
+    if 350 <= avg_gap_days <= 380:
+        return "annual"
+    return "irregular"
+
+
+def _is_fixed_subscription(metrics: dict[str, Any]) -> bool:
+    return (
+        metrics["amt_variance_pct"] < 3
+        and metrics["occurrences"] >= 3
+        and metrics["amount_avg"] <= Decimal("200")
+    )
+
+
+def _is_utility_like(metrics: dict[str, Any]) -> bool:
+    return (
+        metrics["amount_avg"] > Decimal("40")
+        and metrics["regularity"] >= 0.4
+        and metrics["occurrences"] >= 3
+    )
+
+
+def _is_recurring_candidate(metrics: dict[str, Any]) -> bool:
+    freq = metrics["freq"]
+    if freq == "monthly" and metrics["regularity"] >= 0.5 and metrics["occurrences"] >= 3:
+        return True
+    if freq in ("annual", "quarterly") and metrics["occurrences"] >= 2:
+        return True
+    if _is_fixed_subscription(metrics):
+        return True
+    if _is_utility_like(metrics):
+        return True
+    return False
+
+
+def _score_confidence(metrics: dict[str, Any]) -> Literal["high", "medium", "low"]:
+    freq = metrics["freq"]
+    if (
+        freq == "monthly"
+        and metrics["regularity"] >= 0.7
+        and metrics["occurrences"] >= 3
+        and metrics["amt_variance_pct"] < 5
+    ):
+        return "high"
+    if (
+        (freq == "monthly" and metrics["regularity"] >= 0.5)
+        or _is_fixed_subscription(metrics)
+        or _is_utility_like(metrics)
+    ):
+        return "medium"
+    return "low"
+
+
+def _assign_status(
+    confidence: str,
+    *,
+    is_opaque_combined: bool = False,
+) -> Literal["ready", "review"]:
+    if is_opaque_combined:
+        return "review"
+    if confidence == "high":
+        return "ready"
+    return "review"
+
+
+def _metrics_to_suggestion(metrics: dict[str, Any]) -> dict[str, Any]:
+    confidence = _score_confidence(metrics)
+    status = _assign_status(confidence)
+    return {
+        "merchant": metrics["merchant"],
+        "confidence": confidence,
+        "status": status,
+        "amount_min": _format_decimal(metrics["amount_min"]),
+        "amount_max": _format_decimal(metrics["amount_max"]),
+        "amount_avg": _format_decimal(metrics["amount_avg"]),
+        "occurrences": metrics["occurrences"],
+        "freq": metrics["freq"],
+        "regularity": round(metrics["regularity"], 2),
+        "last_date": metrics["last_date"],
+        "first_date": metrics["first_date"],
+        "category": metrics["category"],
+        "payment_source": metrics["payment_source"],
+        "sample_descriptions": metrics["sample_descriptions"],
+    }
+
+
 def build_bill_suggestions(
     splits: list[dict[str, Any]],
     *,
@@ -120,11 +297,24 @@ def build_bill_suggestions(
 ) -> dict[str, Any]:
     """Pure engine — primary unit-test entry point."""
     _ = accounts, firefly_bills, registry_rows
+
+    parsed = [row for row in (_parse_withdrawal(split) for split in splits) if row is not None]
+    groups = _group_withdrawals(parsed)
+
+    suggestions: list[dict[str, Any]] = []
+    for key, txns in groups.items():
+        metrics = _analyze_group(key, txns)
+        if metrics is None:
+            continue
+        if not _is_recurring_candidate(metrics):
+            continue
+        suggestions.append(_metrics_to_suggestion(metrics))
+
     return {
-        "data": [],
+        "data": suggestions,
         "meta": {
-            "withdrawals_analyzed": 0,
-            "suggestions_count": 0,
+            "withdrawals_analyzed": len(parsed),
+            "suggestions_count": len(suggestions),
             "period_start": period_start,
             "period_end": period_end,
         },
