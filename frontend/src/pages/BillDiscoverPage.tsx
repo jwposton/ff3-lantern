@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { RefreshCw } from "lucide-react"
@@ -87,7 +87,22 @@ export function BillDiscoverPage() {
   )
   const [loadingAvailableBills, setLoadingAvailableBills] = useState(false)
 
-  const lookbackMonths = parseLookback(searchParams.get("lookback"))
+  const rawLookback = searchParams.get("lookback")
+  const lookbackMonths = parseLookback(rawLookback)
+
+  useEffect(() => {
+    if (rawLookback != null && rawLookback !== String(lookbackMonths)) {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.set("lookback", String(lookbackMonths))
+          return next
+        },
+        { replace: true },
+      )
+    }
+  }, [rawLookback, lookbackMonths, setSearchParams])
+
   const {
     data,
     isPending,
