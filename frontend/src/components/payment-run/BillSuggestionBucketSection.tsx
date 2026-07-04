@@ -78,8 +78,6 @@ type BillSuggestionBucketSectionProps = {
   payeeName: string
   rows: BillSuggestion[]
   onAdopt: (row: BillSuggestion) => void
-  onExplain: (row: BillSuggestion) => void
-  openrouterConfigured: boolean
   expandedIds: Set<string>
   onToggleExpanded: (id: string) => void
   lookbackMonths: number
@@ -163,8 +161,6 @@ export function BillSuggestionBucketSection({
   payeeName,
   rows,
   onAdopt,
-  onExplain,
-  openrouterConfigured,
   expandedIds,
   onToggleExpanded,
   lookbackMonths,
@@ -191,7 +187,7 @@ export function BillSuggestionBucketSection({
                 <TableHead className="min-w-[5rem]">Paid via</TableHead>
                 <TableHead className="w-[5.5rem]">Confidence</TableHead>
                 <TableHead className="w-[5.5rem]">Last</TableHead>
-                <TableHead className="min-w-[9rem]">Action</TableHead>
+                <TableHead className="w-[4.5rem]">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -250,27 +246,14 @@ export function BillSuggestionBucketSection({
                         {formatDisplayDate(row.last_date)}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
-                          {row.status === "review" && openrouterConfigured ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              aria-label={`Explain ${row.merchant} suggestion`}
-                              onClick={() => onExplain(row)}
-                            >
-                              Explain
-                            </Button>
-                          ) : null}
-                          <Button
-                            type="button"
-                            size="sm"
-                            aria-label={`Adopt ${row.merchant} as bill`}
-                            onClick={() => onAdopt(row)}
-                          >
-                            Adopt
-                          </Button>
-                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          aria-label={`Adopt ${row.merchant} as bill`}
+                          onClick={() => onAdopt(row)}
+                        >
+                          Adopt
+                        </Button>
                       </TableCell>
                     </TableRow>
                     {isExpanded ? (
@@ -351,27 +334,14 @@ export function BillSuggestionBucketSection({
                     isExpanded={isExpanded}
                   />
                 ) : null}
-                <div className="flex gap-2">
-                  {row.status === "review" && openrouterConfigured ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="min-h-[44px] flex-1"
-                      aria-label={`Explain ${row.merchant} suggestion`}
-                      onClick={() => onExplain(row)}
-                    >
-                      Explain
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    className="min-h-[44px] flex-1"
-                    aria-label={`Adopt ${row.merchant} as bill`}
-                    onClick={() => onAdopt(row)}
-                  >
-                    Adopt
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  className="min-h-[44px] w-full"
+                  aria-label={`Adopt ${row.merchant} as bill`}
+                  onClick={() => onAdopt(row)}
+                >
+                  Adopt
+                </Button>
               </div>
             )
           })}

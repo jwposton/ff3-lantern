@@ -15,7 +15,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
 from firefly_client import FireflyClient
-from openrouter_client import build_http_client
 from payment_worksheet_profiles import (
     current_month_key,
     effective_profile_from_notes,
@@ -29,7 +28,6 @@ from payment_worksheet_profiles import (
 )
 from payment_worksheet_bill_suggestions import (
     LOOKBACK_CHOICES,
-    fetch_bill_suggestion_explain,
     fetch_bill_suggestion_transactions,
     fetch_bill_suggestions,
 )
@@ -61,10 +59,6 @@ def require_payment_worksheet() -> None:
         raise HTTPException(
             status_code=404, detail="Payment worksheet is not enabled."
         )
-
-
-def _is_set(name: str) -> bool:
-    return bool(os.environ.get(name, "").strip())
 
 
 def get_firefly_client() -> FireflyClient:
@@ -703,47 +697,6 @@ async def bill_suggestion_transactions(
             suggestion_id=suggestion_id,
             lookback_months=lookback_months,
         )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    if result is None:
-        raise HTTPException(status_code=404, detail="Suggestion not found.")
-    return result
-
-
-class ExplainBillSuggestionBody(BaseModel):
-    lookback_months: int = 12
-
-
-@router.post("/payment-run/bill-suggestions/{suggestion_id}/explain")
-async def explain_bill_suggestion(
-    suggestion_id: str,
-    body: ExplainBillSuggestionBody = ExplainBillSuggestionBody(),
-    _: None = Depends(require_payment_worksheet),
-    client: FireflyClient = Depends(get_firefly_client),
-):
-    if not _is_set("OPENROUTER_API_KEY"):
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "OPENROUTER_API_KEY is not configured; "
-                "bill suggestion explain is unavailable."
-            ),
-        )
-    if body.lookback_months not in LOOKBACK_CHOICES:
-        raise HTTPException(
-            status_code=422,
-            detail="lookback_months must be 6, 12, or 24.",
-        )
-    api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-    try:
-        async with build_http_client() as http:
-            result = await fetch_bill_suggestion_explain(
-                client,
-                http,
-                api_key=api_key,
-                suggestion_id=suggestion_id,
-                lookback_months=body.lookback_months,
-            )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     if result is None:

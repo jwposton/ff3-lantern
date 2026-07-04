@@ -2,32 +2,20 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import json
-import os
 import re
 import statistics
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, ROUND_UP, Decimal, InvalidOperation
 from typing import Any, Iterator, Literal, NamedTuple
 
-import httpx
 import sidecar_db
-from bill_suggestion_explain_models import (
-    EXPLAIN_JSON_SCHEMA,
-    EXPLAIN_SYSTEM_PROMPT,
-    BillSuggestionExplainResponse,
-)
 from firefly_client import FireflyClient
-from openrouter_client import complete_json_schema
 from payment_worksheet_liabilities import is_liability_summary
 from payment_worksheet_profiles import is_credit_card_asset
 from transaction_normalization import description_fingerprint
 
 LOOKBACK_CHOICES: tuple[int, ...] = (6, 12, 24)
-
-_EXPLAIN_SEMAPHORE = asyncio.Semaphore(3)
 
 CONFIDENCE_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
 
@@ -1467,153 +1455,6 @@ def find_suggestion_transactions(
     )
 
 
-def find_suggestion_by_id(
-    splits: list[dict[str, Any]],
-    *,
-    accounts: dict[str, dict[str, Any]],
-    firefly_bills: list[dict[str, Any]],
-    registry_rows: list[dict[str, Any]],
-    period_start: str,
-    period_end: str,
-    ignored_categories: list[str] | None = None,
-    suggestion_id: str,
-) -> dict[str, Any] | None:
-    """Return enriched suggestion dict from build_bill_suggestions data[] or None."""
-    envelope = build_bill_suggestions(
-        splits,
-        accounts=accounts,
-        firefly_bills=firefly_bills,
-        registry_rows=registry_rows,
-        period_start=period_start,
-        period_end=period_end,
-        ignored_categories=ignored_categories,
-    )
-    for row in envelope["data"]:
-        if row.get("id") == suggestion_id:
-            return row
-    return None
-
-
-def _cap_sample_descriptions(descriptions: list[str], *, limit: int = 5) -> list[str]:
-    seen: set[str] = set()
-    capped: list[str] = []
-    for raw in descriptions:
-        text = str(raw or "").strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        capped.append(text)
-        if len(capped) >= limit:
-            break
-    return capped
-
-
-def build_explain_user_payload(
-    suggestion: dict[str, Any],
-    lookback_months: int,
-    *,
-    splits: list[dict[str, Any]] | None = None,
-    accounts: dict[str, dict[str, Any]] | None = None,
-    firefly_bills: list[dict[str, Any]] | None = None,
-    registry_rows: list[dict[str, Any]] | None = None,
-    period_start: str | None = None,
-    period_end: str | None = None,
-    ignored_categories: list[str] | None = None,
-) -> dict[str, Any]:
-    """Build JSON-serializable user payload for OpenRouter explain."""
-    register_prefill = suggestion.get("register_prefill") or {}
-    sample_descriptions = _cap_sample_descriptions(
-        list(suggestion.get("sample_descriptions") or []),
-    )
-    if len(sample_descriptions) < 5 and splits is not None and accounts is not None:
-        txns = find_suggestion_transactions(
-            splits,
-            accounts=accounts,
-            firefly_bills=firefly_bills or [],
-            registry_rows=registry_rows or [],
-            period_start=period_start or "",
-            period_end=period_end or "",
-            ignored_categories=ignored_categories,
-            suggestion_id=str(suggestion.get("id") or ""),
-        )
-        if txns:
-            extra = [str(txn.get("description") or "") for txn in txns]
-            sample_descriptions = _cap_sample_descriptions(
-                sample_descriptions + extra,
-            )
-    return {
-        "suggestion_id": str(suggestion.get("id") or ""),
-        "merchant": str(suggestion.get("merchant") or ""),
-        "destination_name": str(register_prefill.get("destination_account") or ""),
-        "category_name": str(suggestion.get("category") or ""),
-        "cluster": suggestion.get("cluster"),
-        "metrics": {
-            "amount_min": str(suggestion.get("amount_min") or ""),
-            "amount_max": str(suggestion.get("amount_max") or ""),
-            "amount_avg": str(suggestion.get("amount_avg") or ""),
-            "occurrences": int(suggestion.get("occurrences") or 0),
-            "frequency_label": str(suggestion.get("freq") or ""),
-            "regularity_score": float(suggestion.get("regularity") or 0),
-            "last_date": str(suggestion.get("last_date") or ""),
-            "amount_mode": str(register_prefill.get("amount_mode") or ""),
-            "status": str(suggestion.get("status") or ""),
-            "confidence": str(suggestion.get("confidence") or ""),
-        },
-        "reasons": list(suggestion.get("reasons") or []),
-        "sample_descriptions": sample_descriptions,
-        "lookback_months": lookback_months,
-    }
-
-
-def _explain_model() -> str:
-    return os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini").strip() or "openai/gpt-4o-mini"
-
-
-async def explain_suggestion(
-    http: httpx.AsyncClient,
-    *,
-    api_key: str,
-    suggestion: dict[str, Any] | None,
-    lookback_months: int,
-    model: str | None = None,
-    splits: list[dict[str, Any]] | None = None,
-    accounts: dict[str, dict[str, Any]] | None = None,
-    firefly_bills: list[dict[str, Any]] | None = None,
-    registry_rows: list[dict[str, Any]] | None = None,
-    period_start: str | None = None,
-    period_end: str | None = None,
-    ignored_categories: list[str] | None = None,
-) -> BillSuggestionExplainResponse | None:
-    """Call OpenRouter for structured explain JSON; no sidecar writes."""
-    if suggestion is None:
-        return None
-    user_payload = build_explain_user_payload(
-        suggestion,
-        lookback_months,
-        splits=splits,
-        accounts=accounts,
-        firefly_bills=firefly_bills,
-        registry_rows=registry_rows,
-        period_start=period_start,
-        period_end=period_end,
-        ignored_categories=ignored_categories,
-    )
-    resolved_model = model or _explain_model()
-    async with _EXPLAIN_SEMAPHORE:
-        return await complete_json_schema(
-            http,
-            api_key=api_key,
-            model=resolved_model,
-            system_prompt=EXPLAIN_SYSTEM_PROMPT,
-            user_content=json.dumps(user_payload),
-            schema_name="bill_suggestion_explain",
-            schema=EXPLAIN_JSON_SCHEMA,
-            response_model=BillSuggestionExplainResponse,
-            max_tokens=768,
-            temperature=0.2,
-        )
-
-
 async def fetch_bill_suggestions(
     client: FireflyClient,
     *,
@@ -1640,59 +1481,6 @@ async def fetch_bill_suggestions(
         period_end=end_iso,
         ignored_categories=settings["ignored_categories"],
     )
-
-
-async def fetch_bill_suggestion_explain(
-    client: FireflyClient,
-    http: httpx.AsyncClient,
-    *,
-    api_key: str,
-    suggestion_id: str,
-    lookback_months: int = 12,
-    model: str | None = None,
-) -> dict[str, Any] | None:
-    """Fetch Firefly data, resolve suggestion by id, and return explain JSON or None."""
-    if lookback_months not in LOOKBACK_CHOICES:
-        raise ValueError("lookback_months must be 6, 12, or 24.")
-    period_end = date.today()
-    period_start = _subtract_months(period_end, lookback_months)
-    start_iso = period_start.isoformat()
-    end_iso = period_end.isoformat()
-    splits = await client.fetch_splits(start_iso, end_iso)
-    accounts = await client.fetch_accounts()
-    bills = await client.fetch_bills()
-    registry_rows = await sidecar_db.list_worksheet_registry()
-    settings = await sidecar_db.get_discover_settings()
-    ignored_categories = settings["ignored_categories"]
-    suggestion = find_suggestion_by_id(
-        splits,
-        accounts=accounts,
-        firefly_bills=bills,
-        registry_rows=registry_rows,
-        period_start=start_iso,
-        period_end=end_iso,
-        ignored_categories=ignored_categories,
-        suggestion_id=suggestion_id,
-    )
-    if suggestion is None:
-        return None
-    result = await explain_suggestion(
-        http,
-        api_key=api_key,
-        suggestion=suggestion,
-        lookback_months=lookback_months,
-        model=model,
-        splits=splits,
-        accounts=accounts,
-        firefly_bills=bills,
-        registry_rows=registry_rows,
-        period_start=start_iso,
-        period_end=end_iso,
-        ignored_categories=ignored_categories,
-    )
-    if result is None:
-        return None
-    return result.model_dump()
 
 
 async def fetch_bill_suggestion_transactions(

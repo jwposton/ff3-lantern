@@ -6,7 +6,6 @@ import { toast } from "sonner"
 
 import { BillRegistrationSheet } from "@/components/payment-run/BillRegistrationSheet"
 import { BillSuggestionBucketSection } from "@/components/payment-run/BillSuggestionBucketSection"
-import { BillSuggestionExplainDialog } from "@/components/payment-run/BillSuggestionExplainDialog"
 import { DiscoverIgnoredCategories } from "@/components/payment-run/DiscoverIgnoredCategories"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -87,10 +86,6 @@ export function BillDiscoverPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [selectedSuggestion, setSelectedSuggestion] =
     useState<BillSuggestion | null>(null)
-  const [explainOpen, setExplainOpen] = useState(false)
-  const [explainTarget, setExplainTarget] = useState<BillSuggestion | null>(
-    null,
-  )
   const [availableBills, setAvailableBills] = useState<AvailableFireflyBill[]>(
     [],
   )
@@ -117,11 +112,6 @@ export function BillDiscoverPage() {
     queryClient.removeQueries({
       queryKey: ["paymentRun", "billSuggestionTransactions"],
     })
-    queryClient.removeQueries({
-      queryKey: ["paymentRun", "billSuggestionExplain"],
-    })
-    setExplainOpen(false)
-    setExplainTarget(null)
   }, [lookbackMonths, queryClient])
 
   const { data: discoverSettings } = useDiscoverSettings()
@@ -141,8 +131,6 @@ export function BillDiscoverPage() {
     refetch,
   } = useBillSuggestions(lookbackMonths)
   const { data: worksheetData } = usePaymentWorksheet(month)
-
-  const openrouterConfigured = health?.openrouter_configured ?? false
 
   const grouped =
     data && !isError ? groupByPayee(data.data, hideReview) : new Map()
@@ -181,11 +169,6 @@ export function BillDiscoverPage() {
     } finally {
       setLoadingAvailableBills(false)
     }
-  }
-
-  function handleExplain(suggestion: BillSuggestion) {
-    setExplainTarget(suggestion)
-    setExplainOpen(true)
   }
 
   if (!healthPending && health && !health.payment_worksheet_enabled) {
@@ -376,8 +359,6 @@ export function BillDiscoverPage() {
                   payeeName={payeeName}
                   rows={rows}
                   onAdopt={(row) => void openAdopt(row)}
-                  onExplain={handleExplain}
-                  openrouterConfigured={openrouterConfigured}
                   expandedIds={expandedIds}
                   onToggleExpanded={handleToggleExpanded}
                   lookbackMonths={lookbackMonths}
@@ -403,19 +384,6 @@ export function BillDiscoverPage() {
         availableBills={availableBills}
         loadingAvailable={loadingAvailableBills}
         onSubmit={handleAdoptSubmit}
-      />
-
-      <BillSuggestionExplainDialog
-        open={explainOpen}
-        onOpenChange={(open) => {
-          setExplainOpen(open)
-          if (!open) {
-            setExplainTarget(null)
-          }
-        }}
-        suggestionId={explainTarget?.id ?? null}
-        merchant={explainTarget?.merchant ?? ""}
-        lookbackMonths={lookbackMonths}
       />
     </div>
   )

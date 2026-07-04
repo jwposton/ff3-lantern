@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Bill discover Explain** — Optional AI explanation for review-row suggestions when OpenRouter is configured; read-only dialog, no wizard prefill
 - **Bill discover transaction drill-down** — expand a suggestion row on the discover page to audit underlying withdrawal transactions (date, amount, description, category, payee, budget) before Adopt; chevron expand is separate from Adopt; respects active lookback window
 - **Bill discover ignored categories** — operators choose expense categories to skip on the discover page; new installs seed common dining/travel categories (not Entertainment — subscriptions may live there); settings persist in the sidecar
 - **Bill discover page** — Find recurring bill suggestions at `/manage/payment-run/discover` when payment worksheet is enabled; adopt suggestions into registration wizard
