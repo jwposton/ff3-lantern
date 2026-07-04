@@ -10,7 +10,6 @@ import pytest
 from payment_worksheet_bills import RegisterBillBody
 from payment_worksheet_bill_suggestions import (
     OPAQUE_NOTES,
-    _enrich_opaque_subgroup,
     _merchant_from_category,
     _pad_amounts,
     _should_subsplit_opaque_payee,
@@ -302,28 +301,34 @@ def spotify_varying_amounts(count: int = 12) -> list[dict[str, Any]]:
     return rows
 
 
-def apple_services_combined(count: int = 12) -> list[dict[str, Any]]:
-    categories = ("iCloud+", "App Store", "Apple Music")
-    amounts = ("2.99", "9.99", "10.99")
+def apple_services_operator_fixture() -> list[dict[str, Any]]:
+    """Operator-validated Apple sub-groups: iCloud+, Ulysses, Arcade, misc one-offs."""
     rows: list[dict[str, Any]] = []
-    for i in range(count):
-        month = 7 + i
-        year = 2025
-        while month > 12:
-            month -= 12
-            year += 1
-        rows.append({
-            "type": "withdrawal",
-            "amount": amounts[i % len(amounts)],
-            "date": f"{year}-{month:02d}-10",
-            "destination_name": "APPLE.COM/BILL",
-            "description": "PreApproved Payment Bill User Payment",
-            "category_name": categories[i % len(categories)],
-            "source_name": "PayPal Credit",
-            "source_id": "cc-paypal",
-            "source_type": "Asset account",
-            "source_role": "Credit card",
-        })
+
+    def add(category: str, amount: str, dates: list[str]) -> None:
+        for date in dates:
+            rows.append({
+                "type": "withdrawal",
+                "amount": amount,
+                "date": date,
+                "destination_name": "APPLE.COM/BILL",
+                "description": "PreApproved Payment Bill User Payment",
+                "category_name": category,
+                "source_name": "PayPal Credit",
+                "source_id": "cc-paypal",
+                "source_type": "Asset account",
+                "source_role": "Credit card",
+            })
+
+    monthly = [f"2025-{month:02d}-10" for month in range(7, 13)] + [
+        f"2026-{month:02d}-10" for month in range(1, 7)
+    ]
+    add("Cloud Storage", "10.09", monthly)
+    add("Ulysses App", "6.37", monthly)
+    add("App Subscriptions", "7.43", ["2025-09-10", "2025-10-10", "2025-11-10"])
+    misc_amounts = ["1.05", "2.99", "4.50", "5.00", "7.99", "9.99", "12.00", "15.50", "19.12"]
+    for index, amount in enumerate(misc_amounts):
+        add("App Subscriptions", amount, [f"2025-{8 + index:02d}-15"])
     return rows
 
 
@@ -635,14 +640,43 @@ def test_subgroups_for_opaque_payee_returns_misc_only_when_non_empty():
         assert len(misc_txns) > 0
 
 
-def test_apple_services_combined_opaque():
-    result = build_bill_suggestions(apple_services_combined(12), **_engine_kwargs())
-    assert len(result["data"]) == 1
-    suggestion = result["data"][0]
-    assert suggestion["bucket"] == "Apple Services"
-    assert suggestion["cluster"] is None
-    assert suggestion["status"] == "review"
-    assert suggestion["notes"] == OPAQUE_NOTES
+def test_apple_services_split_opaque():
+    result = build_bill_suggestions(apple_services_operator_fixture(), **_engine_kwargs())
+    data = result["data"]
+    stable_rows = [row for row in data if row["merchant"] != "APPLE.COM/BILL (misc)"]
+    misc_rows = [row for row in data if row["merchant"] == "APPLE.COM/BILL (misc)"]
+
+    assert len(stable_rows) >= 3
+    assert len(misc_rows) == 1
+    assert all(row["bucket"] == "APPLE.COM/BILL" for row in data)
+    assert all(row["cluster"] == "apple-com-bill" for row in data)
+    assert all(row.get("notes") is None for row in data)
+
+    merchants = {row["merchant"] for row in data}
+    assert "Apple.com/bill" not in merchants
+    assert any(row["merchant"] == "Cloud Storage" for row in stable_rows)
+    assert any(row["merchant"] == "Ulysses App" for row in stable_rows)
+    assert any("(likely)" in row["merchant"] for row in stable_rows if "App Subscriptions" in row["merchant"])
+
+    misc = misc_rows[0]
+    assert misc["status"] == "review"
+    assert misc["register_prefill"]["amount_mode"] == "intermittent"
+    assert misc["register_prefill"]["amount_exactly"] is None
+
+    for row in stable_rows:
+        if row["occurrences"] >= 12:
+            prefill = row["register_prefill"]
+            assert prefill["destination_account"] == "APPLE.COM/BILL"
+            assert prefill["category_name"]
+            assert prefill["amount_exactly"] is not None
+            assert_valid_register_prefill(prefill)
+
+
+def test_apple_no_monolithic_parent():
+    result = build_bill_suggestions(apple_services_operator_fixture(), **_engine_kwargs())
+    for row in result["data"]:
+        assert row["merchant"] != "Apple.com/bill"
+        assert row.get("notes") != OPAQUE_NOTES
 
 
 def test_sort_bucket_confidence_occurrences():

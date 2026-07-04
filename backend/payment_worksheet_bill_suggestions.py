@@ -579,6 +579,9 @@ def _should_subsplit_opaque_payee(txns: list[dict[str, Any]]) -> bool:
     date_counts = _fingerprint_date_counts(txns)
     if len(date_counts) < 2:
         return False
+    distinct_categories = {fp[0] for fp in date_counts}
+    if len(distinct_categories) < 2:
+        return False
     qualifying_two_plus = [count for count in date_counts.values() if count >= 2]
     if len(qualifying_two_plus) >= 2:
         return True
