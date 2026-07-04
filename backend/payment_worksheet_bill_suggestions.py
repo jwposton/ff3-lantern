@@ -9,6 +9,8 @@ from datetime import date, datetime
 from decimal import ROUND_HALF_UP, ROUND_UP, Decimal, InvalidOperation
 from typing import Any, Literal
 
+import sidecar_db
+from firefly_client import FireflyClient
 from payment_worksheet_liabilities import is_liability_summary
 from payment_worksheet_profiles import is_credit_card_asset
 from transaction_normalization import description_fingerprint
@@ -611,6 +613,30 @@ def _enrich_suggestion(
     if is_opaque:
         suggestion["notes"] = OPAQUE_NOTES
     return suggestion
+
+
+async def fetch_bill_suggestions(
+    client: FireflyClient,
+    *,
+    lookback_months: int = 12,
+) -> dict[str, Any]:
+    """Fetch Firefly data and build bill suggestions (compute-on-demand, read-only sidecar)."""
+    period_end = date.today()
+    period_start = _subtract_months(period_end, lookback_months)
+    start_iso = period_start.isoformat()
+    end_iso = period_end.isoformat()
+    splits = await client.fetch_splits(start_iso, end_iso)
+    accounts = await client.fetch_accounts()
+    bills = await client.fetch_bills()
+    registry_rows = await sidecar_db.list_worksheet_registry()
+    return build_bill_suggestions(
+        splits,
+        accounts=accounts,
+        firefly_bills=bills,
+        registry_rows=registry_rows,
+        period_start=start_iso,
+        period_end=end_iso,
+    )
 
 
 def build_bill_suggestions(
