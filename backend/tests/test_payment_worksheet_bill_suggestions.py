@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from payment_worksheet_bills import RegisterBillBody
 from payment_worksheet_bill_suggestions import (
     OPAQUE_NOTES,
     _pad_amounts,
@@ -274,6 +275,22 @@ def apple_services_combined(count: int = 12) -> list[dict[str, Any]]:
     return rows
 
 
+def registered_spotify_registry_row() -> list[dict[str, Any]]:
+    return [{"row_label": "Spotify", "firefly_bill_id": None}]
+
+
+def registered_firefly_bill_id_row() -> list[dict[str, Any]]:
+    return [{"row_label": "Spotify USA Inc", "firefly_bill_id": "99"}]
+
+
+def assert_valid_register_prefill(prefill: dict[str, Any]) -> None:
+    stub = {
+        "funding_bucket_key": "checking" if prefill["payment_rail"] == "bank" else None,
+        "credit_card_account_id": "cc1" if prefill["payment_rail"] == "credit_card" else None,
+    }
+    RegisterBillBody.model_validate({**prefill, **stub})
+
+
 def test_spotify_monthly_high_confidence():
     result = build_bill_suggestions(
         spotify_monthly_withdrawals(12),
@@ -423,3 +440,33 @@ def test_sort_bucket_confidence_occurrences():
     assert result["data"][1]["confidence"] in ("high", "medium")
     assert result["data"][2]["confidence"] in ("low", "medium")
     assert result["data"][0]["occurrences"] >= result["data"][1]["occurrences"]
+
+
+def test_registered_spotify_excluded():
+    kwargs = _engine_kwargs()
+    kwargs["registry_rows"] = registered_spotify_registry_row()
+    result = build_bill_suggestions(spotify_monthly_withdrawals(12), **kwargs)
+    assert result["data"] == []
+
+
+def test_registered_firefly_bill_id_excluded():
+    kwargs = _engine_kwargs()
+    kwargs["registry_rows"] = registered_firefly_bill_id_row()
+    kwargs["firefly_bills"] = [{"id": "99", "name": "Spotify USA Inc"}]
+    result = build_bill_suggestions(spotify_monthly_withdrawals(12), **kwargs)
+    assert result["data"] == []
+
+
+def test_register_prefill_validates():
+    splits = spotify_monthly_withdrawals(12) + all_american_waste_monthly(12)
+    result = build_bill_suggestions(splits, **_engine_kwargs())
+    for suggestion in result["data"]:
+        assert_valid_register_prefill(suggestion["register_prefill"])
+
+
+def test_named_bucket_assertions():
+    splits = spotify_monthly_withdrawals(12) + all_american_waste_monthly(12)
+    result = build_bill_suggestions(splits, **_engine_kwargs())
+    buckets = {row["merchant"]: row["bucket"] for row in result["data"]}
+    assert buckets["Spotify"] == "Streaming & Media"
+    assert buckets["All American Waste"] == "Utilities — Trash"

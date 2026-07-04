@@ -513,6 +513,39 @@ def _build_reasons(metrics: dict[str, Any], *, is_opaque: bool) -> list[str]:
     return reasons
 
 
+def _is_already_registered(
+    key: str,
+    metrics: dict[str, Any],
+    *,
+    registry_rows: list[dict[str, Any]],
+    firefly_bills: list[dict[str, Any]],
+    registered_bill_ids: set[str],
+) -> bool:
+    """Skip suggestions already represented in worksheet registry or Firefly bills."""
+    friendly = _friendly_merchant_name(str(metrics.get("merchant") or key))
+    raw_payee = str(metrics.get("merchant") or key).strip() or key
+    labels = {friendly.casefold(), raw_payee.casefold(), key.casefold()}
+
+    registered_labels = {
+        str(row.get("row_label") or "").casefold()
+        for row in registry_rows
+        if row.get("row_label")
+    }
+    if labels & registered_labels:
+        return True
+
+    bill_names = {
+        str(bill.get("name") or "").casefold(): str(bill.get("id") or "")
+        for bill in firefly_bills
+    }
+    for label in labels:
+        bill_id = bill_names.get(label)
+        if bill_id and bill_id in registered_bill_ids:
+            return True
+
+    return False
+
+
 def _sort_suggestions(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     bucket_rank = {name: index for index, name in enumerate(BUCKET_ORDER)}
 
@@ -590,7 +623,11 @@ def build_bill_suggestions(
     period_end: str,
 ) -> dict[str, Any]:
     """Pure engine — primary unit-test entry point."""
-    _ = firefly_bills, registry_rows
+    registered_bill_ids = {
+        str(row["firefly_bill_id"])
+        for row in registry_rows
+        if row.get("firefly_bill_id")
+    }
 
     parsed = [row for row in (_parse_withdrawal(split) for split in splits) if row is not None]
     filtered = [row for row in parsed if not _is_noise_transaction(row, accounts)]
@@ -602,6 +639,14 @@ def build_bill_suggestions(
         if metrics is None:
             continue
         if not _is_recurring_candidate(metrics):
+            continue
+        if _is_already_registered(
+            key,
+            metrics,
+            registry_rows=registry_rows,
+            firefly_bills=firefly_bills,
+            registered_bill_ids=registered_bill_ids,
+        ):
             continue
         suggestions.append(_enrich_suggestion(key, txns, metrics, accounts))
 
