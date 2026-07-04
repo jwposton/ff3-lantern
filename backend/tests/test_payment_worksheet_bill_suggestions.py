@@ -667,6 +667,71 @@ def test_same_category_different_amounts_stay_separate():
     assert amounts == {"75.00", "1850.00"}
 
 
+def comcast_semi_monthly_fixture() -> list[dict[str, Any]]:
+    """Operator Comcast: ~3rd stream with rate steps + ~20th stream at $118."""
+    rows: list[dict[str, Any]] = []
+    early_amounts = {
+        "2025-08": "68.00",
+        "2025-09": "68.00",
+        "2025-10": "68.00",
+        "2025-11": "88.00",
+        "2025-12": "88.00",
+        "2026-01": "88.00",
+        "2026-02": "90.00",
+        "2026-03": "90.00",
+        "2026-04": "90.00",
+        "2026-05": "90.00",
+        "2026-06": "90.00",
+        "2026-07": "90.00",
+    }
+    for month, amount in early_amounts.items():
+        year, mon = month.split("-")
+        rows.append({
+            "type": "withdrawal",
+            "amount": amount,
+            "date": f"{year}-{mon}-03",
+            "destination_name": "Comcast",
+            "description": "Internet bill",
+            "category_name": "Internet",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    for i in range(12):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "118.00",
+            "date": f"{year}-{month:02d}-20",
+            "destination_name": "Comcast",
+            "description": "Internet bill",
+            "category_name": "Internet",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
+def test_comcast_rate_steps_merge_within_billing_anchor_stream():
+    """Semi-monthly anchors: one row per stream, not per historical amount tier (#64)."""
+    result = build_bill_suggestions(comcast_semi_monthly_fixture(), **_engine_kwargs())
+    comcast_rows = [row for row in result["data"] if row.get("payee") == "Comcast"]
+    assert len(comcast_rows) == 2
+    amount_avgs = {row["amount_avg"] for row in comcast_rows}
+    assert "118.00" in amount_avgs
+    secondary = next(row for row in comcast_rows if row["amount_avg"] != "118.00")
+    assert secondary["amount_min"] == "68.00"
+    assert secondary["amount_max"] == "90.00"
+    assert secondary["occurrences"] == 12
+
+
 def test_parallel_same_amount_subscriptions_do_not_merge():
     rows: list[dict[str, Any]] = []
     services = ("Netflix", "Hulu", "Disney+", "Max", "Spotify")

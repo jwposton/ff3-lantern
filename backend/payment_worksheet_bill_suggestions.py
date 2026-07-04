@@ -199,6 +199,70 @@ def _has_billing_anchor_cyclicality(
     return False
 
 
+_BILLING_ANCHOR_MIN_PAIR_MONTHS = 3
+_BILLING_ANCHOR_DOM_SPREAD_MAX = 2.5
+
+
+def _infer_two_billing_anchors(
+    txns: list[dict[str, Any]],
+) -> tuple[float, float] | None:
+    """Median day-of-month for two semi-monthly billing anchors, when stable."""
+    by_month = _monthly_charge_slots(txns)
+    if len(by_month) < _BILLING_ANCHOR_MIN_PAIR_MONTHS:
+        return None
+
+    pair_months = [(month, slots) for month, slots in by_month.items() if len(slots) == 2]
+    if len(pair_months) < _BILLING_ANCHOR_MIN_PAIR_MONTHS:
+        return None
+
+    first_doms = [float(slots[0][0]) for _, slots in pair_months]
+    second_doms = [float(slots[1][0]) for _, slots in pair_months]
+    if (
+        _dom_spread(first_doms) > _BILLING_ANCHOR_DOM_SPREAD_MAX
+        or _dom_spread(second_doms) > _BILLING_ANCHOR_DOM_SPREAD_MAX
+    ):
+        return None
+
+    anchor_a = float(statistics.median(first_doms))
+    anchor_b = float(statistics.median(second_doms))
+    if anchor_a == anchor_b:
+        return None
+    return (min(anchor_a, anchor_b), max(anchor_a, anchor_b))
+
+
+def _billing_anchor_slot(dom: int, anchors: tuple[float, float]) -> int:
+    """0 = earlier anchor, 1 = later anchor."""
+    dist_a = abs(dom - anchors[0])
+    dist_b = abs(dom - anchors[1])
+    return 0 if dist_a <= dist_b else 1
+
+
+def _group_by_billing_anchors(
+    txns: list[dict[str, Any]],
+) -> dict[int, list[dict[str, Any]]] | None:
+    """Split charges into earlier/later anchor streams when semi-monthly anchors are stable."""
+    anchors = _infer_two_billing_anchors(txns)
+    if anchors is None:
+        return None
+
+    groups: dict[int, list[dict[str, Any]]] = {0: [], 1: []}
+    for txn in txns:
+        date_str = str(txn.get("date") or "")[:10]
+        if len(date_str) < 10:
+            continue
+        dom = int(date_str[8:10])
+        groups[_billing_anchor_slot(dom, anchors)].append(txn)
+
+    if not groups[0] or not groups[1]:
+        return None
+    return groups
+
+
+def _billing_anchor_cluster_key(category: str, anchor_dom: float) -> str:
+    dom = int(round(anchor_dom))
+    return f"anchor:{category}:{dom:02d}"
+
+
 def _is_visit_style_spending(
     txns: list[dict[str, Any]],
     *,
@@ -634,6 +698,24 @@ def _merge_payee_clusters_in_category(
             and _fingerprint_groups_are_distinct_fixed_bills(fingerprint_groups)
             and not _is_visit_style_spending(remaining)
         ):
+            anchor_groups = _group_by_billing_anchors(remaining)
+            anchors = _infer_two_billing_anchors(remaining)
+            if anchor_groups is not None and anchors is not None:
+                category = (
+                    str(remaining[0].get("category_name") or "").strip()
+                    or "(uncategorized)"
+                )
+                for slot, stream_txns in anchor_groups.items():
+                    metrics = _analyze_group(payee_key, stream_txns)
+                    if metrics is None or not _is_recurring_candidate(
+                        metrics,
+                        stream_txns,
+                    ):
+                        continue
+                    merged[_billing_anchor_cluster_key(category, anchors[slot])] = list(
+                        stream_txns,
+                    )
+                continue
             for fingerprint, fp_rows in fingerprint_groups.items():
                 metrics = _analyze_group(payee_key, fp_rows)
                 if metrics is None or not _is_recurring_candidate(metrics, fp_rows):
