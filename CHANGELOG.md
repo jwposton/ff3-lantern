@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Bill suggestions API** — GET /payment-run/bill-suggestions analyzes withdrawal history and returns ranked bill candidates with wizard prefill (requires payment worksheet enabled)
+
 ## [2.0.0] - 2026-07-03
 
 ### Changed
