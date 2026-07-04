@@ -2,12 +2,26 @@ import { useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { RefreshCw } from "lucide-react"
 
+import { BillRegistrationSheet } from "@/components/payment-run/BillRegistrationSheet"
+import { BillSuggestionBucketSection } from "@/components/payment-run/BillSuggestionBucketSection"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useBillSuggestions } from "@/hooks/useBillSuggestions"
 import { useHealth } from "@/hooks/useHealth"
-import { LOOKBACK_CHOICES, parseLookback } from "@/lib/billDiscoverUtils"
+import { usePaymentWorksheet } from "@/hooks/usePaymentWorksheet"
+import {
+  BUCKET_ORDER,
+  LOOKBACK_CHOICES,
+  groupByBucket,
+  parseLookback,
+} from "@/lib/billDiscoverUtils"
+import {
+  currentMonthKey,
+  fetchAvailableBills,
+  type AvailableFireflyBill,
+  type BillSuggestion,
+} from "@/lib/paymentRunApi"
 import { cn } from "@/lib/utils"
 
 const selectClassName =
@@ -51,6 +65,13 @@ export function BillDiscoverPage() {
   const { data: health, isPending: healthPending } = useHealth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [hideReview, setHideReview] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [selectedSuggestion, setSelectedSuggestion] =
+    useState<BillSuggestion | null>(null)
+  const [availableBills, setAvailableBills] = useState<AvailableFireflyBill[]>(
+    [],
+  )
+  const [loadingAvailableBills, setLoadingAvailableBills] = useState(false)
 
   const lookbackMonths = parseLookback(searchParams.get("lookback"))
   const {
@@ -60,6 +81,24 @@ export function BillDiscoverPage() {
     isError,
     refetch,
   } = useBillSuggestions(lookbackMonths)
+  const { data: worksheetData } = usePaymentWorksheet(currentMonthKey())
+
+  const grouped =
+    data && !isError ? groupByBucket(data.data, hideReview) : new Map()
+
+  async function openAdopt(suggestion: BillSuggestion) {
+    setSelectedSuggestion(suggestion)
+    setSheetOpen(true)
+    setLoadingAvailableBills(true)
+    try {
+      const { data: bills } = await fetchAvailableBills()
+      setAvailableBills(bills)
+    } catch {
+      setAvailableBills([])
+    } finally {
+      setLoadingAvailableBills(false)
+    }
+  }
 
   if (!healthPending && health && !health.payment_worksheet_enabled) {
     return <Navigate to="/" replace />
@@ -197,10 +236,40 @@ export function BillDiscoverPage() {
         ) : null}
 
         {!loading && !isError && data ? (
-          /* Bucket tables ship in Plan 02 */
-          null
+          <div className="space-y-8">
+            {BUCKET_ORDER.map((bucketName) => {
+              const rows = grouped.get(bucketName)
+              if (!rows?.length) return null
+              return (
+                <BillSuggestionBucketSection
+                  key={bucketName}
+                  bucketName={bucketName}
+                  rows={rows}
+                  onAdopt={(row) => void openAdopt(row)}
+                />
+              )
+            })}
+          </div>
         ) : null}
       </div>
+
+      <BillRegistrationSheet
+        open={sheetOpen}
+        onOpenChange={(open) => {
+          setSheetOpen(open)
+          if (!open) {
+            setSelectedSuggestion(null)
+          }
+        }}
+        initialPrefill={selectedSuggestion?.register_prefill ?? null}
+        creditCards={worksheetData?.credit_cards ?? []}
+        buckets={worksheetData?.buckets ?? []}
+        availableBills={availableBills}
+        loadingAvailable={loadingAvailableBills}
+        onSubmit={async () => {
+          // Plan 03 wires registerBill, invalidation, and success toast
+        }}
+      />
     </div>
   )
 }

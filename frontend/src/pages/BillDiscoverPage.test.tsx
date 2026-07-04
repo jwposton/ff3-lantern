@@ -7,7 +7,103 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { DateRangeProvider } from "@/context/DateRangeContext"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { BillDiscoverPage } from "./BillDiscoverPage"
-import type { BillSuggestionsEnvelope } from "@/lib/paymentRunApi"
+import type { BillSuggestionsEnvelope, BillSuggestion } from "@/lib/paymentRunApi"
+import type { PaymentWorksheetEnvelope } from "@/lib/paymentRunApi"
+
+const EMPTY_WORKSHEET: PaymentWorksheetEnvelope = {
+  month: "2026-07",
+  refreshed_at: null,
+  buckets: [
+    {
+      id: "checking",
+      label: "Checking",
+      sort_order: 0,
+      reported_balance: "5000.00",
+      user_balance: "5000.00",
+      user_balance_override: false,
+      planned_outflows: "0.00",
+      remaining: "5000.00",
+    },
+  ],
+  credit_cards: [],
+  excluded_credit_cards: [],
+  bills: [],
+  liabilities: [],
+  excluded_liabilities: [],
+  section_subtotals: {
+    bills: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
+    liabilities: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
+    credit_cards: { planned_cash: "0.00" },
+  },
+  grand_totals: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
+  shortfall: false,
+  totals: {
+    reported_balance: "5000.00",
+    user_balance: "5000.00",
+    remaining: "5000.00",
+  },
+}
+
+function makeSuggestion(
+  overrides: Partial<BillSuggestion> & Pick<BillSuggestion, "id" | "merchant" | "bucket">,
+): BillSuggestion {
+  return {
+    confidence: "high",
+    status: "ready",
+    amount_min: "9.99",
+    amount_max: "10.99",
+    amount_avg: "10.49",
+    occurrences: 12,
+    freq: "monthly",
+    regularity: 0.95,
+    last_date: "2026-06-15",
+    first_date: "2025-06-15",
+    category: "Streaming",
+    payment_source: "Chase VISA",
+    sample_descriptions: [],
+    cluster: null,
+    register_prefill: {
+      mode: "create_new",
+      name: overrides.merchant,
+    },
+    reasons: [],
+    ...overrides,
+  }
+}
+
+const MULTI_BUCKET_SUGGESTIONS: BillSuggestionsEnvelope = {
+  data: [
+    makeSuggestion({
+      id: "spotify",
+      merchant: "Spotify",
+      bucket: "Streaming & Media",
+      register_prefill: { mode: "create_new", name: "Spotify" },
+    }),
+    makeSuggestion({
+      id: "netflix",
+      merchant: "Netflix",
+      bucket: "Streaming & Media",
+    }),
+    makeSuggestion({
+      id: "electric",
+      merchant: "City Electric",
+      bucket: "Utilities & Telecom",
+    }),
+    makeSuggestion({
+      id: "review-row",
+      merchant: "Mystery Charge",
+      bucket: "Other Recurring",
+      status: "review",
+      confidence: "low",
+    }),
+  ],
+  meta: {
+    withdrawals_analyzed: 1384,
+    suggestions_count: 4,
+    period_start: "2025-07-04",
+    period_end: "2026-07-04",
+  },
+}
 
 const SUGGESTIONS_FIXTURE: BillSuggestionsEnvelope = {
   data: [],
@@ -53,9 +149,11 @@ function mockDiscoverFetch(options: {
   suggestions?: BillSuggestionsEnvelope
   suggestionsStatus?: number
   delaySuggestions?: boolean
+  worksheet?: PaymentWorksheetEnvelope
 }) {
   const paymentEnabled = options.paymentEnabled ?? true
   const suggestions = options.suggestions ?? SUGGESTIONS_FIXTURE
+  const worksheet = options.worksheet ?? EMPTY_WORKSHEET
   let suggestionsCalls = 0
   let resolveSuggestions: (() => void) | null = null
   const suggestionsGate = options.delaySuggestions
@@ -92,6 +190,27 @@ function mockDiscoverFetch(options: {
         })
       }
       return new Response(JSON.stringify(suggestions), { status: 200 })
+    }
+
+    if (url.includes("/api/payment-run?") && !url.includes("bill-suggestions")) {
+      return new Response(JSON.stringify(worksheet), { status: 200 })
+    }
+
+    if (url.includes("/api/payment-run/available")) {
+      return new Response(JSON.stringify({ data: [] }), { status: 200 })
+    }
+
+    if (url.includes("/api/loans/meta")) {
+      return new Response(
+        JSON.stringify({
+          liability_accounts: [],
+          expense_accounts: [],
+          asset_accounts: [],
+          categories: [],
+          budgets: [],
+        }),
+        { status: 200 },
+      )
     }
 
     return new Response("not found", { status: 404 })
@@ -247,5 +366,71 @@ describe("BillDiscoverPage", () => {
     await waitFor(() => {
       expect(getSuggestionsCalls()).toBe(2)
     })
+  })
+
+  it("bucket sections render in BUCKET_ORDER and omit empty buckets", async () => {
+    mockDiscoverFetch({ suggestions: MULTI_BUCKET_SUGGESTIONS })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Streaming & Media (2)" })).toBeTruthy()
+    })
+    expect(screen.getByRole("heading", { name: "Utilities & Telecom (1)" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Other Recurring (1)" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: /AI & Dev Tools/ })).toBeNull()
+  })
+
+  it("hide review toggle filters review status rows", async () => {
+    mockDiscoverFetch({ suggestions: MULTI_BUCKET_SUGGESTIONS })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Mystery Charge").length).toBeGreaterThan(0)
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide review" }))
+
+    await waitFor(() => {
+      expect(screen.queryAllByText("Mystery Charge")).toHaveLength(0)
+    })
+    expect(screen.getByRole("button", { name: "Showing all" })).toBeTruthy()
+  })
+
+  it("Adopt opens registration sheet with prefilled merchant name", async () => {
+    mockDiscoverFetch({ suggestions: MULTI_BUCKET_SUGGESTIONS })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", { name: "Adopt Spotify as bill" }).length,
+      ).toBeGreaterThan(0)
+    })
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Adopt Spotify as bill" })[0],
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register a bill" })).toBeTruthy()
+    })
+
+    const nameInput = screen.getByLabelText("Bill name") as HTMLInputElement
+    expect(nameInput.value).toBe("Spotify")
+    expect(screen.queryByRole("button", { name: "Saving…" })).toBeNull()
   })
 })
