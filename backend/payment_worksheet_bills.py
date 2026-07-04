@@ -208,6 +208,32 @@ async def _validate_bucket_exists(bucket_key: str) -> None:
         raise BillRegistrationError(f"Unknown funding bucket: {bucket_key}")
 
 
+_BILL_GROUP_SECTIONS = frozenset({"bills", "liabilities"})
+
+
+async def _validate_bill_group_exists(group_id: str) -> None:
+    group = await sidecar_db.get_bill_group(group_id)
+    if group is None:
+        raise BillRegistrationError("Group not found")
+
+
+async def _validate_bill_group_fields(
+    bill_group_id: str | None,
+    show_in_group: bool,
+    worksheet_section: str,
+) -> None:
+    if show_in_group and not bill_group_id:
+        raise BillRegistrationError(
+            "show_in_group requires bill_group_id when set to true."
+        )
+    if bill_group_id:
+        await _validate_bill_group_exists(bill_group_id)
+        if worksheet_section not in _BILL_GROUP_SECTIONS:
+            raise BillRegistrationError(
+                "Bill group assignment requires worksheet_section bills or liabilities."
+            )
+
+
 async def _registered_bill_ids() -> set[str]:
     rows = await sidecar_db.list_worksheet_registry()
     return {

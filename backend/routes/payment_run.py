@@ -35,6 +35,7 @@ from payment_worksheet_bill_suggestions import (
 from payment_worksheet_bills import (
     BillRegistrationError,
     RegisterBillBody,
+    _validate_bill_group_fields,
     register_bill,
     serialize_bill_registry_for_edit,
     update_linked_firefly_bill,
@@ -227,6 +228,8 @@ class UpdateBillRegistryBody(BaseModel):
     amount_min: str | None = None
     amount_max: str | None = None
     repeat_freq: str | None = None
+    bill_group_id: str | None = None
+    show_in_group: bool | None = None
 
 
 def _validate_month(month: str) -> str:
@@ -725,6 +728,15 @@ async def update_bill_registry(
     amount_mode = merged.get("amount_mode") or existing.get("amount_mode")
     if amount_mode:
         merged["planned_sync"] = _planned_sync_for_amount_mode(str(amount_mode))
+
+    try:
+        await _validate_bill_group_fields(
+            merged.get("bill_group_id"),
+            bool(merged.get("show_in_group")),
+            str(merged.get("worksheet_section") or ""),
+        )
+    except BillRegistrationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     firefly_bill_id = existing.get("firefly_bill_id")
     if firefly_bill_id and any(
