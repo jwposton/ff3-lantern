@@ -105,6 +105,14 @@ export type BillRegistryRow = {
   credit_card_account_id: string | null
 }
 
+export type BillLinkRule = {
+  id: string
+  title: string | null
+  description_contains: string | null
+  payee_contains: string | null
+  amount_exactly: string | null
+}
+
 export type RegisterBillPayload = {
   mode: "create_new" | "link_existing"
   name: string
@@ -116,6 +124,7 @@ export type RegisterBillPayload = {
   funding_bucket_key?: string | null
   credit_card_account_id?: string | null
   description_contains: string
+  destination_account?: string
   amount_exactly?: string | null
   firefly_bill_id?: string | null
   rule_id?: string | null
@@ -345,6 +354,18 @@ export async function putRowState(
     planned_amount: string
     paid_at: string | null
   }
+}
+
+export async function fetchBillLinkRules(
+  billId: string,
+): Promise<{ data: BillLinkRule[] }> {
+  const res = await fetch(
+    `/api/payment-run/bills/${encodeURIComponent(billId)}/link-rules`,
+  )
+  if (!res.ok) {
+    await parseError(res, `Failed to fetch bill link rules (${res.status})`)
+  }
+  return (await res.json()) as { data: BillLinkRule[] }
 }
 
 export async function fetchAvailableBills(): Promise<{

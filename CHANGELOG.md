@@ -13,10 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bill registration** — failed rule or registry steps roll back newly created Firefly bills and rules when possible
 - **Payment setup link bill** — Link bill on the setup page pre-selects the clicked Firefly bill in the registration wizard
 - **Worksheet bill edit** — the edit pencil on bill rows opens the registration sheet with that row’s settings instead of a blank create wizard
-- **Bill unregister** — removing a registered bill also clears its saved worksheet state rows
+- **Bill registration rules** — new rules can match on payee contains and/or description contains (at least one required); Firefly bill create includes required due date and sets the subscription **active**
+- **Link existing bill** — selecting a Firefly bill with an existing link rule reuses that rule instead of creating a duplicate (fixes Firefly 422 on Link to worksheet); discovers rules via Firefly's bill rules API (matches by bill name, not id)
 
 ### Added
 
+- **Bill registration object group** — wizard **Create new** subscriptions are placed in a Firefly object group (`FF3ANALYTICS_PAYMENT_WORKSHEET_BILL_GROUP`, default same as rule group)
 - **Payment setup page** — manage bill registration and worksheet placement at `/manage/payment-run/setup`
 - **Bills and liabilities sections** — payment worksheet shows bills, liabilities, cash-plan subtotals, grand total footer, and inline bill registration wizard
 - **Bill registration API** — Register bills on the payment worksheet with a Firefly bill and matching rule in one user-confirmed action

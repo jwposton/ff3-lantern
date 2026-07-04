@@ -433,6 +433,23 @@ async def _validate_credit_card_account(
         )
 
 
+@router.get("/payment-run/bills/{bill_id}/link-rules")
+async def bill_link_rules(
+    bill_id: str,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    from payment_worksheet_bills import BillRegistrationError, list_link_rules_for_bill
+
+    try:
+        data = await list_link_rules_for_bill(client, bill_id)
+    except BillRegistrationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"data": data}
+
+
 @router.post("/payment-run/bills/register")
 async def register_bill_route(
     body: RegisterBillBody,

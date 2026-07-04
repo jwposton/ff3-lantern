@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
@@ -33,6 +34,7 @@ class RegisterBillBody(BaseModel):
     funding_bucket_key: str | None = None
     credit_card_account_id: str | None = None
     description_contains: str = ""
+    destination_account: str = ""
     amount_exactly: str | None = None
     firefly_bill_id: str | None = None
     rule_id: str | None = None
@@ -51,17 +53,44 @@ def _rule_group_title() -> str:
     return raw or "Payment worksheet"
 
 
+def _bill_object_group_title() -> str:
+    raw = os.environ.get("FF3ANALYTICS_PAYMENT_WORKSHEET_BILL_GROUP", "").strip()
+    return raw or _rule_group_title()
+
+
 def _planned_sync_for_amount_mode(amount_mode: str) -> str:
     return "fixed" if amount_mode == "recurring" else "manual"
 
 
-def _sanitize_description_contains(value: str) -> str:
+def _default_bill_date() -> str:
+    """First day of current UTC month — required by Firefly BillStore."""
+    today = datetime.now(UTC)
+    first = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return first.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+
+def _sanitize_optional_trigger_text(value: str, *, field_name: str) -> str:
     cleaned = _CONTROL_CHAR_RE.sub("", value or "").strip()
-    if not cleaned:
-        raise BillRegistrationError("description_contains must be non-empty.")
     if len(cleaned) > 255:
-        raise BillRegistrationError("description_contains must be at most 255 characters.")
+        raise BillRegistrationError(f"{field_name} must be at most 255 characters.")
     return cleaned
+
+
+def _validate_rule_triggers(
+    description_contains: str, destination_account: str
+) -> tuple[str, str]:
+    desc = _sanitize_optional_trigger_text(
+        description_contains, field_name="description_contains"
+    )
+    payee = _sanitize_optional_trigger_text(
+        destination_account, field_name="destination_account"
+    )
+    if not desc and not payee:
+        raise BillRegistrationError(
+            "At least one rule trigger is required: description contains "
+            "and/or payee contains."
+        )
+    return desc, payee
 
 
 def _format_amount(value: str) -> str:
@@ -102,19 +131,33 @@ async def _registered_bill_ids() -> set[str]:
 
 def build_bill_link_rule_body(
     *,
-    bill_id: str,
+    bill_name: str,
     title: str,
     description_contains: str,
+    destination_account: str,
     amount_exactly: str | None,
     rule_group_id: str,
 ) -> dict[str, Any]:
-    triggers: list[dict[str, Any]] = [
-        {
-            "type": "description_contains",
-            "value": description_contains,
-            "active": True,
-        },
-    ]
+    link_value = bill_name.strip()
+    if not link_value:
+        raise BillRegistrationError("bill name is required for link_to_bill rule action.")
+    triggers: list[dict[str, Any]] = []
+    if description_contains:
+        triggers.append(
+            {
+                "type": "description_contains",
+                "value": description_contains,
+                "active": True,
+            }
+        )
+    if destination_account:
+        triggers.append(
+            {
+                "type": "destination_account_contains",
+                "value": destination_account,
+                "active": True,
+            }
+        )
     if amount_exactly:
         triggers.append(
             {
@@ -131,22 +174,102 @@ def build_bill_link_rule_body(
         "strict": len(triggers) > 1,
         "triggers": triggers,
         "actions": [
-            {"type": "link_to_bill", "value": bill_id, "active": True},
+            {"type": "link_to_bill", "value": link_value, "active": True},
         ],
     }
 
 
+def _summarize_link_rules(rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summarized: list[dict[str, Any]] = []
+    for rule in rules:
+        triggers = rule.get("triggers") or []
+        description_contains = next(
+            (
+                str(trigger.get("value") or "").strip()
+                for trigger in triggers
+                if trigger.get("type") == "description_contains"
+            ),
+            "",
+        )
+        amount_exactly = next(
+            (
+                str(trigger.get("value") or "").strip()
+                for trigger in triggers
+                if trigger.get("type") == "amount_exactly"
+            ),
+            "",
+        )
+        payee_contains = next(
+            (
+                str(trigger.get("value") or "").strip()
+                for trigger in triggers
+                if str(trigger.get("type") or "").startswith("destination_account")
+            ),
+            "",
+        )
+        summarized.append(
+            {
+                "id": str(rule.get("id")),
+                "title": rule.get("title"),
+                "description_contains": description_contains or None,
+                "payee_contains": payee_contains or None,
+                "amount_exactly": amount_exactly or None,
+            }
+        )
+    return summarized
+
+
+def find_link_rules_for_bill(
+    rules: list[dict[str, Any]], bill_id: str, *, bill_name: str | None = None
+) -> list[dict[str, Any]]:
+    """Return rules whose link_to_bill action targets bill id or name."""
+    targets = {str(bill_id)}
+    if bill_name and str(bill_name).strip():
+        targets.add(str(bill_name).strip())
+    matched: list[dict[str, Any]] = []
+    for rule in rules:
+        actions = rule.get("actions") or []
+        if not any(
+            action.get("type") == "link_to_bill"
+            and str(action.get("value") or "").strip() in targets
+            for action in actions
+        ):
+            continue
+        matched.append(rule)
+    return _summarize_link_rules(matched)
+
+
+async def list_link_rules_for_bill(
+    client: FireflyClient, bill_id: str
+) -> list[dict[str, Any]]:
+    bill_id = str(bill_id).strip()
+    if not bill_id:
+        raise BillRegistrationError("bill_id is required.")
+    try:
+        await client.fetch_bill(bill_id)
+    except RuntimeError as exc:
+        raise BillRegistrationError(str(exc), status_code=422) from exc
+    try:
+        rules = await client.fetch_bill_rules(bill_id)
+    except RuntimeError as exc:
+        raise BillRegistrationError(str(exc), status_code=502) from exc
+    return _summarize_link_rules(rules)
+
+
 async def _validate_existing_rule_links_bill(
-    client: FireflyClient, rule_id: str, bill_id: str
+    client: FireflyClient, rule_id: str, bill_id: str, *, bill_name: str | None = None
 ) -> None:
     rules = await client.fetch_rules()
     rule = next((row for row in rules if str(row.get("id")) == str(rule_id)), None)
     if rule is None:
         raise BillRegistrationError(f"Unknown rule id: {rule_id}")
+    targets = {str(bill_id)}
+    if bill_name and str(bill_name).strip():
+        targets.add(str(bill_name).strip())
     for action in rule.get("actions") or []:
         if (
             action.get("type") == "link_to_bill"
-            and str(action.get("value")) == str(bill_id)
+            and str(action.get("value") or "").strip() in targets
         ):
             return
     raise BillRegistrationError(
@@ -158,19 +281,24 @@ async def _create_link_rule(
     client: FireflyClient,
     *,
     bill_id: str,
+    bill_name: str,
     title: str,
     description_contains: str,
+    destination_account: str,
     amount_exactly: str | None,
 ) -> str:
-    trigger_text = _sanitize_description_contains(description_contains)
+    trigger_desc, trigger_payee = _validate_rule_triggers(
+        description_contains, destination_account
+    )
     amount_trigger = None
     if amount_exactly and str(amount_exactly).strip():
         amount_trigger = _format_amount(str(amount_exactly))
     group_id = await client.ensure_rule_group(_rule_group_title())
     rule_body = build_bill_link_rule_body(
-        bill_id=bill_id,
+        bill_name=bill_name,
         title=title,
-        description_contains=trigger_text,
+        description_contains=trigger_desc,
+        destination_account=trigger_payee,
         amount_exactly=amount_trigger,
         rule_group_id=group_id,
     )
@@ -184,14 +312,21 @@ async def register_new_bill(
     _validate_rail_fields(body)
     if body.payment_rail == "bank":
         await _validate_bucket_exists(str(body.funding_bucket_key))
-    trigger_text = _sanitize_description_contains(body.description_contains)
+    trigger_desc, trigger_payee = _validate_rule_triggers(
+        body.description_contains, body.destination_account
+    )
     amount = _format_amount(body.amount)
-    bill_body = {
+    bill_body: dict[str, Any] = {
         "name": body.name,
         "amount_min": amount,
         "amount_max": amount,
+        "date": _default_bill_date(),
         "repeat_freq": (body.repeat_freq or "monthly").strip() or "monthly",
+        "active": True,
     }
+    group_title = _bill_object_group_title()
+    if group_title:
+        bill_body["object_group_title"] = group_title
     try:
         created_bill = await client.create_bill(bill_body)
     except RuntimeError as exc:
@@ -206,8 +341,10 @@ async def register_new_bill(
         rule_id = await _create_link_rule(
             client,
             bill_id=bill_id,
+            bill_name=body.name,
             title=body.name,
-            description_contains=trigger_text,
+            description_contains=trigger_desc,
+            destination_account=trigger_payee,
             amount_exactly=amount_trigger,
         )
     except Exception as exc:
@@ -253,25 +390,32 @@ async def register_linked_bill(
     if bill_id in await _registered_bill_ids():
         raise BillRegistrationError("Bill is already registered on the worksheet.")
     try:
-        await client.fetch_bill(bill_id)
+        bill = await client.fetch_bill(bill_id)
     except RuntimeError as exc:
         raise BillRegistrationError(str(exc), status_code=422) from exc
+    bill_name = str(bill.get("name") or body.name).strip()
     created_rule = False
     if body.rule_id and str(body.rule_id).strip():
         rule_id = str(body.rule_id).strip()
-        await _validate_existing_rule_links_bill(client, rule_id, bill_id)
-    elif (body.description_contains or "").strip():
+        await _validate_existing_rule_links_bill(
+            client, rule_id, bill_id, bill_name=bill_name
+        )
+    elif (body.description_contains or "").strip() or (
+        body.destination_account or ""
+    ).strip():
         rule_id = await _create_link_rule(
             client,
             bill_id=bill_id,
+            bill_name=bill_name,
             title=body.name,
             description_contains=body.description_contains,
+            destination_account=body.destination_account,
             amount_exactly=body.amount_exactly,
         )
         created_rule = True
     else:
         raise BillRegistrationError(
-            "link_existing requires rule_id or description_contains to create a rule."
+            "link_existing requires rule_id or rule triggers to create a rule."
         )
     try:
         registry_id = await insert_worksheet_registry(

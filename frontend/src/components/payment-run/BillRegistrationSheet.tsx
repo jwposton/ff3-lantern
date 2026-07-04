@@ -10,11 +10,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import type {
-  AvailableFireflyBill,
-  CreditCardRow,
-  FundingBucketRollup,
-  RegisterBillPayload,
+import {
+  fetchBillLinkRules,
+  type AvailableFireflyBill,
+  type BillLinkRule,
+  type CreditCardRow,
+  type FundingBucketRollup,
+  type RegisterBillPayload,
 } from "@/lib/paymentRunApi"
 
 type RegistrationMode = "create_new" | "link_existing"
@@ -73,8 +75,14 @@ export function BillRegistrationSheet({
   const [fundingBucketKey, setFundingBucketKey] = useState("")
   const [creditCardAccountId, setCreditCardAccountId] = useState("")
   const [descriptionContains, setDescriptionContains] = useState("")
+  const [payeeContains, setPayeeContains] = useState("")
   const [amountExactly, setAmountExactly] = useState("")
   const [selectedBillId, setSelectedBillId] = useState("")
+  const [selectedRuleId, setSelectedRuleId] = useState("")
+  const [linkRules, setLinkRules] = useState<BillLinkRule[]>([])
+  const [loadingLinkRules, setLoadingLinkRules] = useState(false)
+  const [linkRulesError, setLinkRulesError] = useState<string | null>(null)
+  const [useExistingRule, setUseExistingRule] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -101,8 +109,12 @@ export function BillRegistrationSheet({
         editTarget.credit_card_account_id ?? creditCards[0]?.account_id ?? "",
       )
       setDescriptionContains("existing-rule")
+      setPayeeContains("")
       setAmountExactly("")
       setSelectedBillId("")
+      setSelectedRuleId("")
+      setLinkRules([])
+      setUseExistingRule(false)
       setError(null)
       return
     }
@@ -116,8 +128,12 @@ export function BillRegistrationSheet({
     setFundingBucketKey(buckets[0]?.id ?? "")
     setCreditCardAccountId(creditCards[0]?.account_id ?? "")
     setDescriptionContains("")
+    setPayeeContains("")
     setAmountExactly("")
     setSelectedBillId(initialFireflyBillId ?? "")
+    setSelectedRuleId("")
+    setLinkRules([])
+    setUseExistingRule(false)
     setError(null)
   }, [
     open,
@@ -138,6 +154,72 @@ export function BillRegistrationSheet({
     setRepeatFreq(bill.repeat_freq ?? "monthly")
   }, [selectedBillId, availableBills])
 
+  useEffect(() => {
+    if (!open || isEditMode || mode !== "link_existing" || !selectedBillId) {
+      setLinkRules([])
+      setSelectedRuleId("")
+      setUseExistingRule(false)
+      setLinkRulesError(null)
+      return
+    }
+
+    let cancelled = false
+    setLoadingLinkRules(true)
+    setLinkRulesError(null)
+    void fetchBillLinkRules(selectedBillId)
+      .then(({ data }) => {
+        if (cancelled) return
+        setLinkRules(data)
+        if (data.length > 0) {
+          const first = data[0]
+          setSelectedRuleId(first.id)
+          setUseExistingRule(true)
+          setDescriptionContains(first.description_contains ?? "")
+          setPayeeContains(first.payee_contains ?? "")
+          setAmountExactly(first.amount_exactly ?? "")
+        } else {
+          setSelectedRuleId("")
+          setUseExistingRule(false)
+          setDescriptionContains("")
+          setPayeeContains("")
+          setAmountExactly("")
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setLinkRules([])
+        setSelectedRuleId("")
+        setUseExistingRule(false)
+        setLinkRulesError(
+          err instanceof Error
+            ? err.message
+            : "Could not load matching rules for this bill.",
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingLinkRules(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, isEditMode, mode, selectedBillId])
+
+  function applyLinkRule(rule: BillLinkRule) {
+    setSelectedRuleId(rule.id)
+    setDescriptionContains(rule.description_contains ?? "")
+    setPayeeContains(rule.payee_contains ?? "")
+    setAmountExactly(rule.amount_exactly ?? "")
+  }
+
+  function switchToNewRule() {
+    setUseExistingRule(false)
+    setSelectedRuleId("")
+    setDescriptionContains("")
+    setPayeeContains("")
+    setAmountExactly("")
+  }
+
   async function handleSubmit() {
     const trimmedName = name.trim()
     if (!trimmedName) {
@@ -145,8 +227,15 @@ export function BillRegistrationSheet({
       return
     }
     const trimmedRule = descriptionContains.trim()
-    if (!isEditMode && !trimmedRule) {
-      setError("Select or create a matching rule before saving.")
+    const trimmedPayee = payeeContains.trim()
+    const ruleId =
+      mode === "link_existing" && useExistingRule && selectedRuleId
+        ? selectedRuleId
+        : null
+    if (!isEditMode && !ruleId && !trimmedRule && !trimmedPayee) {
+      setError(
+        "Select or create a matching rule — at least payee or description is required.",
+      )
       return
     }
     if (mode === "link_existing" && !selectedBillId) {
@@ -179,8 +268,10 @@ export function BillRegistrationSheet({
       credit_card_account_id:
         paymentRail === "credit_card" ? creditCardAccountId || null : null,
       description_contains: trimmedRule,
+      destination_account: trimmedPayee,
       amount_exactly: amountExactly.trim() || null,
       firefly_bill_id: mode === "link_existing" ? selectedBillId : null,
+      rule_id: ruleId,
     }
 
     setSaving(true)
@@ -431,31 +522,140 @@ export function BillRegistrationSheet({
 
           {!isEditMode ? (
             <>
-              <div className="space-y-1">
-                <label className="text-sm font-medium" htmlFor="rule-description">
-                  Rule — description contains
-                </label>
-                <Input
-                  id="rule-description"
-                  value={descriptionContains}
-                  onChange={(event) => setDescriptionContains(event.target.value)}
-                />
-                <p className="text-muted-foreground text-xs">
-                  A matching rule is required so imports link to this bill.
-                </p>
-              </div>
+              {mode === "link_existing" && selectedBillId ? (
+                <div className="space-y-2">
+                  <span className="text-sm font-medium">Matching rule</span>
+                  {loadingLinkRules ? (
+                    <p className="text-muted-foreground text-sm">
+                      Loading existing rules…
+                    </p>
+                  ) : linkRulesError ? (
+                    <p className="text-destructive text-sm">{linkRulesError}</p>
+                  ) : linkRules.length > 0 ? (
+                    <>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={useExistingRule ? "default" : "outline"}
+                          aria-pressed={useExistingRule}
+                          onClick={() => {
+                            setUseExistingRule(true)
+                            const rule =
+                              linkRules.find((row) => row.id === selectedRuleId) ??
+                              linkRules[0]
+                            applyLinkRule(rule)
+                          }}
+                        >
+                          Use existing rule
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={!useExistingRule ? "default" : "outline"}
+                          aria-pressed={!useExistingRule}
+                          onClick={switchToNewRule}
+                        >
+                          Create new rule
+                        </Button>
+                      </div>
+                      {useExistingRule ? (
+                        <select
+                          id="existing-rule"
+                          className={selectClassName}
+                          value={selectedRuleId}
+                          onChange={(event) => {
+                            const rule = linkRules.find(
+                              (row) => row.id === event.target.value,
+                            )
+                            if (rule) applyLinkRule(rule)
+                          }}
+                        >
+                          {linkRules.map((rule) => (
+                            <option key={rule.id} value={rule.id}>
+                              {rule.title ?? rule.id}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">
+                      No Firefly rule links this bill yet — define triggers below
+                      to create one.
+                    </p>
+                  )}
+                </div>
+              ) : null}
 
-              <div className="space-y-1">
-                <label className="text-sm font-medium" htmlFor="rule-amount">
-                  Rule — amount exactly (optional)
-                </label>
-                <Input
-                  id="rule-amount"
-                  inputMode="decimal"
-                  value={amountExactly}
-                  onChange={(event) => setAmountExactly(event.target.value)}
-                />
-              </div>
+              {!(mode === "link_existing" && useExistingRule) ? (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium" htmlFor="rule-payee">
+                      Rule — payee contains
+                    </label>
+                    <Input
+                      id="rule-payee"
+                      value={payeeContains}
+                      onChange={(event) => setPayeeContains(event.target.value)}
+                    />
+                    <p className="text-muted-foreground text-xs">
+                      Matches the expense payee (destination account) on withdrawals.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium" htmlFor="rule-description">
+                      Rule — description contains
+                    </label>
+                    <Input
+                      id="rule-description"
+                      value={descriptionContains}
+                      onChange={(event) =>
+                        setDescriptionContains(event.target.value)
+                      }
+                    />
+                    <p className="text-muted-foreground text-xs">
+                      At least one of payee or description is required so imports
+                      link to this bill.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium" htmlFor="rule-amount">
+                      Rule — amount exactly (optional)
+                    </label>
+                    <Input
+                      id="rule-amount"
+                      inputMode="decimal"
+                      value={amountExactly}
+                      onChange={(event) => setAmountExactly(event.target.value)}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="bg-muted/40 space-y-1 rounded-md border p-3 text-sm">
+                  {payeeContains ? (
+                    <p>
+                      <span className="font-medium">Payee contains:</span>{" "}
+                      {payeeContains}
+                    </p>
+                  ) : null}
+                  <p>
+                    <span className="font-medium">Description contains:</span>{" "}
+                    {descriptionContains || "—"}
+                  </p>
+                  {amountExactly ? (
+                    <p>
+                      <span className="font-medium">Amount exactly:</span>{" "}
+                      {amountExactly}
+                    </p>
+                  ) : null}
+                  <p className="text-muted-foreground text-xs">
+                    Reusing the existing Firefly rule — no new rule will be created.
+                  </p>
+                </div>
+              )}
             </>
           ) : null}
 

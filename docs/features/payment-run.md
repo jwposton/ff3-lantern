@@ -395,6 +395,7 @@ Helper: `backend/payment_worksheet_profiles.py` (parse/write notes, mirror `loan
 |----------|---------|
 | `FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED` | Feature gate |
 | `FF3ANALYTICS_PAYMENT_WORKSHEET_RULE_GROUP` | Firefly rule group for bill rules |
+| `FF3ANALYTICS_PAYMENT_WORKSHEET_BILL_GROUP` | Firefly object group for wizard-created subscriptions (defaults to rule group title) |
 | `FF3ANALYTICS_PAYMENT_WORKSHEET_TAG` | Optional tag on rule-matched txns |
 
 ## UI

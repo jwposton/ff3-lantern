@@ -209,6 +209,16 @@ def prepare_account_update_payload(
     return payload
 
 
+def _map_rule_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    attrs = entry.get("attributes", {})
+    return {
+        "id": str(entry.get("id")),
+        "title": attrs.get("title"),
+        "triggers": attrs.get("triggers") or [],
+        "actions": attrs.get("actions") or [],
+    }
+
+
 class FireflyClient:
     """Fetch accounts and transaction splits from Firefly III (no stub fallback)."""
 
@@ -340,12 +350,7 @@ class FireflyClient:
     async def fetch_rules(self) -> list[dict[str, Any]]:
         return await self._fetch_paginated_list(
             "/api/v1/rules",
-            map_item=lambda entry: {
-                "id": str(entry.get("id")),
-                "title": entry.get("attributes", {}).get("title"),
-                "triggers": entry.get("attributes", {}).get("triggers") or [],
-                "actions": entry.get("attributes", {}).get("actions") or [],
-            },
+            map_item=_map_rule_entry,
         )
 
     async def fetch_rule_groups(self) -> list[dict[str, Any]]:
@@ -355,6 +360,12 @@ class FireflyClient:
                 "id": str(entry.get("id")),
                 "title": entry.get("attributes", {}).get("title"),
             },
+        )
+
+    async def fetch_bill_rules(self, bill_id: str) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            f"/api/v1/bills/{bill_id}/rules",
+            map_item=_map_rule_entry,
         )
 
     async def fetch_bills(self) -> list[dict[str, Any]]:
