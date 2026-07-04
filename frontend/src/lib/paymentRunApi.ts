@@ -248,6 +248,54 @@ export type FundingBucketInput = {
   firefly_account_ids: string[]
 }
 
+export type BillRegistrationPrefill = {
+  mode?: "create_new" | "link_existing"
+  name?: string
+  amount_min?: string
+  amount_max?: string
+  amount_mode?: "recurring" | "intermittent"
+  repeat_freq?: string | null
+  worksheet_section?: "bills" | "liabilities"
+  payment_rail?: "bank" | "credit_card"
+  destination_account?: string
+  category_name?: string
+  description_contains?: string
+  amount_exactly?: string | null
+}
+
+export type BillSuggestion = {
+  id: string
+  merchant: string
+  confidence: "high" | "medium" | "low"
+  status: "ready" | "review"
+  amount_min: string
+  amount_max: string
+  amount_avg: string
+  occurrences: number
+  freq: string
+  regularity: number
+  last_date: string
+  first_date: string
+  category: string
+  payment_source: string
+  sample_descriptions: string[]
+  bucket: string
+  cluster: string | null
+  register_prefill: BillRegistrationPrefill
+  reasons: string[]
+  notes?: string
+}
+
+export type BillSuggestionsEnvelope = {
+  data: BillSuggestion[]
+  meta: {
+    withdrawals_analyzed: number
+    suggestions_count: number
+    period_start: string
+    period_end: string
+  }
+}
+
 async function parseError(res: Response, fallback: string): Promise<never> {
   let detail = fallback
   try {
@@ -452,6 +500,19 @@ export async function fetchBillHistory(
     await parseError(res, `Failed to fetch bill history (${res.status})`)
   }
   return (await res.json()) as BillHistoryEnvelope
+}
+
+export async function fetchBillSuggestions(
+  lookbackMonths: number,
+): Promise<BillSuggestionsEnvelope> {
+  const params = new URLSearchParams({
+    lookback_months: String(lookbackMonths),
+  })
+  const res = await fetch(`/api/payment-run/bill-suggestions?${params}`)
+  if (!res.ok) {
+    await parseError(res, `Failed to load bill suggestions (${res.status})`)
+  }
+  return (await res.json()) as BillSuggestionsEnvelope
 }
 
 export async function registerBill(
