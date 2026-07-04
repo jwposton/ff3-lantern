@@ -353,8 +353,45 @@ describe("BillDiscoverPage", () => {
     await waitFor(() => {
       expect(screen.getByText("1,384 withdrawals analyzed")).toBeTruthy()
     })
-    expect(screen.getByText(/Jul 2025 – Jul \d, 2026/)).toBeTruthy()
-    expect(screen.getByText("49 suggestions")).toBeTruthy()
+    expect(screen.getByText(/Jul 2025 – Jul 4, 2026/)).toBeTruthy()
+    expect(screen.getByText("0 suggestions")).toBeTruthy()
+  })
+
+  it("hide review toggle updates visible suggestion count in meta bar", async () => {
+    mockDiscoverFetch({ suggestions: MULTI_BUCKET_SUGGESTIONS })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("4 suggestions")).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide review" }))
+
+    await waitFor(() => {
+      expect(screen.getByText("3 suggestions")).toBeTruthy()
+    })
+  })
+
+  it("invalid lookback URL param is replaced in the address bar", async () => {
+    mockDiscoverFetch({})
+
+    render(
+      <TestProviders initialEntry="/manage/payment-run/discover?lookback=99">
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Bill discover" })).toBeTruthy()
+    })
+
+    const lookbackSelect = screen.getByLabelText("Lookback") as HTMLSelectElement
+    expect(lookbackSelect.value).toBe("12")
   })
 
   it("loading shows meta bar and bucket card skeletons", async () => {

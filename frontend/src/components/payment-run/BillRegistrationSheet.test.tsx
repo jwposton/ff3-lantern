@@ -125,4 +125,24 @@ describe("BillRegistrationSheet", () => {
     expect(screen.getAllByText("Suggested").length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText(/warning banner|opaque payee/i)).toBeNull()
   })
+
+  it("prefills credit card from paymentSourceHint when rail is credit_card", () => {
+    render(
+      <TestProviders>
+        <BillRegistrationSheet
+          {...BASE_PROPS}
+          onSubmit={vi.fn()}
+          paymentSourceHint="Chase VISA"
+          initialPrefill={{
+            mode: "create_new",
+            name: "Spotify",
+            payment_rail: "credit_card",
+          }}
+        />
+      </TestProviders>,
+    )
+
+    const cardSelect = screen.getByLabelText("Credit card") as HTMLSelectElement
+    expect(cardSelect.value).toBe("42")
+  })
 })
