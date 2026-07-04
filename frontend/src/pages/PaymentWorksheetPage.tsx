@@ -75,7 +75,7 @@ function formatRefreshedAt(value: string | null | undefined): string {
   if (!value) return "Not refreshed this month"
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return `Last refreshed ${date.toLocaleString()}`
+  return date.toLocaleString()
 }
 
 export function PaymentWorksheetPage() {
@@ -515,44 +515,59 @@ export function PaymentWorksheetPage() {
 
   return (
     <div className="-m-6 flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 space-y-4 px-6 pt-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
+      <div className="shrink-0 space-y-3 px-6 pt-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight">
               Payment Worksheet
             </h1>
-            <p className="text-muted-foreground text-sm">
-              Plan credit cards, bills, and liabilities for{" "}
-              {formatMonthLabel(month)} — balances from Firefly on Refresh.
-            </p>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-foreground inline-flex rounded-sm"
+                  aria-label="Payment worksheet help"
+                >
+                  <CircleHelp className="size-4" aria-hidden />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs">
+                Plan credit cards, bills, and liabilities for{" "}
+                {formatMonthLabel(month)} — balances from Firefly when you click
+                Refresh balances.
+              </TooltipContent>
+            </Tooltip>
           </div>
-          <div className="flex flex-col items-start gap-2 sm:items-end">
-            <span className="text-muted-foreground text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className="text-muted-foreground text-xs tabular-nums"
+              title={data?.refreshed_at ? `Last refreshed ${data.refreshed_at}` : undefined}
+            >
               {formatRefreshedAt(data?.refreshed_at)}
             </span>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => openConfigure()}
-              >
-                <Settings2 className="mr-2 size-4" />
-                Configure worksheet
-              </Button>
-              <Button
-                type="button"
-                onClick={handleRefresh}
-                disabled={refreshing || isPending}
-              >
-                <RefreshCw
-                  className={
-                    refreshing ? "mr-2 size-4 animate-spin" : "mr-2 size-4"
-                  }
-                />
-                {refreshing ? "Refreshing…" : "Refresh balances"}
-              </Button>
-            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => openConfigure()}
+            >
+              <Settings2 className="mr-2 size-4" />
+              Configure worksheet
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={refreshing || isPending}
+            >
+              <RefreshCw
+                className={
+                  refreshing ? "mr-2 size-4 animate-spin" : "mr-2 size-4"
+                }
+              />
+              {refreshing ? "Refreshing…" : "Refresh balances"}
+            </Button>
           </div>
         </div>
 
@@ -584,7 +599,7 @@ export function PaymentWorksheetPage() {
       {data ? (
         <>
           <div
-            className="shrink-0 border-b bg-background px-6 pb-4"
+            className="shrink-0 border-b bg-background px-6 pb-2 pt-1"
             data-testid="funding-bucket-sticky"
           >
             <FundingBucketBar

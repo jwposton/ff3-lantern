@@ -43,9 +43,9 @@ function remainingClassName(value: string): string {
 function formatAccountLabels(
   accountIds: string[] | undefined,
   accountNameById: Map<string, string>,
-): string {
+): string | null {
   if (!accountIds?.length) {
-    return "No accounts linked"
+    return null
   }
   return accountIds
     .map((id) => accountNameById.get(id) ?? `Account ${id}`)
@@ -78,25 +78,27 @@ export function FundingBucketBar({
   const plannedOutflowsTotal = sumPlannedOutflows(buckets)
 
   return (
-    <div className="space-y-3" data-testid="funding-bucket-bar">
+    <div className="space-y-2" data-testid="funding-bucket-bar">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold tracking-tight">Funding buckets</h2>
         {buckets.length > 0 ? (
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
+            className="h-7 gap-1 px-2 text-xs"
             onClick={onAddBucket}
+            aria-label="Add bucket"
           >
-            <Plus className="mr-1 size-3.5" aria-hidden />
-            Add bucket
+            <Plus className="size-3.5" aria-hidden />
+            Add
           </Button>
         ) : null}
       </div>
 
       {buckets.length === 0 ? (
-        <div className="flex items-center justify-center rounded-md border border-dashed bg-muted/30 p-8">
-          <Button type="button" onClick={onAddBucket}>
+        <div className="flex items-center justify-center rounded-md border border-dashed bg-muted/30 px-4 py-3">
+          <Button type="button" size="sm" variant="outline" onClick={onAddBucket}>
             Add funding bucket
           </Button>
         </div>
@@ -113,28 +115,31 @@ export function FundingBucketBar({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {buckets.map((bucket) => (
+              {buckets.map((bucket) => {
+                const accountLabels = formatAccountLabels(
+                  bucket.firefly_account_ids,
+                  accountNameById,
+                )
+                return (
                 <TableRow key={bucket.id}>
-                  <TableCell className="min-w-[8rem]">
-                    <button
-                      type="button"
-                      className="text-left font-medium hover:underline"
-                      onClick={() => onEditBucket(bucket)}
-                    >
-                      {bucket.label}
-                    </button>
-                    <p
-                      className="text-muted-foreground mt-0.5 truncate text-[10px]"
-                      title={formatAccountLabels(
-                        bucket.firefly_account_ids,
-                        accountNameById,
-                      )}
-                    >
-                      {formatAccountLabels(
-                        bucket.firefly_account_ids,
-                        accountNameById,
-                      )}
-                    </p>
+                  <TableCell className="max-w-[14rem]">
+                    <div className="flex min-w-0 items-center gap-1">
+                      <button
+                        type="button"
+                        className="shrink-0 text-left font-medium hover:underline"
+                        onClick={() => onEditBucket(bucket)}
+                      >
+                        {bucket.label}
+                      </button>
+                      {accountLabels ? (
+                        <span
+                          className="text-muted-foreground min-w-0 truncate text-[10px]"
+                          title={accountLabels}
+                        >
+                          · {accountLabels}
+                        </span>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatDisplayAmount(bucket.reported_balance)}
@@ -167,7 +172,8 @@ export function FundingBucketBar({
                     {formatDisplayAmount(bucket.remaining)}
                   </TableCell>
                 </TableRow>
-              ))}
+                )
+              })}
               <TableRow
                 className="bg-muted/40 font-semibold hover:bg-muted/40"
                 data-testid="funding-bucket-totals-row"

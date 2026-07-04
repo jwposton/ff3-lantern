@@ -1,9 +1,11 @@
 import { useCallback, useState } from "react"
-import { Outlet } from "react-router-dom"
+import { Outlet, useLocation } from "react-router-dom"
 
 import { AppSidebar } from "@/components/AppSidebar"
 import { GlobalDatePicker } from "@/components/GlobalDatePicker"
+import { ReferenceCacheButton } from "@/components/ReferenceCacheButton"
 import { DateRangeProvider } from "@/context/DateRangeContext"
+import { pathnameUsesGlobalDateRange } from "@/lib/globalDateRangeRoutes"
 import {
   SidebarInset,
   SidebarProvider,
@@ -23,6 +25,8 @@ function readSidebarOpen(): boolean {
 }
 
 function AppShellInner() {
+  const { pathname } = useLocation()
+  const showGlobalDatePicker = pathnameUsesGlobalDateRange(pathname)
   const [open, setOpen] = useState(readSidebarOpen)
 
   const handleOpenChange = useCallback((next: boolean) => {
@@ -40,7 +44,10 @@ function AppShellInner() {
       <SidebarInset className="max-h-svh min-h-svh overflow-hidden">
         <header className="z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
           <SidebarTrigger aria-label="Toggle sidebar" />
-          <GlobalDatePicker />
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {showGlobalDatePicker ? <GlobalDatePicker /> : null}
+            <ReferenceCacheButton />
+          </div>
         </header>
         <main className="flex min-h-0 flex-1 flex-col overflow-auto p-6">
           <Outlet />
