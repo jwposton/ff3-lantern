@@ -378,6 +378,7 @@ Route module: `backend/routes/payment_run.py`
 | `GET/POST/PUT /payment-run/buckets` | Funding bucket CRUD |
 | `GET /payment-run/available` | Unregistered FF accounts/bills |
 | `GET /payment-run/bill-suggestions` | Analyze withdrawal history; ranked bill candidates with register wizard prefill |
+| `GET /payment-run/bill-suggestions/{suggestion_id}/transactions` | Drill-down: contributing withdrawal transactions for one suggestion row |
 | `GET /payment-run/discover-settings` | Ignored categories + available Firefly categories for discover UI |
 | `PUT /payment-run/discover-settings` | Replace ignored categories (`{ "ignored_categories": ["Gas", …] }`) |
 | `POST /payment-run/link-transaction` | Phase 3: attach bill to withdrawal |
@@ -403,6 +404,32 @@ Each suggestion includes `register_prefill` shaped for `POST /payment-run/bills/
 **Ignored categories:** On the discover page, operators pick Firefly expense categories to exclude from analysis (e.g. Gas, Groceries, Restaurants). Settings persist in the sidecar (`discover_settings` table) via `GET` / `PUT /payment-run/discover-settings`. Matching is case-insensitive with common aliases (e.g. `Gas` also skips `Gasoline`). Withdrawals in ignored categories never become suggestions; accounting-only noise (internal transfers, liability payees, CC interest, Apple Cash P2P, gas merchants) is still filtered regardless.
 
 **Opaque payee clusters:** When a PreApproved/Bill User Payment payee has multiple distinct **category+amount** fingerprints (e.g. `APPLE.COM/BILL`, PayPal bill payments), the engine emits **one suggestion per sub-group** instead of a single combined row. Sub-groups share the same payee section header. The engine scans withdrawal descriptions for domain-like tokens (e.g. `APPLE.COM/BILL`, `PAYPAL *DIGITALGOODS`) and uses the most frequent match; when no token is found, the payee falls back to Firefly `destination_name` (which may be a friendly label like `Apple Services`). Each sub-group carries a `cluster` slug (slugified payee) and **category-derived** `merchant` label (category is the stable alignment field when payee strings shift); a **misc catch-all** row (`{payee} (misc)`) may appear for unresolved one-offs with `status: review` and intermittent amounts. The Bill column shows the merchant name with muted category and payee detail beneath.
+
+### Bill suggestion transactions (`GET /payment-run/bill-suggestions/{suggestion_id}/transactions`)
+
+Lazy drill-down for the Bill discover page: returns the Firefly **withdrawal** rows that contributed to one suggestion row. Requires `FF3LANTERN_PAYMENT_WORKSHEET_ENABLED` (same gate as other payment-run routes — returns **404** when disabled).
+
+| Param | Location | Values | Default |
+|-------|----------|--------|---------|
+| `suggestion_id` | path | Stable `sug-{hash}` from the list response `id` field | — |
+| `lookback_months` | query | `6`, `12`, or `24` only | `12` |
+
+The `lookback_months` value must match the discover page's active lookback (URL `?lookback=`). Invalid lookback values return **422** with `lookback_months must be 6, 12, or 24.` Firefly failures return **502** with a short error message (no token leakage). Returns **404** with `Suggestion not found.` when `suggestion_id` is absent from the recomputed suggestion set for the requested lookback.
+
+**Response:** `{ "data": [ …transaction objects… ], "meta": { "suggestion_id", "transaction_count", "period_start", "period_end" } }`
+
+Each item in `data` includes:
+
+| Field | Description |
+|-------|-------------|
+| `date` | Withdrawal date (`YYYY-MM-DD`) |
+| `amount` | Decimal string |
+| `description` | Journal description |
+| `category` | Firefly expense category name, or `null` |
+| `payee` | Firefly destination name, or `null` |
+| `budget` | Firefly budget name, or `null` |
+
+`data` is sorted **date descending** (newest first). Results are **compute-on-demand** — the engine re-runs the same grouping pipeline as the list route and returns only the matching group's withdrawals; nothing is persisted to the sidecar. **Opaque sub-groups** return only their fingerprint's transactions (not sibling sub-groups under the same payee). Implementation: `fetch_bill_suggestion_transactions` → `find_suggestion_transactions` in `backend/payment_worksheet_bill_suggestions.py`.
 
 ### Sidecar tables
 
