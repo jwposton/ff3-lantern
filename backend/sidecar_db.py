@@ -69,6 +69,12 @@ CREATE TABLE IF NOT EXISTS funding_buckets (
   firefly_account_ids_json TEXT NOT NULL DEFAULT '[]'
 );
 
+CREATE TABLE IF NOT EXISTS worksheet_bill_groups (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS worksheet_registry (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   firefly_bill_id TEXT,
@@ -79,7 +85,9 @@ CREATE TABLE IF NOT EXISTS worksheet_registry (
   payment_rail TEXT DEFAULT 'bank',
   counts_toward_cash_plan INTEGER DEFAULT 1,
   rule_id TEXT,
-  row_label TEXT
+  row_label TEXT,
+  bill_group_id TEXT,
+  show_in_group INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS worksheet_state (
@@ -213,6 +221,33 @@ async def init_db() -> None:
         try:
             await db.execute(
                 "ALTER TABLE discover_settings ADD COLUMN defaults_version INTEGER NOT NULL DEFAULT 0"
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS worksheet_bill_groups (
+                  id TEXT PRIMARY KEY,
+                  label TEXT NOT NULL,
+                  sort_order INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                """
+                ALTER TABLE worksheet_registry ADD COLUMN bill_group_id TEXT
+                REFERENCES worksheet_bill_groups(id) ON DELETE SET NULL
+                """
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                "ALTER TABLE worksheet_registry ADD COLUMN show_in_group INTEGER NOT NULL DEFAULT 0"
             )
         except aiosqlite.OperationalError:
             pass
