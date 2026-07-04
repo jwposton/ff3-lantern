@@ -514,74 +514,79 @@ export function PaymentWorksheetPage() {
   const excludedLiabilitiesCount = data?.excluded_liabilities.length ?? 0
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Payment Worksheet
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Plan credit cards, bills, and liabilities for{" "}
-            {formatMonthLabel(month)} — balances from Firefly on Refresh.
-          </p>
-        </div>
-        <div className="flex flex-col items-start gap-2 sm:items-end">
-          <span className="text-muted-foreground text-sm">
-            {formatRefreshedAt(data?.refreshed_at)}
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => openConfigure()}
-            >
-              <Settings2 className="mr-2 size-4" />
-              Configure worksheet
-            </Button>
-            <Button
-              type="button"
-              onClick={handleRefresh}
-              disabled={refreshing || isPending}
-            >
-              <RefreshCw
-                className={
-                  refreshing ? "mr-2 size-4 animate-spin" : "mr-2 size-4"
-                }
-              />
-              {refreshing ? "Refreshing…" : "Refresh balances"}
-            </Button>
+    <div className="-m-6 flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0 space-y-4 px-6 pt-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Payment Worksheet
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              Plan credit cards, bills, and liabilities for{" "}
+              {formatMonthLabel(month)} — balances from Firefly on Refresh.
+            </p>
+          </div>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <span className="text-muted-foreground text-sm">
+              {formatRefreshedAt(data?.refreshed_at)}
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => openConfigure()}
+              >
+                <Settings2 className="mr-2 size-4" />
+                Configure worksheet
+              </Button>
+              <Button
+                type="button"
+                onClick={handleRefresh}
+                disabled={refreshing || isPending}
+              >
+                <RefreshCw
+                  className={
+                    refreshing ? "mr-2 size-4 animate-spin" : "mr-2 size-4"
+                  }
+                />
+                {refreshing ? "Refreshing…" : "Refresh balances"}
+              </Button>
+            </div>
           </div>
         </div>
+
+        {refreshError ? (
+          <p className="text-destructive text-sm">{refreshError}</p>
+        ) : null}
+
+        {isPending || healthPending ? (
+          <div className="space-y-4">
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
+        ) : null}
+
+        {isError ? (
+          <Card className="border-destructive/50 bg-destructive/10">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+              <p className="text-destructive text-sm">
+                Could not load payment worksheet.
+              </p>
+              <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+                Try again
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
-
-      {refreshError ? (
-        <p className="text-destructive text-sm">{refreshError}</p>
-      ) : null}
-
-      {isPending || healthPending ? (
-        <div className="space-y-4">
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-48 w-full" />
-        </div>
-      ) : null}
-
-      {isError ? (
-        <Card className="border-destructive/50 bg-destructive/10">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
-            <p className="text-destructive text-sm">
-              Could not load payment worksheet.
-            </p>
-            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
-              Try again
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
 
       {data ? (
         <>
-          <div className="sticky top-0 z-30 -mx-6 border-b bg-background/95 px-6 py-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/90">
+          <div
+            className="shrink-0 border-b bg-background px-6 pb-4"
+            data-testid="funding-bucket-sticky"
+          >
             <FundingBucketBar
               buckets={data.buckets}
               totals={data.totals}
@@ -593,7 +598,8 @@ export function PaymentWorksheetPage() {
             />
           </div>
 
-          <div className="space-y-6">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+            <div className="space-y-6 pt-6">
             <section className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -793,6 +799,7 @@ export function PaymentWorksheetPage() {
             <WorksheetGrandTotal grandTotals={data.grand_totals} />
 
             {data.shortfall ? <ShortfallBanner buckets={data.buckets} /> : null}
+            </div>
           </div>
         </>
       ) : null}

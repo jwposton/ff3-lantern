@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Payment worksheet funding buckets** — bucket summary is a compact data table (Balance, User balance, Planned outflow, Remaining balance) with a totals row; stays pinned below the date bar while scrolling the worksheet
+- **Payment worksheet funding buckets** — bucket summary is a compact data table (Balance, User balance, Planned outflow, Remaining balance) with a totals row; stays visible below the page header while worksheet sections scroll (layout pin, not CSS sticky)
 - **Payment worksheet bills & liabilities** — section subtotals are a single table row (like credit cards) instead of multi-line footers
 - **Payment worksheet tables** — credit cards default to an explicit per-card sort order (set in card details); column headers sort the table temporarily; Bills **Rail** renamed to **Pmt Src**; Liabilities columns reordered (Name, Pmt Src, Owed, Remaining pmt, Est. interest, Amt. Due, Planned, Paid, Actions); Actions column aligned across all tables; Bill and liability names link to Firefly (primary color, underline on hover) like credit cards
 - **Charts Spending/Cash Flow toggle** — moved from the sidebar to each chart report page header; sidebar Charts nav lists chart types only (Bar, Line/Trend, Sankey, Variance)

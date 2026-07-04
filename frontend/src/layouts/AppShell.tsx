@@ -37,12 +37,12 @@ function AppShellInner() {
   return (
     <SidebarProvider open={open} onOpenChange={handleOpenChange}>
       <AppSidebar />
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
+      <SidebarInset className="max-h-svh min-h-svh overflow-hidden">
+        <header className="z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
           <SidebarTrigger aria-label="Toggle sidebar" />
           <GlobalDatePicker />
         </header>
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex min-h-0 flex-1 flex-col overflow-auto p-6">
           <Outlet />
         </main>
       </SidebarInset>
