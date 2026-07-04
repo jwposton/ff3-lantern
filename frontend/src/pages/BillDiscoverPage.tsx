@@ -17,9 +17,9 @@ import {
   usePaymentWorksheet,
 } from "@/hooks/usePaymentWorksheet"
 import {
-  BUCKET_ORDER,
   LOOKBACK_CHOICES,
   groupByBucket,
+  orderedBucketKeys,
   parseLookback,
 } from "@/lib/billDiscoverUtils"
 import {
@@ -309,7 +309,7 @@ export function BillDiscoverPage() {
 
         {!loading && !isError && data && data.data.length > 0 ? (
           <div className="space-y-8">
-            {BUCKET_ORDER.map((bucketName) => {
+            {orderedBucketKeys(grouped).map((bucketName) => {
               const rows = grouped.get(bucketName)
               if (!rows?.length) return null
               return (

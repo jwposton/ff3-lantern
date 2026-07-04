@@ -8,6 +8,10 @@ import { DateRangeProvider } from "@/context/DateRangeContext"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { BillDiscoverPage } from "./BillDiscoverPage"
 import { registeredBillsQueryKey } from "@/hooks/useBillHistory"
+import {
+  groupByBucket,
+  orderedBucketKeys,
+} from "@/lib/billDiscoverUtils"
 import type { BillSuggestionsEnvelope, BillSuggestion } from "@/lib/paymentRunApi"
 import type { PaymentWorksheetEnvelope } from "@/lib/paymentRunApi"
 
@@ -444,6 +448,95 @@ describe("BillDiscoverPage", () => {
     await waitFor(() => {
       expect(getSuggestionsCalls()).toBe(2)
     })
+  })
+
+  it("dynamic_opaque_bucket_renders at opaque slot before later fixed buckets", async () => {
+    const suggestions: BillSuggestionsEnvelope = {
+      ...MULTI_BUCKET_SUGGESTIONS,
+      data: [
+        ...MULTI_BUCKET_SUGGESTIONS.data,
+        makeSuggestion({
+          id: "icloud",
+          merchant: "Icloud+",
+          bucket: "APPLE.COM/BILL",
+          cluster: "apple-com-bill",
+          register_prefill: {
+            mode: "create_new",
+            name: "Icloud+",
+            destination_account: "APPLE.COM/BILL",
+          },
+        }),
+      ],
+      meta: {
+        ...MULTI_BUCKET_SUGGESTIONS.meta,
+        suggestions_count: 5,
+      },
+    }
+
+    mockDiscoverFetch({ suggestions })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "APPLE.COM/BILL (1)" }),
+      ).toBeTruthy()
+    })
+
+    const headings = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((node) => node.textContent)
+    const streamingIdx = headings.findIndex((text) =>
+      text?.startsWith("Streaming & Media"),
+    )
+    const opaqueIdx = headings.findIndex((text) =>
+      text?.startsWith("APPLE.COM/BILL"),
+    )
+    const otherIdx = headings.findIndex((text) =>
+      text?.startsWith("Other Recurring"),
+    )
+    expect(streamingIdx).toBeGreaterThanOrEqual(0)
+    expect(opaqueIdx).toBeGreaterThan(streamingIdx)
+    expect(otherIdx).toBeGreaterThan(opaqueIdx)
+  })
+
+  it("orderedBucketKeys inserts dynamic buckets alphabetically at opaque slot", () => {
+    const grouped = groupByBucket(
+      [
+        makeSuggestion({
+          id: "paypal",
+          merchant: "Hosting",
+          bucket: "PAYPAL *SERVICES",
+        }),
+        makeSuggestion({
+          id: "apple",
+          merchant: "Icloud+",
+          bucket: "APPLE.COM/BILL",
+        }),
+        makeSuggestion({
+          id: "tickets",
+          merchant: "Season Pass",
+          bucket: "Tickets & Events",
+        }),
+        makeSuggestion({
+          id: "streaming",
+          merchant: "Spotify",
+          bucket: "Streaming & Media",
+        }),
+      ],
+      false,
+    )
+
+    expect(orderedBucketKeys(grouped)).toEqual([
+      "Streaming & Media",
+      "APPLE.COM/BILL",
+      "PAYPAL *SERVICES",
+      "Tickets & Events",
+    ])
   })
 
   it("bucket sections render in BUCKET_ORDER and omit empty buckets", async () => {
