@@ -59,7 +59,8 @@ export function ManageLiabilitiesSheet({
           {excludedLiabilities.length === 0 ? (
             <p className="text-muted-foreground text-sm">
               All Firefly liability accounts are on this worksheet. Exclude an
-              account from its row actions when that flow is available.
+              account from its row pencil on the worksheet or from Configure
+              worksheet.
             </p>
           ) : (
             <ul className="space-y-2">

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Payment worksheet configuration** — consolidated setup into a **Configure worksheet** panel on the payment worksheet (bills registry, credit cards, loans & liabilities); removed the separate Payment setup sidebar entry; legacy `/manage/payment-run/setup` redirects to the worksheet
+- **Liability account actions** — loan/mortgage rows on the worksheet open a profile sheet (bucket, exclude, link to loan profile) from the Actions pencil
+
 ### Fixed
 
 - **Payment worksheet refresh** — a stale registered bill missing in Firefly no longer aborts the entire refresh; other cards, bills, and liabilities still update

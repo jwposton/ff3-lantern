@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react"
-import { Link, Navigate } from "react-router-dom"
-import { CircleHelp, RefreshCw } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Navigate, useSearchParams } from "react-router-dom"
+import { CircleHelp, RefreshCw, Settings2 } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { BillRegistrationSheet, type BillRegistrationEditTarget } from "@/components/payment-run/BillRegistrationSheet"
@@ -10,8 +10,17 @@ import { CreditCardSheet } from "@/components/payment-run/CreditCardSheet"
 import type { CreditCardDetailsInput } from "@/components/payment-run/CreditCardSheet"
 import { CreditCardsTable } from "@/components/payment-run/CreditCardsTable"
 import { LiabilitiesTable } from "@/components/payment-run/LiabilitiesTable"
+import {
+  LiabilityAccountSheet,
+  type LiabilityAccountDetailsInput,
+} from "@/components/payment-run/LiabilityAccountSheet"
 import { ManageCardsSheet } from "@/components/payment-run/ManageCardsSheet"
 import { ManageLiabilitiesSheet } from "@/components/payment-run/ManageLiabilitiesSheet"
+import {
+  PaymentConfigureSheet,
+  type ConfigureSection,
+} from "@/components/payment-run/PaymentConfigureSheet"
+import type { RegisteredBillRow } from "@/components/payment-run/paymentConfigureUtils"
 import { FundingBucketBar } from "@/components/payment-run/FundingBucketBar"
 import { ShortfallBanner } from "@/components/payment-run/ShortfallBanner"
 import { WorksheetGrandTotal } from "@/components/payment-run/WorksheetGrandTotal"
@@ -19,12 +28,20 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useHealth } from "@/hooks/useHealth"
-import { useLoanMeta } from "@/hooks/useLoans"
+import { useLoanMeta, useLoans } from "@/hooks/useLoans"
 import { isFundingBucketAsset } from "@/lib/accounts"
 import {
   paymentRunQueryKey,
@@ -33,6 +50,7 @@ import {
 import {
   createFundingBucket,
   currentMonthKey,
+  deleteBillRegistry,
   deleteFundingBucket,
   fetchAvailableBills,
   fetchFundingBuckets,
@@ -62,10 +80,12 @@ function formatRefreshedAt(value: string | null | undefined): string {
 
 export function PaymentWorksheetPage() {
   const month = currentMonthKey()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const { data: health, isPending: healthPending } = useHealth()
   const { data, isPending, isError, refetch } = usePaymentWorksheet(month)
   const { data: loanMeta } = useLoanMeta()
+  const { data: loansData } = useLoans()
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [ccActionError, setCcActionError] = useState<string | null>(null)
@@ -73,9 +93,20 @@ export function PaymentWorksheetPage() {
   const [editingBucket, setEditingBucket] = useState<FundingBucket | null>(null)
   const [cardSheetOpen, setCardSheetOpen] = useState(false)
   const [editingCard, setEditingCard] = useState<CreditCardRow | null>(null)
+  const [liabilitySheetOpen, setLiabilitySheetOpen] = useState(false)
+  const [editingLiability, setEditingLiability] = useState<LiabilityRow | null>(
+    null,
+  )
+  const [configureOpen, setConfigureOpen] = useState(false)
+  const [configureSection, setConfigureSection] =
+    useState<ConfigureSection>("bills")
   const [manageCardsOpen, setManageCardsOpen] = useState(false)
   const [manageLiabilitiesOpen, setManageLiabilitiesOpen] = useState(false)
   const [billRegistrationOpen, setBillRegistrationOpen] = useState(false)
+  const [billRegistrationMode, setBillRegistrationMode] = useState<
+    "create_new" | "link_existing"
+  >("create_new")
+  const [linkBillId, setLinkBillId] = useState<string | null>(null)
   const [billRegistrationSection, setBillRegistrationSection] = useState<
     "bills" | "liabilities"
   >("bills")
@@ -85,6 +116,11 @@ export function PaymentWorksheetPage() {
     [],
   )
   const [loadingAvailableBills, setLoadingAvailableBills] = useState(false)
+  const [removeTarget, setRemoveTarget] = useState<RegisteredBillRow | null>(
+    null,
+  )
+  const [removingBill, setRemovingBill] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
 
   const bucketAssetAccounts = useMemo(
     () =>
@@ -124,6 +160,26 @@ export function PaymentWorksheetPage() {
     }
     return null
   }, [data])
+
+  useEffect(() => {
+    if (searchParams.get("configure") !== "1") return
+    setConfigureOpen(true)
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
+
+  const loanByAccountId = useMemo(() => {
+    const map = new Map<
+      string,
+      { configured: boolean; expectedAmount: string | null }
+    >()
+    for (const loan of loansData?.data ?? []) {
+      map.set(loan.account_id, {
+        configured: loan.configured,
+        expectedAmount: loan.profile?.match.expected_amount ?? null,
+      })
+    }
+    return map
+  }, [loansData])
 
   if (!healthPending && health && !health.payment_worksheet_enabled) {
     return <Navigate to="/" replace />
@@ -278,8 +334,34 @@ export function PaymentWorksheetPage() {
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
   }
 
+  async function handleLiabilityAccountSave(
+    accountId: string,
+    values: LiabilityAccountDetailsInput,
+  ) {
+    await putAccountWorksheet(accountId, month, values)
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
+  async function handleExcludeLiability(row: LiabilityRow) {
+    if (!row.account_id) return
+    await putAccountWorksheet(row.account_id, month, { included: false })
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
+  function openLiabilityAccount(row: LiabilityRow) {
+    setEditingLiability(row)
+    setLiabilitySheetOpen(true)
+  }
+
+  function openConfigure(section: ConfigureSection = "bills") {
+    setConfigureSection(section)
+    setConfigureOpen(true)
+  }
+
   async function openBillRegistration(section: "bills" | "liabilities") {
     setBillEditTarget(null)
+    setBillRegistrationMode("create_new")
+    setLinkBillId(null)
     setBillRegistrationSection(section)
     setBillRegistrationOpen(true)
     setLoadingAvailableBills(true)
@@ -290,6 +372,84 @@ export function PaymentWorksheetPage() {
       setAvailableBills([])
     } finally {
       setLoadingAvailableBills(false)
+    }
+  }
+
+  function openRegisterBillFromConfigure() {
+    setConfigureOpen(false)
+    void openBillRegistration("bills")
+  }
+
+  function openEditBillFromConfigure(row: RegisteredBillRow) {
+    setConfigureOpen(false)
+    setBillEditTarget({
+      registryId: row.registry_id,
+      row_label: row.name,
+      worksheet_section: row.worksheet_section,
+      payment_rail: row.payment_rail,
+      funding_bucket_key: row.funding_bucket_key,
+      credit_card_account_id: row.credit_card_account_id,
+      amount_mode: row.amount_mode,
+    })
+    setBillRegistrationSection(
+      row.worksheet_section === "liabilities" ? "liabilities" : "bills",
+    )
+    setBillRegistrationMode("create_new")
+    setLinkBillId(null)
+    setBillRegistrationOpen(true)
+  }
+
+  function openLinkBillFromConfigure(fireflyBillId: string) {
+    setConfigureOpen(false)
+    setBillEditTarget(null)
+    setBillRegistrationMode("link_existing")
+    setLinkBillId(fireflyBillId)
+    setBillRegistrationSection("bills")
+    setBillRegistrationOpen(true)
+    void fetchAvailableBills()
+      .then(({ data: bills }) => setAvailableBills(bills))
+      .catch(() => setAvailableBills([]))
+  }
+
+  function openEditCardFromConfigure(row: CreditCardRow) {
+    setConfigureOpen(false)
+    openCardDetails(row)
+  }
+
+  function openEditLiabilityFromConfigure(row: LiabilityRow) {
+    setConfigureOpen(false)
+    openLiabilityAccount(row)
+  }
+
+  function openManageExcludedCardsFromConfigure() {
+    setConfigureOpen(false)
+    setManageCardsOpen(true)
+  }
+
+  function openManageExcludedLiabilitiesFromConfigure() {
+    setConfigureOpen(false)
+    setManageLiabilitiesOpen(true)
+  }
+
+  async function handleConfirmRemoveBill() {
+    if (!removeTarget) return
+    setRemovingBill(true)
+    setRemoveError(null)
+    try {
+      await deleteBillRegistry(removeTarget.registry_id)
+      setRemoveTarget(null)
+      await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+      await queryClient.invalidateQueries({
+        queryKey: ["paymentRun", "availableBills"],
+      })
+    } catch (err) {
+      setRemoveError(
+        err instanceof Error
+          ? err.message
+          : "Could not remove bill registration. Try again.",
+      )
+    } finally {
+      setRemovingBill(false)
     }
   }
 
@@ -315,6 +475,8 @@ export function PaymentWorksheetPage() {
     setBillRegistrationSection(
       worksheetSection === "liabilities" ? "liabilities" : "bills",
     )
+    setBillRegistrationMode("create_new")
+    setLinkBillId(null)
     setBillRegistrationOpen(true)
   }
 
@@ -360,8 +522,14 @@ export function PaymentWorksheetPage() {
             {formatRefreshedAt(data?.refreshed_at)}
           </span>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="link" size="sm" asChild>
-              <Link to="/manage/payment-run/setup">Manage registration</Link>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => openConfigure()}
+            >
+              <Settings2 className="mr-2 size-4" />
+              Configure worksheet
             </Button>
             <Button
               type="button"
@@ -584,6 +752,7 @@ export function PaymentWorksheetPage() {
                   onPlannedBlur={handlePlannedBlur}
                   onPaidChange={handleLiabilityPaidChange}
                   onEditRegistration={openEditBillRegistration}
+                  onEditAccount={openLiabilityAccount}
                 />
               ) : (
                 <Card>
@@ -641,9 +810,14 @@ export function PaymentWorksheetPage() {
         open={billRegistrationOpen}
         onOpenChange={(open) => {
           setBillRegistrationOpen(open)
-          if (!open) setBillEditTarget(null)
+          if (!open) {
+            setBillEditTarget(null)
+            setLinkBillId(null)
+          }
         }}
         defaultSection={billRegistrationSection}
+        initialMode={billRegistrationMode}
+        initialFireflyBillId={linkBillId}
         editTarget={billEditTarget}
         creditCards={data?.credit_cards ?? []}
         buckets={data?.buckets ?? []}
@@ -651,6 +825,88 @@ export function PaymentWorksheetPage() {
         loadingAvailable={loadingAvailableBills}
         onSubmit={handleRegisterBill}
       />
+
+      <PaymentConfigureSheet
+        open={configureOpen}
+        onOpenChange={setConfigureOpen}
+        initialSection={configureSection}
+        buckets={data?.buckets ?? []}
+        creditCards={data?.credit_cards ?? []}
+        bills={data?.bills ?? []}
+        liabilities={data?.liabilities ?? []}
+        excludedCreditCards={data?.excluded_credit_cards ?? []}
+        excludedLiabilities={data?.excluded_liabilities ?? []}
+        accountNameById={accountNameById}
+        onRegisterBill={openRegisterBillFromConfigure}
+        onEditBill={openEditBillFromConfigure}
+        onRemoveBill={setRemoveTarget}
+        onLinkBill={openLinkBillFromConfigure}
+        onEditCard={openEditCardFromConfigure}
+        onEditLiabilityAccount={openEditLiabilityFromConfigure}
+        onManageExcludedCards={openManageExcludedCardsFromConfigure}
+        onManageExcludedLiabilities={openManageExcludedLiabilitiesFromConfigure}
+      />
+
+      <LiabilityAccountSheet
+        open={liabilitySheetOpen}
+        onOpenChange={setLiabilitySheetOpen}
+        row={editingLiability}
+        buckets={data?.buckets ?? []}
+        loanConfigured={
+          editingLiability?.account_id
+            ? loanByAccountId.get(editingLiability.account_id)?.configured
+            : false
+        }
+        loanExpectedAmount={
+          editingLiability?.account_id
+            ? loanByAccountId.get(editingLiability.account_id)?.expectedAmount ??
+              null
+            : null
+        }
+        onSave={handleLiabilityAccountSave}
+        onExclude={handleExcludeLiability}
+      />
+
+      <Sheet
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null)
+        }}
+      >
+        <SheetContent side="right" className="sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>
+              Remove {removeTarget?.name ?? "bill"} from worksheet?
+            </SheetTitle>
+            <SheetDescription>
+              The Firefly bill and rule are not deleted.
+            </SheetDescription>
+          </SheetHeader>
+          {removeError ? (
+            <p className="text-destructive px-4 text-sm">{removeError}</p>
+          ) : null}
+          <SheetFooter className="flex flex-row flex-wrap items-center justify-end gap-2 border-t pt-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={removingBill}
+              onClick={() => setRemoveTarget(null)}
+            >
+              Keep on worksheet
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={removingBill}
+              onClick={() => void handleConfirmRemoveBill()}
+            >
+              {removingBill ? "Removing…" : "Remove"}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       <CreditCardSheet
         open={cardSheetOpen}
