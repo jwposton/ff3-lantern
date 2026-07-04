@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { registeredBillsQueryKey } from "@/hooks/useBillHistory"
 import { useBillSuggestions } from "@/hooks/useBillSuggestions"
+import { useDiscoverSettings } from "@/hooks/useDiscoverSettings"
 import { useHealth } from "@/hooks/useHealth"
 import {
   paymentRunQueryKey,
@@ -112,6 +113,15 @@ export function BillDiscoverPage() {
       queryKey: ["paymentRun", "billSuggestionTransactions"],
     })
   }, [lookbackMonths, queryClient])
+
+  const { data: discoverSettings } = useDiscoverSettings()
+
+  useEffect(() => {
+    setExpandedIds(new Set())
+    queryClient.removeQueries({
+      queryKey: ["paymentRun", "billSuggestionTransactions"],
+    })
+  }, [discoverSettings?.ignored_categories, queryClient])
 
   const {
     data,
