@@ -21,6 +21,7 @@ from payment_worksheet_profiles import (
     is_funding_bucket_eligible_summary,
     merge_payment_worksheet_profile,
     parse_payment_worksheet_from_notes,
+    patch_worksheet_refresh_liability_profile,
     patch_worksheet_refresh_profile,
     write_payment_worksheet_profile,
 )
@@ -151,9 +152,11 @@ class BucketBalanceBody(BaseModel):
 
 class RowStateBody(BaseModel):
     planned_amount: str | None = None
+    amount_due: str | None = None
     paid_at: str | None = None
     clear_paid: bool = False
     clear_planned_override: bool = False
+    clear_amount_due_override: bool = False
 
 
 class UpdateBillRegistryBody(BaseModel):
@@ -259,6 +262,8 @@ async def update_row_state(
     planned_override = (
         int(existing["planned_amount_override"]) if existing else 0
     )
+    amount_due = existing["amount_due"] if existing else "0.00"
+    amount_due_override = int(existing["amount_due_override"]) if existing else 0
     paid_at = existing["paid_at"] if existing else None
 
     updates = body.model_dump(exclude_unset=True)
@@ -268,6 +273,12 @@ async def update_row_state(
         planned_override = 0
     elif "planned_amount" in updates and updates["planned_amount"] is not None:
         planned_override = 1
+
+    if body.clear_amount_due_override:
+        amount_due_override = 0
+    elif "amount_due" in updates and updates["amount_due"] is not None:
+        amount_due = _validate_amount(updates["amount_due"], "amount_due")
+        amount_due_override = 1
 
     if body.clear_paid:
         paid_at = None
@@ -280,12 +291,16 @@ async def update_row_state(
         month=target_month,
         planned_amount=planned_amount,
         planned_amount_override=planned_override,
+        amount_due=amount_due,
+        amount_due_override=amount_due_override,
         paid_at=paid_at,
     )
     return {
         "row_key": row_key,
         "month": target_month,
         "planned_amount": planned_amount,
+        "amount_due": amount_due,
+        "amount_due_override": bool(amount_due_override),
         "paid_at": paid_at,
     }
 
@@ -408,9 +423,14 @@ async def update_account_worksheet(
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    await patch_worksheet_refresh_profile(
-        target_month, account_id, merged, profile_updates
-    )
+    if is_credit_card_asset(attrs):
+        await patch_worksheet_refresh_profile(
+            target_month, account_id, merged, profile_updates
+        )
+    else:
+        await patch_worksheet_refresh_liability_profile(
+            target_month, account_id, merged, profile_updates
+        )
     firefly_reference_cache.clear()
     return {"account_id": account_id, "profile": merged}
 

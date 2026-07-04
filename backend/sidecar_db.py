@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS worksheet_state (
   month TEXT NOT NULL,
   planned_amount TEXT NOT NULL DEFAULT '0.00',
   planned_amount_override INTEGER NOT NULL DEFAULT 0,
+  amount_due TEXT NOT NULL DEFAULT '0.00',
+  amount_due_override INTEGER NOT NULL DEFAULT 0,
   paid_at TEXT,
   matched_journal_id TEXT,
   PRIMARY KEY (row_key, month)
@@ -140,6 +142,41 @@ async def init_db() -> None:
         try:
             await db.execute(
                 "ALTER TABLE worksheet_registry ADD COLUMN credit_card_account_id TEXT"
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                "ALTER TABLE worksheet_state ADD COLUMN owed TEXT NOT NULL DEFAULT '0.00'"
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                "ALTER TABLE worksheet_state ADD COLUMN owed_override INTEGER NOT NULL DEFAULT 0"
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                "ALTER TABLE worksheet_state ADD COLUMN amount_due TEXT NOT NULL DEFAULT '0.00'"
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                "ALTER TABLE worksheet_state ADD COLUMN amount_due_override INTEGER NOT NULL DEFAULT 0"
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                """
+                UPDATE worksheet_state
+                SET amount_due = owed,
+                    amount_due_override = owed_override
+                WHERE amount_due_override = 0 AND owed_override = 1
+                """
             )
         except aiosqlite.OperationalError:
             pass
@@ -426,7 +463,7 @@ async def get_worksheet_state_for_month(month: str) -> list[dict[str, Any]]:
         cursor = await db.execute(
             """
             SELECT row_key, row_type, month, planned_amount, planned_amount_override,
-                   paid_at, matched_journal_id
+                   amount_due, amount_due_override, paid_at, matched_journal_id
             FROM worksheet_state
             WHERE month = ?
             ORDER BY row_key ASC
@@ -444,22 +481,44 @@ async def upsert_worksheet_state_row(
     month: str,
     planned_amount: str = "0.00",
     planned_amount_override: int = 0,
+    amount_due: str | None = None,
+    amount_due_override: int | None = None,
     paid_at: str | None = None,
     matched_journal_id: str | None = None,
 ) -> None:
     await init_db()
     async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute(
+            """
+            SELECT planned_amount, planned_amount_override, amount_due, amount_due_override,
+                   paid_at, matched_journal_id
+            FROM worksheet_state
+            WHERE row_key = ? AND month = ?
+            """,
+            (row_key, month),
+        )
+        existing = await cursor.fetchone()
+        final_amount_due = (
+            amount_due if amount_due is not None else (existing[2] if existing else "0.00")
+        )
+        final_amount_due_override = (
+            amount_due_override
+            if amount_due_override is not None
+            else (existing[3] if existing else 0)
+        )
         await db.execute(
             """
             INSERT INTO worksheet_state (
               row_key, row_type, month, planned_amount, planned_amount_override,
-              paid_at, matched_journal_id
+              amount_due, amount_due_override, paid_at, matched_journal_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(row_key, month) DO UPDATE SET
               row_type = excluded.row_type,
               planned_amount = excluded.planned_amount,
               planned_amount_override = excluded.planned_amount_override,
+              amount_due = excluded.amount_due,
+              amount_due_override = excluded.amount_due_override,
               paid_at = excluded.paid_at,
               matched_journal_id = excluded.matched_journal_id
             """,
@@ -469,6 +528,8 @@ async def upsert_worksheet_state_row(
                 month,
                 planned_amount,
                 planned_amount_override,
+                final_amount_due,
+                final_amount_due_override,
                 paid_at,
                 matched_journal_id,
             ),

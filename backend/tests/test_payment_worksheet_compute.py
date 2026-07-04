@@ -184,16 +184,43 @@ async def test_build_worksheet_envelope_with_refresh(data_dir):
     assert envelope["buckets"][0]["planned_outflows"] == "500.00"
 
 
+@pytest.mark.asyncio
+async def test_assemble_credit_cards_skips_profile_only_stubs(data_dir):
+    await sidecar_db.upsert_worksheet_refresh(
+        month="2026-07",
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(
+            {
+                "buckets": {},
+                "credit_cards": {
+                    "404": {"funding_bucket_key": "checking"},
+                    "cc1": {
+                        "name": "Chase VISA",
+                        "owed": "1200.00",
+                        "new_total": "150.00",
+                        "interest_accrued": "25.00",
+                        "fees": "0.00",
+                    },
+                },
+            }
+        ),
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    assert len(envelope["credit_cards"]) == 1
+    assert envelope["credit_cards"][0]["account_id"] == "cc1"
+
+
 def test_section_subtotals():
     bills = [
         {
-            "owed": "100.00",
+            "amount_due": "100.00",
             "planned_amount": "80.00",
             "counts_toward_cash_plan": True,
             "payment_rail": "bank",
         },
         {
-            "owed": "50.00",
+            "amount_due": "50.00",
             "planned_amount": "25.00",
             "counts_toward_cash_plan": False,
             "payment_rail": "credit_card",
@@ -203,10 +230,11 @@ def test_section_subtotals():
         {
             "account_id": "m1",
             "owed": "50000.00",
+            "amount_due": "427.18",
             "planned_amount": "427.18",
         },
         {
-            "owed": "200.00",
+            "amount_due": "200.00",
             "planned_amount": "0.00",
             "counts_toward_cash_plan": False,
             "payment_rail": "credit_card",
@@ -214,10 +242,12 @@ def test_section_subtotals():
     ]
     credit_cards = [{"planned_amount": "400.00", "owed": "1200.00"}]
     result = compute_section_subtotals(bills, liabilities, credit_cards)
-    assert result["bills"]["owed"] == "150.00"
+    assert result["bills"]["owed"] == "0.00"
+    assert result["bills"]["due"] == "150.00"
     assert result["bills"]["planned_cash"] == "80.00"
     assert result["bills"]["on_card_informational"] == "50.00"
-    assert result["liabilities"]["owed"] == "50200.00"
+    assert result["liabilities"]["owed"] == "50000.00"
+    assert result["liabilities"]["due"] == "627.18"
     assert result["liabilities"]["planned_cash"] == "427.18"
     assert result["credit_cards"]["planned_cash"] == "400.00"
     assert "owed" not in result["credit_cards"]
@@ -263,12 +293,13 @@ def test_grand_totals_includes_cc_owed():
         {"owed": "800.00", "planned_amount": "200.00"},
     ]
     section_subtotals = {
-        "bills": {"owed": "150.00", "planned_cash": "80.00"},
-        "liabilities": {"owed": "50000.00", "planned_cash": "427.18"},
+        "bills": {"owed": "0.00", "due": "150.00", "planned_cash": "80.00"},
+        "liabilities": {"owed": "50000.00", "due": "627.18", "planned_cash": "427.18"},
         "credit_cards": {"planned_cash": "600.00"},
     }
     result = compute_grand_totals(credit_cards, section_subtotals)
-    assert result["owed"] == "52150.00"
+    assert result["owed"] == "52000.00"
+    assert result["due"] == "777.18"
     assert result["planned_cash"] == "1107.18"
 
 
@@ -315,10 +346,109 @@ async def test_build_worksheet_envelope_with_bills(data_dir):
     assert len(envelope["bills"]) == 1
     bill = envelope["bills"][0]
     assert bill["row_key"] == bill_row_key(reg_id)
-    assert bill["owed"] == "125.50"
+    assert bill["amount_due"] == "125.50"
     assert bill["row_label"] == "Electric"
-    assert envelope["section_subtotals"]["bills"]["owed"] == "125.50"
-    assert envelope["grand_totals"]["owed"] == "125.50"
+    assert envelope["section_subtotals"]["bills"]["due"] == "125.50"
+    assert envelope["grand_totals"]["due"] == "125.50"
+
+
+@pytest.mark.asyncio
+async def test_build_worksheet_envelope_bill_amount_due_override(data_dir):
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-1",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "recurring",
+            "planned_sync": "fixed",
+            "payment_rail": "bank",
+            "rule_id": "rule-1",
+            "row_label": "Electric",
+        }
+    )
+    balances = {
+        "buckets": {"checking": {"reported_balance": "3000.00"}},
+        "credit_cards": {},
+        "liabilities": {},
+        "excluded_liabilities": {},
+        "bills": {
+            str(reg_id): {
+                "owed": "125.50",
+                "firefly_bill_id": "bill-1",
+                "name": "Electric",
+            }
+        },
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month="2026-07",
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+    await sidecar_db.upsert_worksheet_state_row(
+        row_key=bill_row_key(reg_id),
+        row_type="bill",
+        month="2026-07",
+        amount_due="200.00",
+        amount_due_override=1,
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    bill = envelope["bills"][0]
+    assert bill["amount_due"] == "200.00"
+    assert bill["amount_due_override"] is True
+    assert envelope["section_subtotals"]["bills"]["due"] == "200.00"
+
+
+@pytest.mark.asyncio
+async def test_build_worksheet_envelope_liability_amount_due_defaults_to_planned(data_dir):
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    balances = {
+        "buckets": {"checking": {"reported_balance": "3000.00"}},
+        "credit_cards": {},
+        "liabilities": {
+            "loan-1": {
+                "name": "Mortgage",
+                "owed": "250000.00",
+                "est_interest": "800.00",
+                "remaining_payments": 142,
+                "default_planned_payment": "1800.00",
+            }
+        },
+        "excluded_liabilities": {},
+        "bills": {},
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month="2026-07",
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+    await sidecar_db.upsert_worksheet_state_row(
+        row_key="liability:loan-1",
+        row_type="liability",
+        month="2026-07",
+        planned_amount="1800.00",
+        planned_amount_override=0,
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    liability = envelope["liabilities"][0]
+    assert liability["owed"] == "250000.00"
+    assert liability["amount_due"] == "1800.00"
+    assert liability["planned_amount"] == "1800.00"
+    assert liability["amount_due_override"] is False
+    assert envelope["section_subtotals"]["liabilities"]["owed"] == "250000.00"
+    assert envelope["section_subtotals"]["liabilities"]["due"] == "1800.00"
 
 
 @pytest.mark.asyncio

@@ -255,7 +255,7 @@ export function PaymentConfigureSheet({
                       <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead>Section</TableHead>
-                        <TableHead>Rail</TableHead>
+                        <TableHead>Pmt Src</TableHead>
                         <TableHead>Bucket</TableHead>
                         <TableHead>Amount mode</TableHead>
                         <TableHead className="text-right">Actions</TableHead>

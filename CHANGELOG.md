@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Payment worksheet funding buckets** — bucket summary is a compact data table (Balance, User balance, Planned outflow, Remaining balance) with a totals row; stays pinned below the date bar while scrolling the worksheet
+- **Payment worksheet bills & liabilities** — section subtotals are a single table row (like credit cards) instead of multi-line footers
+- **Payment worksheet tables** — credit cards default to an explicit per-card sort order (set in card details); column headers sort the table temporarily; Bills **Rail** renamed to **Pmt Src**; Liabilities columns reordered (Name, Pmt Src, Owed, Remaining pmt, Est. interest, Amt. Due, Planned, Paid, Actions); Actions column aligned across all tables; Bill and liability names link to Firefly (primary color, underline on hover) like credit cards
+- **Charts Spending/Cash Flow toggle** — moved from the sidebar to each chart report page header; sidebar Charts nav lists chart types only (Bar, Line/Trend, Sankey, Variance)
 - **Payment worksheet configuration** — consolidated setup into a **Configure worksheet** panel on the payment worksheet (bills registry, credit cards, loans & liabilities); removed the separate Payment setup sidebar entry; legacy `/manage/payment-run/setup` redirects to the worksheet
 - **Liability account actions** — loan/mortgage rows on the worksheet open a profile sheet (bucket, exclude, link to loan profile) from the Actions pencil
 
@@ -35,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Payment worksheet credit card activity** — expand the **New** column on a card row to see an inline table of charges, interest, and fees that sum to **New** (from the last refresh snapshot; refresh again after new Firefly imports); activity rows include payee and budget, indented below the card row with full-width columns
 - **Payment worksheet planned amount** — unset planned payment shows a soft **0.00** placeholder (empty field on focus); clearing the field resets to the default; saved amounts still require explicit edits
 - **Payment worksheet bucket user balance** — unset user balance shows a soft placeholder matching **Reported** (empty field on focus); clearing the field resets to reported; saved overrides still require explicit edits
+- **Payment worksheet bill owed** — **Owed** on bill rows is editable for this month only; intermittent bills start empty until you enter an amount; recurring bills can be overridden without changing Firefly bill settings; clearing the field resets to the refresh value
+- **Payment worksheet amount due** — bill and liability rows use an editable **Amt. Due** column (worksheet-only); loan auto-draft rows default **Amt. Due** to **Planned**; section and grand totals show **Owed**, **Due**, and **Planned** subtotals
+
+### Fixed
+
+- **Liability on credit card list** — editing a loan/mortgage account’s worksheet profile no longer adds that Firefly account to the Revolving Credit table (stale snapshot entries are ignored and cleaned up on the next profile save)
 
 ### Changed
 

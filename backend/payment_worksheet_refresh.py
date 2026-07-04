@@ -323,6 +323,7 @@ async def run_refresh(
             "payment_due_day": profile.get("payment_due_day")
             or _due_day_from_monthly_payment_date(attrs.get("monthly_payment_date")),
             "apr_percent": profile.get("apr_percent"),
+            "sort_order": profile.get("sort_order"),
             "owed": _format_decimal(owed),
             **activity,
         }

@@ -10,21 +10,18 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { useMemo } from "react"
-import { NavLink, useLocation, useMatch, useNavigate } from "react-router-dom"
+import { NavLink, useLocation, useMatch } from "react-router-dom"
 
 import { AppVersionBadge } from "@/components/AppVersionBadge"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
 import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
-import { Button } from "@/components/ui/button"
 import { useHealth } from "@/hooks/useHealth"
 import { useManageQueueCounts } from "@/hooks/useManageQueueCounts"
 import {
   CHART_NAV_ENTRIES,
   buildChartNavPath,
   detectReportLens,
-  swapReportLensPath,
   type ChartNavSuffix,
-  type ReportLens,
 } from "@/lib/reportLens"
 
 import {
@@ -115,33 +112,6 @@ function NavItems({
   )
 }
 
-function ReportLensToggle({
-  lens,
-  pathname,
-}: {
-  lens: ReportLens
-  pathname: string
-}) {
-  const navigate = useNavigate()
-
-  return (
-    <div className="flex gap-1" role="group" aria-label="Report lens">
-      {(["spending", "cash-flow"] as const).map((option) => (
-        <Button
-          key={option}
-          type="button"
-          size="xs"
-          className="h-6 flex-1 px-1.5 text-[11px] font-medium"
-          variant={lens === option ? "default" : "outline"}
-          onClick={() => navigate(swapReportLensPath(pathname, option))}
-        >
-          {option === "spending" ? "Spending" : "Cash Flow"}
-        </Button>
-      ))}
-    </div>
-  )
-}
-
 function ChartsNavGroup() {
   const { pathname } = useLocation()
   const lens = detectReportLens(pathname)
@@ -161,10 +131,7 @@ function ChartsNavGroup() {
 
   return (
     <SidebarGroup>
-      <SidebarGroupLabel className="h-auto flex-col items-stretch gap-1.5 py-1.5 group-data-[collapsible=icon]:hidden">
-        <span>Charts</span>
-        <ReportLensToggle lens={lens} pathname={pathname} />
-      </SidebarGroupLabel>
+      <SidebarGroupLabel>Charts</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           <NavItems items={chartNavItems} />

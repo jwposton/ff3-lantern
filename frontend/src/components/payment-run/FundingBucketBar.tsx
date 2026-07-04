@@ -1,7 +1,16 @@
 import { Plus } from "lucide-react"
 
 import { UserBalanceInput } from "@/components/payment-run/UserBalanceInput"
+import { COMPACT_TABLE } from "@/components/payment-run/worksheetTableUtils"
 import { Button } from "@/components/ui/button"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { formatDisplayAmount } from "@/lib/formatDisplay"
 import type { FundingBucketRollup } from "@/lib/paymentRunApi"
 import { cn } from "@/lib/utils"
@@ -43,6 +52,20 @@ function formatAccountLabels(
     .join(", ")
 }
 
+function parseAmount(value: string | null | undefined): number {
+  if (!value) return 0
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function sumPlannedOutflows(buckets: FundingBucketRollup[]): string {
+  const total = buckets.reduce(
+    (sum, bucket) => sum + parseAmount(bucket.planned_outflows),
+    0,
+  )
+  return total.toFixed(2)
+}
+
 export function FundingBucketBar({
   buckets,
   totals,
@@ -52,119 +75,127 @@ export function FundingBucketBar({
   onBalanceBlur,
   onResetBalance,
 }: FundingBucketBarProps) {
+  const plannedOutflowsTotal = sumPlannedOutflows(buckets)
+
   return (
-    <div
-      className="sticky top-0 z-20 border-b bg-card/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-card/80"
-      data-testid="funding-bucket-bar"
-    >
-      <div className="flex flex-nowrap gap-3 overflow-x-auto pb-2">
-        {buckets.length === 0 ? (
-          <div className="flex min-w-[280px] shrink-0 items-center justify-center rounded-lg border border-dashed bg-muted/30 p-8">
-            <Button type="button" onClick={onAddBucket}>
-              Add funding bucket
-            </Button>
-          </div>
-        ) : (
-          <>
-            {buckets.map((bucket) => (
-              <div
-                key={bucket.id}
-                className="min-w-[280px] shrink-0 rounded-lg border bg-muted/30 p-4"
-              >
-                <button
-                  type="button"
-                  className="mb-1 text-left text-sm font-semibold hover:underline"
-                  onClick={() => onEditBucket(bucket)}
-                >
-                  {bucket.label}
-                </button>
-                <p className="text-muted-foreground mb-3 text-xs leading-snug">
-                  {formatAccountLabels(bucket.firefly_account_ids, accountNameById)}
-                </p>
-                <dl className="space-y-2 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <dt className="text-muted-foreground">Reported</dt>
-                    <dd className="tabular-nums">
-                      {formatDisplayAmount(bucket.reported_balance)}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <dt className="text-muted-foreground">User balance</dt>
-                    <dd>
+    <div className="space-y-3" data-testid="funding-bucket-bar">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold tracking-tight">Funding buckets</h2>
+        {buckets.length > 0 ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onAddBucket}
+          >
+            <Plus className="mr-1 size-3.5" aria-hidden />
+            Add bucket
+          </Button>
+        ) : null}
+      </div>
+
+      {buckets.length === 0 ? (
+        <div className="flex items-center justify-center rounded-md border border-dashed bg-muted/30 p-8">
+          <Button type="button" onClick={onAddBucket}>
+            Add funding bucket
+          </Button>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <Table className={COMPACT_TABLE}>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-[8rem]">Bucket</TableHead>
+                <TableHead className="text-right">Balance</TableHead>
+                <TableHead className="text-right">User balance</TableHead>
+                <TableHead className="text-right">Planned outflow</TableHead>
+                <TableHead className="text-right">Remaining balance</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {buckets.map((bucket) => (
+                <TableRow key={bucket.id}>
+                  <TableCell className="min-w-[8rem]">
+                    <button
+                      type="button"
+                      className="text-left font-medium hover:underline"
+                      onClick={() => onEditBucket(bucket)}
+                    >
+                      {bucket.label}
+                    </button>
+                    <p
+                      className="text-muted-foreground mt-0.5 truncate text-[10px]"
+                      title={formatAccountLabels(
+                        bucket.firefly_account_ids,
+                        accountNameById,
+                      )}
+                    >
+                      {formatAccountLabels(
+                        bucket.firefly_account_ids,
+                        accountNameById,
+                      )}
+                    </p>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatDisplayAmount(bucket.reported_balance)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex flex-col items-end gap-0.5">
                       <UserBalanceInput
                         bucket={bucket}
                         onCommit={onBalanceBlur}
                       />
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <dt className="text-muted-foreground">Planned outflows</dt>
-                    <dd className="tabular-nums">
-                      {formatDisplayAmount(bucket.planned_outflows)}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <dt className="text-muted-foreground">Remaining</dt>
-                    <dd className={remainingClassName(bucket.remaining)}>
-                      {formatDisplayAmount(bucket.remaining)}
-                    </dd>
-                  </div>
-                </dl>
-                {bucket.user_balance_override ? (
-                  <Button
-                    type="button"
-                    variant="link"
-                    size="sm"
-                    className="mt-2 h-auto px-0"
-                    onClick={() => onResetBalance(bucket.id)}
+                      {bucket.user_balance_override ? (
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          className="h-auto px-0 text-[10px]"
+                          onClick={() => onResetBalance(bucket.id)}
+                        >
+                          Reset to reported
+                        </Button>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatDisplayAmount(bucket.planned_outflows)}
+                  </TableCell>
+                  <TableCell
+                    className={cn("text-right", remainingClassName(bucket.remaining))}
                   >
-                    Reset to reported
-                  </Button>
-                ) : null}
-              </div>
-            ))}
-            <div className="flex min-w-[120px] shrink-0 items-center justify-center">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label="Add funding bucket"
-                onClick={onAddBucket}
+                    {formatDisplayAmount(bucket.remaining)}
+                  </TableCell>
+                </TableRow>
+              ))}
+              <TableRow
+                className="bg-muted/40 font-semibold hover:bg-muted/40"
+                data-testid="funding-bucket-totals-row"
               >
-                <Plus className="size-4" />
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-
-      {buckets.length > 0 ? (
-        <div className="mt-1 grid gap-3 border-t pt-3 sm:grid-cols-3">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-muted-foreground text-xs">Total reported</span>
-            <span className="text-sm font-medium tabular-nums">
-              {formatDisplayAmount(totals.reported_balance)}
-            </span>
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-muted-foreground text-xs">Total user</span>
-            <span className="text-sm font-medium tabular-nums">
-              {formatDisplayAmount(totals.user_balance)}
-            </span>
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-muted-foreground text-xs">Total remaining</span>
-            <span
-              className={cn(
-                "text-sm font-medium",
-                remainingClassName(totals.remaining),
-              )}
-            >
-              {formatDisplayAmount(totals.remaining)}
-            </span>
-          </div>
+                <TableCell>Total</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatDisplayAmount(totals.reported_balance)}
+                </TableCell>
+                <TableCell
+                  className="text-right tabular-nums"
+                  data-testid="funding-bucket-total-user"
+                >
+                  {formatDisplayAmount(totals.user_balance)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatDisplayAmount(plannedOutflowsTotal)}
+                </TableCell>
+                <TableCell
+                  className={cn("text-right", remainingClassName(totals.remaining))}
+                  data-testid="funding-bucket-total-remaining"
+                >
+                  {formatDisplayAmount(totals.remaining)}
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
-      ) : null}
+      )}
     </div>
   )
 }

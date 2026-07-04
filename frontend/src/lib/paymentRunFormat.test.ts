@@ -2,15 +2,18 @@ import { describe, expect, it } from "vitest"
 
 import {
   computeCreditCardSubtotals,
+  displayAmountDueInput,
   displayPlannedAmountInput,
   displayUserBalanceInput,
   formatInterestPercent,
   formatPaymentDueDay,
   isLastPaymentInWorksheetMonth,
   isPaymentDueUrgent,
+  isSoftAmountDue,
   isSoftPlannedAmount,
   isSoftUserBalance,
   parsePaymentDueDayInput,
+  resolveAmountDueCommit,
   resolvePlannedAmountCommit,
   resolveUserBalanceCommit,
   shouldHighlightCreditCardDue,
@@ -88,6 +91,30 @@ describe("paymentRunFormat", () => {
       clear_planned_override: true,
     })
     expect(resolvePlannedAmountCommit(row, "400.00")).toBeNull()
+  })
+
+  it("treats intermittent bill amount due as soft zero until entered", () => {
+    const row = {
+      amount_due: "0.00",
+      amount_due_override: false,
+      amount_mode: "intermittent",
+    }
+    expect(isSoftAmountDue(row)).toBe(true)
+    expect(displayAmountDueInput(row)).toBe("")
+    expect(resolveAmountDueCommit(row, "")).toBeNull()
+    expect(resolveAmountDueCommit(row, "75")).toEqual({ amount_due: "75" })
+  })
+
+  it("clears bill amount due override back to refresh default", () => {
+    const row = {
+      amount_due: "150.00",
+      amount_due_override: true,
+      amount_mode: "recurring",
+    }
+    expect(resolveAmountDueCommit(row, "")).toEqual({
+      amount_due: "0.00",
+      clear_amount_due_override: true,
+    })
   })
 
   it("treats unset user balance as soft reported match", () => {

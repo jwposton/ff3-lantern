@@ -244,18 +244,16 @@ describe("AppSidebar Charts section", () => {
     mockPendingFetch(0, 0)
   })
 
-  it("renders a single Charts group with lens toggle instead of separate Spending/Cash Flow groups", () => {
+  it("renders a Charts group with chart-type nav only (no lens toggle in sidebar)", () => {
     renderSidebar("/reports/spending")
     const groupLabelText = Array.from(
       document.querySelectorAll('[data-sidebar="group-label"]'),
     ).map((el) => el.textContent?.trim())
-    expect(groupLabelText.some((text) => text?.startsWith("Charts"))).toBe(true)
+    expect(groupLabelText.some((text) => text === "Charts")).toBe(true)
     expect(groupLabelText.some((text) => text === "Manage")).toBe(true)
     expect(groupLabelText.some((text) => text === "Spending")).toBe(false)
     expect(groupLabelText.some((text) => text === "Cash Flow")).toBe(false)
-    expect(screen.getByRole("group", { name: "Report lens" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Spending" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Cash Flow" })).toBeTruthy()
+    expect(screen.queryByRole("group", { name: "Report lens" })).toBeNull()
   })
 
   it("builds chart nav links from the active cash-flow lens", () => {

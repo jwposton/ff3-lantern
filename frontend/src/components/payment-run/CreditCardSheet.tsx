@@ -21,6 +21,7 @@ export type CreditCardDetailsInput = {
   default_planned_payment: string | null
   payment_due_day: string | null
   apr_percent: string | null
+  sort_order: number | null
 }
 
 type CreditCardSheetProps = {
@@ -45,6 +46,7 @@ export function CreditCardSheet({
   const [defaultPay, setDefaultPay] = useState("")
   const [dueDay, setDueDay] = useState("")
   const [aprPercent, setAprPercent] = useState("")
+  const [sortOrder, setSortOrder] = useState("")
   const [saving, setSaving] = useState(false)
   const [excluding, setExcluding] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,6 +58,11 @@ export function CreditCardSheet({
     setDefaultPay(row.default_planned_payment ?? "")
     setDueDay(row.payment_due_day ?? "")
     setAprPercent(row.apr_percent ?? "")
+    setSortOrder(
+      row.sort_order != null && row.sort_order !== undefined
+        ? String(row.sort_order)
+        : "",
+    )
     setError(null)
   }, [open, row])
 
@@ -77,6 +84,10 @@ export function CreditCardSheet({
           defaultPay.trim() === "" ? null : defaultPay.trim(),
         payment_due_day: paymentDueDay,
         apr_percent: aprPercent.trim() === "" ? null : aprPercent.trim(),
+        sort_order:
+          sortOrder.trim() === ""
+            ? null
+            : Number.parseInt(sortOrder, 10) || 0,
       })
       onOpenChange(false)
     } catch (err) {
@@ -210,6 +221,23 @@ export function CreditCardSheet({
             />
             <p className="text-muted-foreground text-xs">
               Worksheet reference only — not shown in Firefly for asset cards.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium" htmlFor="cc-sort-order">
+              Table sort order
+            </label>
+            <Input
+              id="cc-sort-order"
+              inputMode="numeric"
+              value={sortOrder}
+              onChange={(event) => setSortOrder(event.target.value)}
+              placeholder="e.g. 10"
+            />
+            <p className="text-muted-foreground text-xs">
+              Lower numbers appear first in the credit card table (default order).
+              Leave blank to sort after cards with an explicit order.
             </p>
           </div>
 

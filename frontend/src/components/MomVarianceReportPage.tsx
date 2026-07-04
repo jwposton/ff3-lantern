@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom"
 import { MomCompareChart } from "@/components/MomCompareChart"
 import { MomVarianceDataTable } from "@/components/MomVarianceDataTable"
 import { MomTrendChart } from "@/components/MomTrendChart"
+import { ReportPageHeader } from "@/components/ReportPageHeader"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
@@ -512,7 +513,7 @@ export function MomVarianceReportPage({
   return (
     <div className="space-y-8">
       <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{pageTitle}</h1>
+        <ReportPageHeader title={pageTitle} />
         <p className="text-sm text-muted-foreground">
           {VARIANCE_SCOPE_NOTE}
           {varianceRangeLabel ? ` ${varianceRangeLabel}.` : ""}

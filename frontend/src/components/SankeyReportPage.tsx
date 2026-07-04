@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 import { useNavigate } from "react-router-dom"
 
 import { SankeyChart } from "@/components/SankeyChart"
+import { ReportPageHeader } from "@/components/ReportPageHeader"
 import { Button } from "@/components/ui/button"
 import { useDateRange } from "@/context/DateRangeContext"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
@@ -262,7 +263,7 @@ export function SankeyReportPage({
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold tracking-tight">{pageTitle}</h1>
+      <ReportPageHeader title={pageTitle} />
 
       {controls}
 

@@ -10,12 +10,12 @@ import { PaymentWorksheetPage } from "./PaymentWorksheetPage"
 import type { PaymentWorksheetEnvelope } from "@/lib/paymentRunApi"
 
 const EMPTY_SECTION_SUBTOTALS = {
-  bills: { owed: "0.00", planned_cash: "0.00" },
-  liabilities: { owed: "0.00", planned_cash: "0.00" },
+  bills: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
+  liabilities: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
   credit_cards: { planned_cash: "0.00" },
 }
 
-const EMPTY_GRAND_TOTALS = { owed: "0.00", planned_cash: "0.00" }
+const EMPTY_GRAND_TOTALS = { owed: "0.00", due: "0.00", planned_cash: "0.00" }
 
 const EMPTY_ENVELOPE: PaymentWorksheetEnvelope = {
   month: "2026-07",
@@ -164,7 +164,8 @@ function makeBillRow(
     row_key: `bill:${id}`,
     row_label: label,
     firefly_bill_id: `ff-${id}`,
-    owed: "50.00",
+    amount_due: "50.00",
+    amount_due_override: false,
     planned_amount: "50.00",
     planned_amount_override: false,
     paid_at: paid ? "2026-07-01T12:00:00Z" : null,
@@ -191,6 +192,8 @@ const BILLS_LIABILITIES_ENVELOPE: PaymentWorksheetEnvelope = {
       row_key: "liability:loan-1",
       name: "Mortgage",
       owed: "250000.00",
+      amount_due: "1800.00",
+      amount_due_override: false,
       est_interest: "800.00",
       remaining_payments: 142,
       planned_amount: "1800.00",
@@ -204,6 +207,8 @@ const BILLS_LIABILITIES_ENVELOPE: PaymentWorksheetEnvelope = {
       row_key: "liability:loan-2",
       name: "Car loan",
       owed: "12000.00",
+      amount_due: "350.00",
+      amount_due_override: false,
       est_interest: "45.00",
       remaining_payments: 36,
       planned_amount: "350.00",
@@ -216,7 +221,8 @@ const BILLS_LIABILITIES_ENVELOPE: PaymentWorksheetEnvelope = {
       registry_id: 10,
       row_key: "bill:10",
       row_label: "Rent",
-      owed: "1500.00",
+      amount_due: "1500.00",
+      amount_due_override: false,
       planned_amount: "1500.00",
       planned_amount_override: false,
       paid_at: null,
@@ -229,12 +235,13 @@ const BILLS_LIABILITIES_ENVELOPE: PaymentWorksheetEnvelope = {
     },
   ],
   section_subtotals: {
-    bills: { owed: "200.00", planned_cash: "200.00" },
-    liabilities: { owed: "263500.00", planned_cash: "3650.00" },
+    bills: { owed: "0.00", due: "200.00", planned_cash: "200.00" },
+    liabilities: { owed: "262000.00", due: "3650.00", planned_cash: "3650.00" },
     credit_cards: { planned_cash: "900.00" },
   },
   grand_totals: {
-    owed: "264700.00",
+    owed: "264000.00",
+    due: "3850.00",
     planned_cash: "4750.00",
   },
 }
@@ -480,7 +487,7 @@ describe("PaymentWorksheetPage", () => {
     })
   })
 
-  it("renders grand total footer with owed and planned cash", async () => {
+  it("renders grand total footer with owed, due, and planned cash", async () => {
     mockPaymentFetch({ envelope: BILLS_LIABILITIES_ENVELOPE })
 
     render(
@@ -490,7 +497,8 @@ describe("PaymentWorksheetPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId("grand-total-owed").textContent).toBe("264,700.00")
+      expect(screen.getByTestId("grand-total-owed").textContent).toBe("264,000.00")
+      expect(screen.getByTestId("grand-total-due").textContent).toBe("3,850.00")
       expect(screen.getByTestId("grand-total-planned-cash").textContent).toBe(
         "4,750.00",
       )

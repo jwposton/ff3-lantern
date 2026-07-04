@@ -27,11 +27,20 @@ export type PlannedAmountRow = {
   planned_amount_override: boolean
 }
 
-export type BillRow = PlannedAmountRow & {
+export type AmountDueRow = {
+  row_key: string
+  amount_due: string
+  amount_due_override: boolean
+  amount_mode?: string
+  planned_amount?: string
+  account_id?: string
+}
+
+export type BillRow = PlannedAmountRow &
+  AmountDueRow & {
   registry_id: number
   row_label: string | null
   firefly_bill_id: string | null
-  owed: string
   paid_at: string | null
   payment_rail: string
   counts_toward_cash_plan: boolean
@@ -41,12 +50,14 @@ export type BillRow = PlannedAmountRow & {
   worksheet_section: string
 }
 
-export type LiabilityRow = PlannedAmountRow & {
+export type LiabilityRow = PlannedAmountRow &
+  AmountDueRow & {
   account_id?: string
   registry_id?: number
   name?: string | null
   row_label?: string | null
-  owed: string
+  firefly_bill_id?: string | null
+  owed?: string
   paid_at: string | null
   est_interest: string | null
   remaining_payments: number | null
@@ -61,11 +72,13 @@ export type LiabilityRow = PlannedAmountRow & {
 export type SectionSubtotals = {
   bills: {
     owed: string
+    due: string
     planned_cash: string
     on_card_informational?: string
   }
   liabilities: {
     owed: string
+    due: string
     planned_cash: string
   }
   credit_cards: {
@@ -75,6 +88,7 @@ export type SectionSubtotals = {
 
 export type GrandTotals = {
   owed: string
+  due: string
   planned_cash: string
 }
 
@@ -151,6 +165,7 @@ export type CreditCardRow = PlannedAmountRow & {
   default_planned_payment: string | null
   payment_due_day: string | null
   apr_percent: string | null
+  sort_order?: number | null
   owed: string
   new_total: string
   interest_accrued: string
@@ -333,14 +348,18 @@ export async function putRowState(
   month: string,
   body: {
     planned_amount?: string
+    amount_due?: string
     paid_at?: string | null
     clear_paid?: boolean
     clear_planned_override?: boolean
+    clear_amount_due_override?: boolean
   },
 ): Promise<{
   row_key: string
   month: string
   planned_amount: string
+  amount_due: string
+  amount_due_override: boolean
   paid_at: string | null
 }> {
   const params = new URLSearchParams({ month })
@@ -356,6 +375,8 @@ export async function putRowState(
     row_key: string
     month: string
     planned_amount: string
+    amount_due: string
+    amount_due_override: boolean
     paid_at: string | null
   }
 }
@@ -430,6 +451,7 @@ export async function putAccountWorksheet(
     default_planned_payment?: string | null
     payment_due_day?: string | null
     apr_percent?: string | null
+    sort_order?: number | null
   },
 ): Promise<{ account_id: string; profile: Record<string, unknown> }> {
   const params = new URLSearchParams({ month })

@@ -22,6 +22,7 @@ CLEARABLE_OPTIONAL_KEYS = (
     "default_planned_payment",
     "apr_percent",
     "payment_due_day",
+    "sort_order",
 )
 
 
@@ -199,6 +200,65 @@ async def patch_worksheet_refresh_profile(
             entry["payment_due_day"] = updates["payment_due_day"]
         elif "payment_due_day" in profile:
             entry["payment_due_day"] = profile.get("payment_due_day")
+        if updates is not None and "sort_order" in updates:
+            entry["sort_order"] = updates["sort_order"]
+        elif "sort_order" in profile:
+            entry["sort_order"] = profile.get("sort_order")
+    await sidecar_db.upsert_worksheet_refresh(
+        month=month,
+        refreshed_at=refreshed_at,
+        balances_json=json.dumps(balances),
+    )
+
+
+async def patch_worksheet_refresh_liability_profile(
+    month: str,
+    account_id: str,
+    profile: dict[str, Any],
+    updates: dict[str, Any] | None = None,
+) -> None:
+    """Patch liability rows in the refresh snapshot (not credit_cards)."""
+    row = await sidecar_db.get_worksheet_refresh(month)
+    if row is None:
+        balances: dict[str, Any] = {
+            "buckets": {},
+            "liabilities": {},
+            "excluded_liabilities": {},
+        }
+        refreshed_at = (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+    else:
+        balances = json.loads(row["balances_json"])
+        refreshed_at = row["refreshed_at"]
+
+    # Remove mistaken entries from credit card snapshot (legacy bug).
+    balances.setdefault("credit_cards", {}).pop(account_id, None)
+    balances.setdefault("excluded_credit_cards", {}).pop(account_id, None)
+
+    liabilities = balances.setdefault("liabilities", {})
+    excluded = balances.setdefault("excluded_liabilities", {})
+    if profile.get("included") is False:
+        prior = liabilities.pop(account_id, None)
+        excluded[account_id] = {
+            "name": (prior or {}).get("name"),
+        }
+    else:
+        prior_meta = excluded.pop(account_id, {})
+        entry = liabilities.setdefault(account_id, {})
+        if prior_meta.get("name") and not entry.get("name"):
+            entry["name"] = prior_meta.get("name")
+        if updates is not None and "funding_bucket_key" in updates:
+            entry["funding_bucket_key"] = updates["funding_bucket_key"]
+        elif "funding_bucket_key" in profile:
+            entry["funding_bucket_key"] = profile.get("funding_bucket_key")
+        if updates is not None and "default_planned_payment" in updates:
+            entry["default_planned_payment"] = updates["default_planned_payment"]
+        elif "default_planned_payment" in profile:
+            entry["default_planned_payment"] = profile.get("default_planned_payment")
     await sidecar_db.upsert_worksheet_refresh(
         month=month,
         refreshed_at=refreshed_at,

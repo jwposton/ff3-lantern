@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 
 import { BudgetReportDrilldown } from "@/components/BudgetReportDrilldown"
 import { BudgetLineChart } from "@/components/BudgetLineChart"
+import { ReportPageHeader } from "@/components/ReportPageHeader"
 import { Button } from "@/components/ui/button"
 import { useDateRange } from "@/context/DateRangeContext"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
@@ -71,7 +72,7 @@ export function BudgetLineReportPage({
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold tracking-tight">{pageTitle}</h1>
+      <ReportPageHeader title={pageTitle} />
 
       <label className="flex items-center gap-2 text-sm">
         <input

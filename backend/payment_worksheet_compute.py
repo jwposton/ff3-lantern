@@ -18,6 +18,15 @@ def bill_row_key(registry_id: int | str) -> str:
     return f"bill:{registry_id}"
 
 
+def credit_card_display_sort_key(row: dict[str, Any]) -> tuple[int, str, str]:
+    raw = row.get("sort_order")
+    try:
+        order = int(raw) if raw is not None else 999_999
+    except (TypeError, ValueError):
+        order = 999_999
+    return (order, (row.get("name") or "").casefold(), str(row["account_id"]))
+
+
 def bill_row_display_sort_key(row: dict[str, Any]) -> tuple[int, str, int]:
     """Cash monthly → cash intermittent → credit monthly → credit intermittent."""
     rail = (row.get("payment_rail") or "bank").strip()
@@ -44,6 +53,20 @@ def _decimal_amount(value: Any) -> Decimal:
 
 def _format_decimal(value: Decimal) -> str:
     return f"{value.quantize(Decimal('0.01'))}"
+
+
+def _resolve_amount_due(
+    state: dict[str, Any],
+    *,
+    refresh_default: str,
+    planned_default: str | None = None,
+) -> tuple[str, bool]:
+    """Worksheet amount due: override from state, else planned (liabilities) or refresh (bills)."""
+    if state.get("amount_due_override"):
+        return state.get("amount_due", refresh_default), True
+    if planned_default is not None:
+        return planned_default, False
+    return refresh_default, False
 
 
 def _row_type_from_key(row_key: str) -> str:
@@ -163,28 +186,27 @@ def compute_section_subtotals(
     liabilities: list[dict[str, Any]],
     credit_cards: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    bills_owed = Decimal("0")
+    bills_due = Decimal("0")
     bills_planned = Decimal("0")
     on_card_informational = Decimal("0")
     for row in bills:
-        owed = _decimal_amount(row.get("owed"))
-        bills_owed += owed
+        amount_due = _decimal_amount(row.get("amount_due"))
+        bills_due += amount_due
         if row.get("payment_rail") == "credit_card":
-            on_card_informational += owed
+            on_card_informational += amount_due
         if row.get("counts_toward_cash_plan"):
             bills_planned += _decimal_amount(row.get("planned_amount"))
 
     liabilities_owed = Decimal("0")
+    liabilities_due = Decimal("0")
     liabilities_planned = Decimal("0")
     for row in liabilities:
+        liabilities_due += _decimal_amount(row.get("amount_due"))
         if row.get("account_id"):
             liabilities_owed += _decimal_amount(row.get("owed"))
             liabilities_planned += _decimal_amount(row.get("planned_amount"))
-        else:
-            owed = _decimal_amount(row.get("owed"))
-            liabilities_owed += owed
-            if row.get("counts_toward_cash_plan"):
-                liabilities_planned += _decimal_amount(row.get("planned_amount"))
+        elif row.get("counts_toward_cash_plan"):
+            liabilities_planned += _decimal_amount(row.get("planned_amount"))
 
     cc_planned = sum(
         (_decimal_amount(card.get("planned_amount")) for card in credit_cards),
@@ -192,7 +214,8 @@ def compute_section_subtotals(
     )
 
     bills_subtotal: dict[str, str] = {
-        "owed": _format_decimal(bills_owed),
+        "owed": "0.00",
+        "due": _format_decimal(bills_due),
         "planned_cash": _format_decimal(bills_planned),
     }
     if on_card_informational > 0:
@@ -202,6 +225,7 @@ def compute_section_subtotals(
         "bills": bills_subtotal,
         "liabilities": {
             "owed": _format_decimal(liabilities_owed),
+            "due": _format_decimal(liabilities_due),
             "planned_cash": _format_decimal(liabilities_planned),
         },
         "credit_cards": {
@@ -220,8 +244,11 @@ def compute_grand_totals(
     )
     owed = (
         cc_owed
-        + _decimal_amount(section_subtotals["bills"]["owed"])
         + _decimal_amount(section_subtotals["liabilities"]["owed"])
+    )
+    due = (
+        _decimal_amount(section_subtotals["bills"]["due"])
+        + _decimal_amount(section_subtotals["liabilities"]["due"])
     )
     planned_cash = (
         _decimal_amount(section_subtotals["credit_cards"]["planned_cash"])
@@ -230,6 +257,7 @@ def compute_grand_totals(
     )
     return {
         "owed": _format_decimal(owed),
+        "due": _format_decimal(due),
         "planned_cash": _format_decimal(planned_cash),
     }
 
@@ -245,6 +273,9 @@ def _assemble_credit_cards(
     cards: list[dict[str, Any]] = []
 
     for account_id, snapshot in refresh_snapshot.get("credit_cards", {}).items():
+        # Skip profile-only stubs mistakenly stored for non-card accounts.
+        if "new_total" not in snapshot and "owed" not in snapshot:
+            continue
         row_key = cc_row_key(account_id)
         state = state_by_key.get(row_key, {})
         cards.append(
@@ -257,6 +288,7 @@ def _assemble_credit_cards(
                 "default_planned_payment": snapshot.get("default_planned_payment"),
                 "apr_percent": snapshot.get("apr_percent"),
                 "payment_due_day": snapshot.get("payment_due_day"),
+                "sort_order": snapshot.get("sort_order"),
                 "owed": snapshot.get("owed", "0.00"),
                 "new_total": snapshot.get("new_total", "0.00"),
                 "interest_accrued": snapshot.get("interest_accrued", "0.00"),
@@ -270,7 +302,7 @@ def _assemble_credit_cards(
             }
         )
 
-    cards.sort(key=lambda row: (row.get("name") or "", row["account_id"]))
+    cards.sort(key=credit_card_display_sort_key)
     return cards
 
 
@@ -319,6 +351,12 @@ def _assemble_liability_accounts(
     for account_id, snapshot in refresh_snapshot.get("liabilities", {}).items():
         row_key = liability_row_key(account_id)
         state = state_by_key.get(row_key, {})
+        planned_amount = state.get("planned_amount", "0.00")
+        amount_due, amount_due_override = _resolve_amount_due(
+            state,
+            refresh_default=planned_amount,
+            planned_default=planned_amount,
+        )
         rows.append(
             {
                 "account_id": account_id,
@@ -327,9 +365,11 @@ def _assemble_liability_accounts(
                 "funding_bucket_key": snapshot.get("funding_bucket_key"),
                 "default_planned_payment": snapshot.get("default_planned_payment"),
                 "owed": snapshot.get("owed", "0.00"),
+                "amount_due": amount_due,
+                "amount_due_override": amount_due_override,
                 "est_interest": snapshot.get("est_interest"),
                 "remaining_payments": snapshot.get("remaining_payments"),
-                "planned_amount": state.get("planned_amount", "0.00"),
+                "planned_amount": planned_amount,
                 "planned_amount_override": bool(state.get("planned_amount_override")),
                 "paid_at": state.get("paid_at"),
             }
@@ -356,13 +396,19 @@ def _assemble_bill_rows(
         row_key = bill_row_key(reg_id)
         state = state_by_key.get(row_key, {})
         snap = bills_snapshot.get(str(reg_id), {})
+        refresh_due = snap.get("owed", "0.00")
+        amount_due, amount_due_override = _resolve_amount_due(
+            state,
+            refresh_default=refresh_due,
+        )
         rows.append(
             {
                 "registry_id": reg_id,
                 "row_key": row_key,
                 "row_label": reg.get("row_label") or snap.get("name"),
                 "firefly_bill_id": reg.get("firefly_bill_id"),
-                "owed": snap.get("owed", "0.00"),
+                "amount_due": amount_due,
+                "amount_due_override": amount_due_override,
                 "planned_amount": state.get("planned_amount", "0.00"),
                 "planned_amount_override": bool(state.get("planned_amount_override")),
                 "paid_at": state.get("paid_at"),

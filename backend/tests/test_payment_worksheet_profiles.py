@@ -392,3 +392,79 @@ def test_write_profile_only_updates_notes():
     assert "notes" in body
     assert body.get("name") == "Chase VISA"
     assert PAYMENT_WORKSHEET_MARKER in body["notes"]
+
+
+@pytest.mark.asyncio
+async def test_patch_liability_profile_does_not_add_credit_card_row(data_dir):
+    import sidecar_db
+
+    from payment_worksheet_profiles import patch_worksheet_refresh_liability_profile
+
+    month = current_month_key()
+    balances = {
+        "buckets": {},
+        "credit_cards": {},
+        "excluded_credit_cards": {},
+        "liabilities": {
+            "404": {
+                "name": "Mortgage",
+                "owed": "250000.00",
+                "default_planned_payment": "1800.00",
+            }
+        },
+        "excluded_liabilities": {},
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month=month,
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+
+    await patch_worksheet_refresh_liability_profile(
+        month,
+        "404",
+        {"included": True, "funding_bucket_key": "checking"},
+        {"funding_bucket_key": "checking"},
+    )
+
+    row = await sidecar_db.get_worksheet_refresh(month)
+    updated = json.loads(row["balances_json"])
+    assert "404" not in updated["credit_cards"]
+    assert updated["liabilities"]["404"]["funding_bucket_key"] == "checking"
+
+
+@pytest.mark.asyncio
+async def test_patch_liability_profile_removes_legacy_credit_card_stub(data_dir):
+    import sidecar_db
+
+    from payment_worksheet_profiles import patch_worksheet_refresh_liability_profile
+
+    month = current_month_key()
+    balances = {
+        "buckets": {},
+        "credit_cards": {
+            "404": {"funding_bucket_key": "checking"},
+        },
+        "excluded_credit_cards": {},
+        "liabilities": {
+            "404": {"name": "Mortgage", "owed": "250000.00"},
+        },
+        "excluded_liabilities": {},
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month=month,
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+
+    await patch_worksheet_refresh_liability_profile(
+        month,
+        "404",
+        {"included": True, "funding_bucket_key": "checking"},
+        {"funding_bucket_key": "checking"},
+    )
+
+    row = await sidecar_db.get_worksheet_refresh(month)
+    updated = json.loads(row["balances_json"])
+    assert "404" not in updated["credit_cards"]
+    assert updated["liabilities"]["404"]["funding_bucket_key"] == "checking"

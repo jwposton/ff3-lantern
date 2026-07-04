@@ -111,6 +111,7 @@ function parseAmount(value: string | null | undefined): number {
 }
 
 export const SOFT_PLANNED_AMOUNT_PLACEHOLDER = "0.00"
+export const SOFT_AMOUNT_DUE_PLACEHOLDER = "0.00"
 
 /** Unset planned amount shows as empty with a placeholder until the user types. */
 export function isSoftPlannedAmount(row: {
@@ -199,6 +200,61 @@ export function resolvePlannedAmountCommit(
   }
 
   return { planned_amount }
+}
+
+/** Intermittent bills (or unset liability due) show empty until the user types. */
+export function isSoftAmountDue(row: {
+  amount_due: string
+  amount_due_override: boolean
+  amount_mode?: string
+  planned_amount?: string
+  account_id?: string
+}): boolean {
+  if (row.amount_due_override) return false
+  if (row.amount_mode === "intermittent") {
+    return parseAmount(row.amount_due) === 0
+  }
+  if (row.account_id) {
+    return (
+      parseAmount(row.amount_due) === 0 && parseAmount(row.planned_amount) === 0
+    )
+  }
+  return parseAmount(row.amount_due) === 0
+}
+
+export function displayAmountDueInput(row: {
+  amount_due: string
+  amount_due_override: boolean
+  amount_mode?: string
+  planned_amount?: string
+  account_id?: string
+}): string {
+  return isSoftAmountDue(row) ? "" : row.amount_due
+}
+
+/** Blur commit for amount due input; null means no API call. */
+export function resolveAmountDueCommit(
+  row: {
+    amount_due: string
+    amount_due_override: boolean
+    amount_mode?: string
+    planned_amount?: string
+    account_id?: string
+  },
+  rawInput: string,
+): { amount_due: string; clear_amount_due_override?: boolean } | null {
+  const trimmed = rawInput.trim()
+  if (!trimmed) {
+    if (isSoftAmountDue(row)) return null
+    return { amount_due: "0.00", clear_amount_due_override: true }
+  }
+
+  const amount_due = trimmed
+  if (plannedAmountsEqual(amount_due, row.amount_due)) {
+    return null
+  }
+
+  return { amount_due }
 }
 
 /** Aggregate CC table numerics; APR is balance-weighted, util is total owed / total limits. */

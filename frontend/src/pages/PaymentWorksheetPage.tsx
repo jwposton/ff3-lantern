@@ -257,6 +257,14 @@ export function PaymentWorksheetPage() {
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
   }
 
+  async function handleAmountDueBlur(
+    rowKey: string,
+    body: { amount_due: string; clear_amount_due_override?: boolean },
+  ) {
+    await putRowState(rowKey, month, body)
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
   async function handlePaidChange(
     rowKey: string,
     paid: boolean,
@@ -573,15 +581,17 @@ export function PaymentWorksheetPage() {
 
       {data ? (
         <>
-          <FundingBucketBar
-            buckets={data.buckets}
-            totals={data.totals}
-            accountNameById={accountNameById}
-            onAddBucket={openAddBucket}
-            onEditBucket={openEditBucket}
-            onBalanceBlur={handleBalanceBlur}
-            onResetBalance={handleResetBalance}
-          />
+          <div className="sticky top-0 z-30 -mx-6 border-b bg-background/95 px-6 py-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/90">
+            <FundingBucketBar
+              buckets={data.buckets}
+              totals={data.totals}
+              accountNameById={accountNameById}
+              onAddBucket={openAddBucket}
+              onEditBucket={openEditBucket}
+              onBalanceBlur={handleBalanceBlur}
+              onResetBalance={handleResetBalance}
+            />
+          </div>
 
           <div className="space-y-6">
             <section className="space-y-4">
@@ -691,7 +701,9 @@ export function PaymentWorksheetPage() {
                   buckets={data.buckets}
                   creditCards={data.credit_cards}
                   subtotals={data.section_subtotals.bills}
+                  fireflyBaseUrl={data.firefly_base_url}
                   onPlannedBlur={handlePlannedBlur}
+                  onAmountDueBlur={handleAmountDueBlur}
                   onPaidChange={handleBillPaidChange}
                   onEditRegistration={openEditBillRegistration}
                 />
@@ -749,7 +761,9 @@ export function PaymentWorksheetPage() {
                   buckets={data.buckets}
                   creditCards={data.credit_cards}
                   subtotals={data.section_subtotals.liabilities}
+                  fireflyBaseUrl={data.firefly_base_url}
                   onPlannedBlur={handlePlannedBlur}
+                  onAmountDueBlur={handleAmountDueBlur}
                   onPaidChange={handleLiabilityPaidChange}
                   onEditRegistration={openEditBillRegistration}
                   onEditAccount={openLiabilityAccount}

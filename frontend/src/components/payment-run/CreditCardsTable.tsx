@@ -3,6 +3,16 @@ import { Fragment, useMemo, useState } from "react"
 
 import { PlannedAmountInput } from "@/components/payment-run/PlannedAmountInput"
 import {
+  ACTIONS_CELL_CLASS,
+  ACTIONS_HEAD_CLASS,
+  COMPACT_TABLE,
+  WorksheetNameLink,
+  bucketLabel,
+  nextSortDirection,
+  sortDirectionIndicator,
+  type SortDirection,
+} from "@/components/payment-run/worksheetTableUtils"
+import {
   Table,
   TableBody,
   TableCell,
@@ -25,10 +35,7 @@ import type {
 } from "@/lib/paymentRunApi"
 import { cn } from "@/lib/utils"
 
-const COMPACT_TABLE =
-  "text-xs [&_th]:h-8 [&_th]:px-2 [&_th]:py-1 [&_th]:text-xs [&_td]:px-2 [&_td]:py-1.5 [&_td]:text-xs [&_td]:min-h-0"
-
-const COLUMN_COUNT = 13
+const COLUMN_COUNT = 14
 
 /** Bucket, limit, due, APR, util — detail columns shown from xl up to avoid horizontal scroll. */
 const XL_COL = "hidden xl:table-cell"
@@ -46,6 +53,36 @@ type CreditCardsTableProps = {
   onEditDetails: (row: CreditCardRow) => void
 }
 
+type CcSortKey =
+  | "name"
+  | "bucket"
+  | "limit"
+  | "due"
+  | "apr"
+  | "util"
+  | "owed"
+  | "lastPmt"
+  | "new"
+  | "interest"
+  | "fees"
+  | "planned"
+  | "paid"
+
+function parseAmount(value: string | null | undefined): number {
+  if (!value) return 0
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function defaultSortCompare(a: CreditCardRow, b: CreditCardRow): number {
+  const ao = a.sort_order ?? 999_999
+  const bo = b.sort_order ?? 999_999
+  if (ao !== bo) return ao - bo
+  const nameCmp = (a.name ?? "").localeCompare(b.name ?? "")
+  if (nameCmp !== 0) return nameCmp
+  return a.account_id.localeCompare(b.account_id)
+}
+
 function formatUtilPercent(
   owed: string,
   creditLimit: string | null | undefined,
@@ -58,12 +95,47 @@ function formatUtilPercent(
   return `${((owedAmount / limit) * 100).toFixed(1)}%`
 }
 
-function bucketLabel(
-  buckets: FundingBucketRollup[],
-  bucketKey: string | null | undefined,
-): string {
-  if (!bucketKey) return "—"
-  return buckets.find((bucket) => bucket.id === bucketKey)?.label ?? "—"
+function utilSortValue(owed: string, creditLimit: string | null | undefined): number {
+  if (!creditLimit) return -1
+  const limit = Number.parseFloat(creditLimit)
+  if (!Number.isFinite(limit) || limit <= 0) return -1
+  const owedAmount = Math.abs(Number.parseFloat(owed))
+  if (!Number.isFinite(owedAmount)) return -1
+  return (owedAmount / limit) * 100
+}
+
+function SortableHead({
+  label,
+  columnKey,
+  activeKey,
+  direction,
+  onSort,
+  className,
+}: {
+  label: string
+  columnKey: CcSortKey
+  activeKey: CcSortKey | null
+  direction: SortDirection
+  onSort: (key: CcSortKey) => void
+  className?: string
+}) {
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        className="inline-flex w-full items-center gap-0.5 hover:text-foreground"
+        onClick={() => onSort(columnKey)}
+      >
+        <span>{label}</span>
+        <span
+          className="text-muted-foreground text-[10px]"
+          aria-hidden
+        >
+          {sortDirectionIndicator(activeKey, columnKey, direction)}
+        </span>
+      </button>
+    </TableHead>
+  )
 }
 
 function NewActivitySubTable({
@@ -113,7 +185,7 @@ function NewActivitySubTable({
                         href={fireflyUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block truncate hover:underline"
+                        className="text-primary block truncate underline-offset-2 hover:underline"
                         title={txn.description}
                       >
                         {txn.description}
@@ -167,6 +239,55 @@ export function CreditCardsTable({
   const totals = useMemo(() => computeCreditCardSubtotals(rows), [rows])
   const paidCount = totals.paid_count
   const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set())
+  const [sortKey, setSortKey] = useState<CcSortKey | null>(null)
+  const [sortDir, setSortDir] = useState<SortDirection>("asc")
+
+  const comparators = useMemo(
+    (): Record<CcSortKey, (a: CreditCardRow, b: CreditCardRow) => number> => ({
+      name: (a, b) => (a.name ?? "").localeCompare(b.name ?? ""),
+      bucket: (a, b) =>
+        bucketLabel(buckets, a.funding_bucket_key).localeCompare(
+          bucketLabel(buckets, b.funding_bucket_key),
+        ),
+      limit: (a, b) => parseAmount(a.credit_limit) - parseAmount(b.credit_limit),
+      due: (a, b) =>
+        parseAmount(a.payment_due_day) - parseAmount(b.payment_due_day),
+      apr: (a, b) => parseAmount(a.apr_percent) - parseAmount(b.apr_percent),
+      util: (a, b) =>
+        utilSortValue(a.owed, a.credit_limit) -
+        utilSortValue(b.owed, b.credit_limit),
+      owed: (a, b) => parseAmount(a.owed) - parseAmount(b.owed),
+      lastPmt: (a, b) =>
+        parseAmount(a.last_payment_amount) - parseAmount(b.last_payment_amount),
+      new: (a, b) => parseAmount(a.new_total) - parseAmount(b.new_total),
+      interest: (a, b) =>
+        parseAmount(a.interest_accrued) - parseAmount(b.interest_accrued),
+      fees: (a, b) => parseAmount(a.fees) - parseAmount(b.fees),
+      planned: (a, b) =>
+        parseAmount(a.planned_amount) - parseAmount(b.planned_amount),
+      paid: (a, b) => Number(Boolean(a.paid_at)) - Number(Boolean(b.paid_at)),
+    }),
+    [buckets],
+  )
+
+  const sortedRows = useMemo(() => {
+    const copy = [...rows]
+    if (sortKey === null) {
+      copy.sort(defaultSortCompare)
+      return copy
+    }
+    const compare = comparators[sortKey]
+    copy.sort((a, b) => {
+      const result = compare(a, b)
+      return sortDir === "asc" ? result : -result
+    })
+    return copy
+  }, [rows, sortKey, sortDir, comparators])
+
+  function toggleSort(key: CcSortKey) {
+    setSortDir((currentDir) => nextSortDirection(sortKey, key, currentDir))
+    setSortKey(key)
+  }
 
   function toggleExpanded(rowKey: string) {
     setExpandedRows((prev) => {
@@ -186,23 +307,115 @@ export function CreditCardsTable({
         <Table className={COMPACT_TABLE}>
           <TableHeader>
             <TableRow>
-              <TableHead className="max-w-[7rem]">Card</TableHead>
-              <TableHead className={XL_COL}>Bucket</TableHead>
-              <TableHead className={cn("text-right", XL_COL)}>Limit</TableHead>
-              <TableHead className={cn("text-right", XL_COL)}>Due</TableHead>
-              <TableHead className={cn("text-right", XL_COL)}>APR</TableHead>
-              <TableHead className={cn("text-right", XL_COL)}>Util</TableHead>
-              <TableHead className="text-right">Owed</TableHead>
-              <TableHead className="text-right">Last pmt</TableHead>
-              <TableHead className="text-right">New</TableHead>
-              <TableHead className="text-right">Int.</TableHead>
-              <TableHead className="text-right">Fees</TableHead>
-              <TableHead className="text-right">Planned</TableHead>
-              <TableHead className="w-8 text-center">Paid</TableHead>
+              <SortableHead
+                label="Card"
+                columnKey="name"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className="max-w-[7rem]"
+              />
+              <SortableHead
+                label="Bucket"
+                columnKey="bucket"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className={XL_COL}
+              />
+              <SortableHead
+                label="Limit"
+                columnKey="limit"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className={cn("text-right", XL_COL)}
+              />
+              <SortableHead
+                label="Due"
+                columnKey="due"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className={cn("text-right", XL_COL)}
+              />
+              <SortableHead
+                label="APR"
+                columnKey="apr"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className={cn("text-right", XL_COL)}
+              />
+              <SortableHead
+                label="Util"
+                columnKey="util"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className={cn("text-right", XL_COL)}
+              />
+              <SortableHead
+                label="Owed"
+                columnKey="owed"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className="text-right"
+              />
+              <SortableHead
+                label="Last pmt"
+                columnKey="lastPmt"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className="text-right"
+              />
+              <SortableHead
+                label="New"
+                columnKey="new"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className="text-right"
+              />
+              <SortableHead
+                label="Int."
+                columnKey="interest"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className="text-right"
+              />
+              <SortableHead
+                label="Fees"
+                columnKey="fees"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className="text-right"
+              />
+              <SortableHead
+                label="Planned"
+                columnKey="planned"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className="text-right"
+              />
+              <SortableHead
+                label="Paid"
+                columnKey="paid"
+                activeKey={sortKey}
+                direction={sortDir}
+                onSort={toggleSort}
+                className="w-[4.5rem] text-center"
+              />
+              <TableHead className={ACTIONS_HEAD_CLASS}>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row) => {
+            {sortedRows.map((row) => {
               const isPaid = Boolean(row.paid_at)
               const dueHighlight = shouldHighlightCreditCardDue(row, month)
               const cardName = row.name ?? row.account_id
@@ -224,31 +437,13 @@ export function CreditCardsTable({
                   >
                     <TableCell className="max-w-[7rem]">
                       <div className="flex min-w-0 flex-col gap-0.5">
-                        <div className="flex min-w-0 items-center gap-0.5">
-                          {fireflyAccountUrl ? (
-                            <a
-                              href={fireflyAccountUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="min-w-0 truncate font-medium hover:underline"
-                              title={`${cardName} — open in Firefly`}
-                            >
-                              {cardName}
-                            </a>
-                          ) : (
-                            <span className="min-w-0 truncate font-medium">
-                              {cardName}
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            className="text-muted-foreground hover:text-foreground shrink-0 rounded p-0.5"
-                            aria-label={`Edit ${cardName} worksheet details`}
-                            onClick={() => onEditDetails(row)}
-                          >
-                            <Pencil className="size-3" aria-hidden />
-                          </button>
-                        </div>
+                        <WorksheetNameLink
+                          href={fireflyAccountUrl}
+                          className="min-w-0"
+                          title={`${cardName} — open in Firefly`}
+                        >
+                          {cardName}
+                        </WorksheetNameLink>
                         {dueHighlight ? (
                           <span
                             className="text-destructive text-[10px] font-semibold tabular-nums xl:hidden"
@@ -340,6 +535,16 @@ export function CreditCardsTable({
                         }
                       />
                     </TableCell>
+                    <TableCell className={ACTIONS_CELL_CLASS}>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground rounded p-0.5"
+                        aria-label={`Edit ${cardName} worksheet details`}
+                        onClick={() => onEditDetails(row)}
+                      >
+                        <Pencil className="size-3" aria-hidden />
+                      </button>
+                    </TableCell>
                   </TableRow>
                   {isExpanded && canExpand ? (
                     <TableRow className="hover:bg-transparent">
@@ -406,6 +611,7 @@ export function CreditCardsTable({
                 <TableCell className="text-center tabular-nums text-muted-foreground font-normal">
                   {paidCount}/{rows.length}
                 </TableCell>
+                <TableCell className={ACTIONS_CELL_CLASS}>—</TableCell>
               </TableRow>
             ) : null}
           </TableBody>
