@@ -547,6 +547,25 @@ async def delete_bill_registry(
     return {"ok": True}
 
 
+@router.get("/payment-run/bills")
+async def list_registered_bills(_: None = Depends(require_payment_worksheet)):
+    rows = await sidecar_db.list_worksheet_registry()
+    bills = [
+        {
+            "registry_id": row["id"],
+            "row_label": row.get("row_label"),
+            "firefly_bill_id": row.get("firefly_bill_id"),
+            "worksheet_section": row.get("worksheet_section"),
+            "payment_rail": row.get("payment_rail"),
+            "amount_mode": row.get("amount_mode"),
+        }
+        for row in rows
+        if row.get("firefly_bill_id")
+    ]
+    bills.sort(key=lambda bill: (bill.get("row_label") or "").casefold())
+    return {"data": bills}
+
+
 @router.get("/payment-run/available")
 async def available_bills(
     _: None = Depends(require_payment_worksheet),

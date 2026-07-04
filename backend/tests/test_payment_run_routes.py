@@ -949,6 +949,88 @@ def test_delete_bill_registry(monkeypatch, client, data_dir, payment_worksheet_e
         app.dependency_overrides.pop(get_firefly_client, None)
 
 
+def test_bills_disabled(monkeypatch, client):
+    monkeypatch.delenv("FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED", raising=False)
+    list_response = client.get("/api/payment-run/bills")
+    assert list_response.status_code == 404
+    assert list_response.json()["detail"] == "Payment worksheet is not enabled."
+
+
+def test_list_registered_bills(monkeypatch, client, data_dir, payment_worksheet_env):
+    import asyncio
+
+    async def _seed() -> tuple[int, int, int]:
+        bank_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-bank",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-bank",
+                "row_label": "Electric",
+            }
+        )
+        cc_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-cc",
+                "worksheet_section": "bills",
+                "credit_card_account_id": "cc1",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "credit_card",
+                "rule_id": "rule-cc",
+                "row_label": "Internet",
+            }
+        )
+        unregistered_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": None,
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-pending",
+                "row_label": "Pending",
+            }
+        )
+        return bank_id, cc_id, unregistered_id
+
+    bank_id, cc_id, unregistered_id = asyncio.run(_seed())
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    class _ListGuard(FireflyClient):
+        async def fetch_bills(self, *args, **kwargs):
+            raise AssertionError("GET /payment-run/bills must not call Firefly")
+
+    app.dependency_overrides[get_firefly_client] = lambda: _ListGuard(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.get("/api/payment-run/bills")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert len(data) == 2
+        labels = [row["row_label"] for row in data]
+        assert labels == ["Electric", "Internet"]
+        bank_row = next(row for row in data if row["registry_id"] == bank_id)
+        cc_row = next(row for row in data if row["registry_id"] == cc_id)
+        assert bank_row["payment_rail"] == "bank"
+        assert bank_row["firefly_bill_id"] == "bill-bank"
+        assert cc_row["payment_rail"] == "credit_card"
+        assert cc_row["firefly_bill_id"] == "bill-cc"
+        assert not any(row["registry_id"] == unregistered_id for row in data)
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
 def test_delete_bill_registry_cleans_worksheet_state(
     monkeypatch, client, data_dir, payment_worksheet_env
 ):
