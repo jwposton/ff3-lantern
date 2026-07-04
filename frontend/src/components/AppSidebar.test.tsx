@@ -252,6 +252,18 @@ describe("AppSidebar Manage section", () => {
     })
     expect(screen.getByText("Clear cache")).toBeTruthy()
   })
+
+  it("renders sidebar toggle in the header", async () => {
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Toggle sidebar" })).toBeTruthy()
+    })
+  })
 })
 
 describe("AppSidebar Charts section", () => {

@@ -9,12 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Global date picker** — shown only on routes where it drives page data (dashboard, charts except variance, transaction explorer, categorize, loan splits queue, loan profile); hidden on payment worksheet, MoM variance, loans list, and About
+- **Global date picker** — shown only on routes where it drives page data (dashboard, charts except variance, transaction explorer, categorize, loan splits queue, loan profile); hidden on payment worksheet, MoM variance, loans list, and About; the top header bar is omitted entirely when the picker is hidden
+- **Sidebar toggle** — collapse control moved into the sidebar header (always available; no empty shell bar on non-date routes)
 - **Clear cache** — moved from the header to a **Clear cache** item in the sidebar footer (above About)
 - **MoM variance toolbar** — title, lens toggle, and month/compare controls pinned above scroll (layout pin, like payment worksheet funding buckets); charts and tables scroll underneath
-- **Payment worksheet funding buckets** — bucket summary is a compact data table (Balance, User balance, Planned outflow, Remaining balance) with a totals row; stays visible below the page header while worksheet sections scroll (layout pin, not CSS sticky)
+- **Payment worksheet funding buckets** — bucket table sticks while the page title and actions scroll away; add/edit buckets live in Configure worksheet (Cash buckets section)
 - **Payment worksheet header** — page description moved to a help tooltip; last-refreshed timestamp and action buttons share one compact row; Refresh balances matches Configure worksheet button size
-- **Payment worksheet funding bucket bar** — linked accounts inline on the bucket name row (truncated with full list on hover); Add bucket matches other section actions (outline, sm)
+- **Payment worksheet funding bucket bar** — linked accounts inline on the bucket name row (truncated with full list on hover); no Add bucket button on the worksheet bar
 - **Payment worksheet bills & liabilities** — section subtotals are a single table row (like credit cards) instead of multi-line footers
 - **Payment worksheet tables** — credit cards default to an explicit per-card sort order (set in card details); column headers sort the table temporarily; Bills **Rail** renamed to **Pmt Src**; Liabilities columns reordered (Name, Pmt Src, Owed, Remaining pmt, Est. interest, Amt. Due, Planned, Paid, Actions); Actions column aligned across all tables; Bill and liability names link to Firefly (primary color, underline on hover) like credit cards
 - **Charts Spending/Cash Flow toggle** — moved from the sidebar to each chart report page header; sidebar Charts nav lists chart types only (Bar, Line/Trend, Sankey, Variance)

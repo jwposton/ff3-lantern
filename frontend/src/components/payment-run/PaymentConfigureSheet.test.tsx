@@ -161,6 +161,8 @@ describe("PaymentConfigureSheet", () => {
           onEditLiabilityAccount={() => {}}
           onManageExcludedCards={() => {}}
           onManageExcludedLiabilities={() => {}}
+          onAddBucket={() => {}}
+          onEditBucket={() => {}}
         />
       </TestProviders>,
     )

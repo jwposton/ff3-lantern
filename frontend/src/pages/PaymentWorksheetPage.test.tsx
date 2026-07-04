@@ -347,7 +347,7 @@ describe("PaymentWorksheetPage", () => {
     expect(getCalls.length).toBeGreaterThan(0)
   })
 
-  it("empty-bucket state shows Add bucket CTA", async () => {
+  it("empty-bucket state points to Configure worksheet", async () => {
     mockPaymentFetch({ envelope: EMPTY_ENVELOPE })
 
     render(
@@ -357,8 +357,11 @@ describe("PaymentWorksheetPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Add bucket" })).toBeTruthy()
+      const bar = screen.getByTestId("funding-bucket-bar")
+      expect(bar.textContent).toMatch(/No funding buckets — add them in/i)
+      expect(bar.textContent).toContain("Configure worksheet")
     })
+    expect(screen.queryByRole("button", { name: "Add bucket" })).toBeNull()
   })
 
   it("renders bucket bar and credit card rows from mock envelope", async () => {

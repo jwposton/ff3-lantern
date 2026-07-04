@@ -515,8 +515,9 @@ export function PaymentWorksheetPage() {
 
   return (
     <div className="-m-6 flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 space-y-3 px-6 pt-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="space-y-3 px-6 pb-6 pt-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight">
               Payment Worksheet
@@ -594,27 +595,24 @@ export function PaymentWorksheetPage() {
             </CardContent>
           </Card>
         ) : null}
-      </div>
 
-      {data ? (
-        <>
-          <div
-            className="shrink-0 border-b bg-background px-6 pb-2 pt-1"
-            data-testid="funding-bucket-sticky"
-          >
-            <FundingBucketBar
-              buckets={data.buckets}
-              totals={data.totals}
-              accountNameById={accountNameById}
-              onAddBucket={openAddBucket}
-              onEditBucket={openEditBucket}
-              onBalanceBlur={handleBalanceBlur}
-              onResetBalance={handleResetBalance}
-            />
-          </div>
+          {data ? (
+            <>
+              <div
+                className="sticky top-0 z-10 -mx-6 border-b bg-background px-6 py-2"
+                data-testid="funding-bucket-sticky"
+              >
+                <FundingBucketBar
+                  buckets={data.buckets}
+                  totals={data.totals}
+                  accountNameById={accountNameById}
+                  onEditBucket={openEditBucket}
+                  onBalanceBlur={handleBalanceBlur}
+                  onResetBalance={handleResetBalance}
+                />
+              </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-            <div className="space-y-6 pt-6">
+              <div className="space-y-6 pt-6">
             <section className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -814,10 +812,11 @@ export function PaymentWorksheetPage() {
             <WorksheetGrandTotal grandTotals={data.grand_totals} />
 
             {data.shortfall ? <ShortfallBanner buckets={data.buckets} /> : null}
-            </div>
-          </div>
-        </>
-      ) : null}
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
 
       <BucketSheet
         open={bucketSheetOpen}
@@ -881,6 +880,8 @@ export function PaymentWorksheetPage() {
         onEditLiabilityAccount={openEditLiabilityFromConfigure}
         onManageExcludedCards={openManageExcludedCardsFromConfigure}
         onManageExcludedLiabilities={openManageExcludedLiabilitiesFromConfigure}
+        onAddBucket={openAddBucket}
+        onEditBucket={(bucket) => void openEditBucket(bucket)}
       />
 
       <LiabilityAccountSheet

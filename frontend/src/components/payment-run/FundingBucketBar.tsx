@@ -21,7 +21,6 @@ type FundingBucketBarProps = {
     remaining: string
   }
   accountNameById: Map<string, string>
-  onAddBucket: () => void
   onEditBucket: (bucket: FundingBucketRollup) => void
   onBalanceBlur: (
     bucketId: string,
@@ -68,37 +67,27 @@ export function FundingBucketBar({
   buckets,
   totals,
   accountNameById,
-  onAddBucket,
   onEditBucket,
   onBalanceBlur,
   onResetBalance,
 }: FundingBucketBarProps) {
   const plannedOutflowsTotal = sumPlannedOutflows(buckets)
 
-  return (
-    <div className="space-y-2" data-testid="funding-bucket-bar">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold tracking-tight">Funding buckets</h2>
-        {buckets.length > 0 ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onAddBucket}
-          >
-            Add bucket
-          </Button>
-        ) : null}
+  if (buckets.length === 0) {
+    return (
+      <div
+        className="text-muted-foreground rounded-md border border-dashed bg-muted/30 px-4 py-3 text-center text-sm"
+        data-testid="funding-bucket-bar"
+      >
+        No funding buckets — add them in{" "}
+        <span className="font-medium text-foreground">Configure worksheet</span>.
       </div>
+    )
+  }
 
-      {buckets.length === 0 ? (
-        <div className="flex items-center justify-center rounded-md border border-dashed bg-muted/30 px-4 py-3">
-          <Button type="button" variant="outline" size="sm" onClick={onAddBucket}>
-            Add bucket
-          </Button>
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-md border">
+  return (
+    <div data-testid="funding-bucket-bar">
+      <div className="overflow-x-auto rounded-md border">
           <Table className={COMPACT_TABLE}>
             <TableHeader>
               <TableRow>
@@ -195,8 +184,7 @@ export function FundingBucketBar({
               </TableRow>
             </TableBody>
           </Table>
-        </div>
-      )}
+      </div>
     </div>
   )
 }

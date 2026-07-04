@@ -8,7 +8,6 @@ import { pathnameUsesGlobalDateRange } from "@/lib/globalDateRangeRoutes"
 import {
   SidebarInset,
   SidebarProvider,
-  SidebarTrigger,
 } from "@/components/ui/sidebar"
 
 const SIDEBAR_STORAGE_KEY = "ff3analytics-sidebar-open"
@@ -41,14 +40,13 @@ function AppShellInner() {
     <SidebarProvider open={open} onOpenChange={handleOpenChange}>
       <AppSidebar />
       <SidebarInset className="max-h-svh min-h-svh overflow-hidden">
-        <header className="z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
-          <SidebarTrigger aria-label="Toggle sidebar" />
-          {showGlobalDatePicker ? (
+        {showGlobalDatePicker ? (
+          <header className="z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <GlobalDatePicker />
             </div>
-          ) : null}
-        </header>
+          </header>
+        ) : null}
         <main className="flex min-h-0 flex-1 flex-col overflow-auto p-6">
           <Outlet />
         </main>

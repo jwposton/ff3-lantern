@@ -37,6 +37,7 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
 } from "@/components/ui/sidebar"
 
 const generalNavItems = [
@@ -211,12 +212,10 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex h-12 items-center px-2 font-semibold tracking-tight group-data-[collapsible=icon]:justify-center">
-          <span className="truncate group-data-[collapsible=icon]:hidden">
+        <div className="flex h-12 items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center">
+          <SidebarTrigger aria-label="Toggle sidebar" />
+          <span className="truncate font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
             FF3Analytics
-          </span>
-          <span className="hidden text-xs font-semibold group-data-[collapsible=icon]:inline">
-            FF3
           </span>
         </div>
       </SidebarHeader>

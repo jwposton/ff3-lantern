@@ -67,6 +67,8 @@ type PaymentConfigureSheetProps = {
   onEditLiabilityAccount: (row: LiabilityRow) => void
   onManageExcludedCards: () => void
   onManageExcludedLiabilities: () => void
+  onAddBucket: () => void
+  onEditBucket: (bucket: FundingBucketRollup) => void
 }
 
 const SECTIONS: { id: ConfigureSection; label: string }[] = [
@@ -95,6 +97,8 @@ export function PaymentConfigureSheet({
   onEditLiabilityAccount,
   onManageExcludedCards,
   onManageExcludedLiabilities,
+  onAddBucket,
+  onEditBucket,
 }: PaymentConfigureSheetProps) {
   const [section, setSection] = useState<ConfigureSection>(initialSection)
 
@@ -192,18 +196,23 @@ export function PaymentConfigureSheet({
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4">
           {section === "buckets" ? (
             <section className="space-y-3" data-testid="configure-buckets">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">Cash buckets</h3>
+                <Button type="button" variant="outline" size="sm" onClick={onAddBucket}>
+                  <Plus className="mr-2 size-4" />
+                  Add bucket
+                </Button>
+              </div>
               <p className="text-muted-foreground text-sm">
-                Add and edit funding buckets in the sticky bar at the top of the
-                payment worksheet. Use bucket user balances there for this
-                month&apos;s inter-account moves.
+                Link Firefly cash accounts to buckets. Set user balances on the
+                worksheet table for this month&apos;s inter-account moves.
               </p>
               {buckets.length === 0 ? (
                 <Card>
                   <CardContent className="py-6 text-center">
                     <p className="text-muted-foreground text-sm">
-                      No funding buckets yet. Close this panel and use{" "}
-                      <span className="font-medium">Add bucket</span> on the
-                      worksheet.
+                      No funding buckets yet. Click{" "}
+                      <span className="font-medium">Add bucket</span> above.
                     </p>
                   </CardContent>
                 </Card>
@@ -224,6 +233,15 @@ export function PaymentConfigureSheet({
                             : "No accounts linked"}
                         </p>
                       </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Edit ${bucket.label}`}
+                        onClick={() => onEditBucket(bucket)}
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
                     </li>
                   ))}
                 </ul>
