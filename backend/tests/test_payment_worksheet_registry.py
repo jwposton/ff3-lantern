@@ -32,6 +32,13 @@ def test_init_db_adds_credit_card_account_id_column(data_dir):
     assert "credit_card_account_id" in columns
 
 
+def test_init_db_adds_bill_group_columns(data_dir):
+    asyncio.run(sidecar_db.init_db())
+    columns = _registry_columns()
+    assert "bill_group_id" in columns
+    assert "show_in_group" in columns
+
+
 def test_init_db_migration_idempotent(data_dir):
     asyncio.run(sidecar_db.init_db())
     asyncio.run(sidecar_db.init_db())
