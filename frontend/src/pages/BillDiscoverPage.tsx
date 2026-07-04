@@ -1,6 +1,8 @@
 import { useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
 import { RefreshCw } from "lucide-react"
+import { toast } from "sonner"
 
 import { BillRegistrationSheet } from "@/components/payment-run/BillRegistrationSheet"
 import { BillSuggestionBucketSection } from "@/components/payment-run/BillSuggestionBucketSection"
@@ -9,7 +11,10 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useBillSuggestions } from "@/hooks/useBillSuggestions"
 import { useHealth } from "@/hooks/useHealth"
-import { usePaymentWorksheet } from "@/hooks/usePaymentWorksheet"
+import {
+  paymentRunQueryKey,
+  usePaymentWorksheet,
+} from "@/hooks/usePaymentWorksheet"
 import {
   BUCKET_ORDER,
   LOOKBACK_CHOICES,
@@ -19,8 +24,10 @@ import {
 import {
   currentMonthKey,
   fetchAvailableBills,
+  registerBill,
   type AvailableFireflyBill,
   type BillSuggestion,
+  type RegisterBillPayload,
 } from "@/lib/paymentRunApi"
 import { cn } from "@/lib/utils"
 
@@ -62,6 +69,8 @@ function formatWindowCaption(start: string, end: string): string {
 }
 
 export function BillDiscoverPage() {
+  const queryClient = useQueryClient()
+  const month = currentMonthKey()
   const { data: health, isPending: healthPending } = useHealth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [hideReview, setHideReview] = useState(false)
@@ -81,10 +90,20 @@ export function BillDiscoverPage() {
     isError,
     refetch,
   } = useBillSuggestions(lookbackMonths)
-  const { data: worksheetData } = usePaymentWorksheet(currentMonthKey())
+  const { data: worksheetData } = usePaymentWorksheet(month)
 
   const grouped =
     data && !isError ? groupByBucket(data.data, hideReview) : new Map()
+
+  async function handleAdoptSubmit(payload: RegisterBillPayload) {
+    if (!selectedSuggestion) return
+    const merchant = selectedSuggestion.merchant
+    await registerBill(payload)
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    await refetch()
+    setSheetOpen(false)
+    toast.success(`${merchant} registered`, { duration: 4000 })
+  }
 
   async function openAdopt(suggestion: BillSuggestion) {
     setSelectedSuggestion(suggestion)
@@ -235,7 +254,27 @@ export function BillDiscoverPage() {
           </Card>
         ) : null}
 
-        {!loading && !isError && data ? (
+        {!loading && !isError && data && data.data.length === 0 ? (
+          <Card>
+            <CardContent className="space-y-3 p-8 text-center">
+              <p className="font-medium">No new bill suggestions</p>
+              <p className="text-muted-foreground text-sm">
+                We didn&apos;t find recurring charges to register in this lookback
+                window. Your worksheet and registered bills are up to date.
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <Button asChild variant="default">
+                  <Link to="/manage/payment-run">Open payment worksheet</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/manage/bills">View registered bills</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {!loading && !isError && data && data.data.length > 0 ? (
           <div className="space-y-8">
             {BUCKET_ORDER.map((bucketName) => {
               const rows = grouped.get(bucketName)
@@ -266,9 +305,7 @@ export function BillDiscoverPage() {
         buckets={worksheetData?.buckets ?? []}
         availableBills={availableBills}
         loadingAvailable={loadingAvailableBills}
-        onSubmit={async () => {
-          // Plan 03 wires registerBill, invalidation, and success toast
-        }}
+        onSubmit={handleAdoptSubmit}
       />
     </div>
   )

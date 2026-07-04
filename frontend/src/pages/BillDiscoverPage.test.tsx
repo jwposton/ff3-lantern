@@ -10,6 +10,13 @@ import { BillDiscoverPage } from "./BillDiscoverPage"
 import type { BillSuggestionsEnvelope, BillSuggestion } from "@/lib/paymentRunApi"
 import type { PaymentWorksheetEnvelope } from "@/lib/paymentRunApi"
 
+const toastSuccess = vi.hoisted(() => vi.fn())
+vi.mock("sonner", () => ({
+  toast: {
+    success: (...args: unknown[]) => toastSuccess(...args),
+  },
+}))
+
 const EMPTY_WORKSHEET: PaymentWorksheetEnvelope = {
   month: "2026-07",
   refreshed_at: null,
@@ -155,6 +162,8 @@ function mockDiscoverFetch(options: {
   const suggestions = options.suggestions ?? SUGGESTIONS_FIXTURE
   const worksheet = options.worksheet ?? EMPTY_WORKSHEET
   let suggestionsCalls = 0
+  let worksheetCalls = 0
+  let registerCalls = 0
   let resolveSuggestions: (() => void) | null = null
   const suggestionsGate = options.delaySuggestions
     ? new Promise<void>((resolve) => {
@@ -193,7 +202,21 @@ function mockDiscoverFetch(options: {
     }
 
     if (url.includes("/api/payment-run?") && !url.includes("bill-suggestions")) {
+      worksheetCalls += 1
       return new Response(JSON.stringify(worksheet), { status: 200 })
+    }
+
+    if (url.includes("/api/payment-run/bills/register")) {
+      registerCalls += 1
+      return new Response(
+        JSON.stringify({
+          registry_id: 1,
+          firefly_bill_id: "99",
+          worksheet_section: "bills",
+          row_label: "Spotify",
+        }),
+        { status: 200 },
+      )
     }
 
     if (url.includes("/api/payment-run/available")) {
@@ -219,6 +242,8 @@ function mockDiscoverFetch(options: {
   return {
     fetchSpy,
     getSuggestionsCalls: () => suggestionsCalls,
+    getWorksheetCalls: () => worksheetCalls,
+    getRegisterCalls: () => registerCalls,
     getSuggestionUrls: () =>
       fetchSpy.mock.calls
         .map(([input]) => String(input))
@@ -432,5 +457,97 @@ describe("BillDiscoverPage", () => {
     const nameInput = screen.getByLabelText("Bill name") as HTMLInputElement
     expect(nameInput.value).toBe("Spotify")
     expect(screen.queryByRole("button", { name: "Saving…" })).toBeNull()
+  })
+
+  it("register refetches suggestions, invalidates worksheet, and shows toast", async () => {
+    const {
+      getSuggestionsCalls,
+      getWorksheetCalls,
+      getRegisterCalls,
+    } = mockDiscoverFetch({ suggestions: MULTI_BUCKET_SUGGESTIONS })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", { name: "Adopt Spotify as bill" }).length,
+      ).toBeGreaterThan(0)
+    })
+    expect(getSuggestionsCalls()).toBe(1)
+    const worksheetCallsBeforeRegister = getWorksheetCalls()
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Adopt Spotify as bill" })[0],
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register a bill" })).toBeTruthy()
+    })
+
+    fireEvent.change(screen.getByLabelText("Amount min"), {
+      target: { value: "9.99" },
+    })
+    fireEvent.change(screen.getByLabelText("Amount max"), {
+      target: { value: "10.99" },
+    })
+    fireEvent.change(screen.getByLabelText(/Rule — description contains/i), {
+      target: { value: "SPOTIFY" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Register bill" }))
+
+    await waitFor(() => {
+      expect(getRegisterCalls()).toBe(1)
+    })
+    await waitFor(() => {
+      expect(getSuggestionsCalls()).toBe(2)
+      expect(getWorksheetCalls()).toBeGreaterThan(worksheetCallsBeforeRegister)
+      expect(toastSuccess).toHaveBeenCalledWith("Spotify registered", {
+        duration: 4000,
+      })
+    })
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "Register a bill" })).toBeNull()
+    })
+  })
+
+  it("empty state shows positive message with worksheet and bills links", async () => {
+    mockDiscoverFetch({
+      suggestions: {
+        data: [],
+        meta: {
+          withdrawals_analyzed: 1384,
+          suggestions_count: 0,
+          period_start: "2025-07-04",
+          period_end: "2026-07-04",
+        },
+      },
+    })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("No new bill suggestions")).toBeTruthy()
+    })
+    expect(screen.getByText("1,384 withdrawals analyzed")).toBeTruthy()
+    expect(screen.getByText(/Jul 2025 – Jul \d, 2026/)).toBeTruthy()
+    expect(screen.getByText("0 suggestions")).toBeTruthy()
+    expect(
+      screen.getByRole("link", { name: "Open payment worksheet" }).getAttribute(
+        "href",
+      ),
+    ).toBe("/manage/payment-run")
+    expect(
+      screen.getByRole("link", { name: "View registered bills" }).getAttribute(
+        "href",
+      ),
+    ).toBe("/manage/bills")
   })
 })
