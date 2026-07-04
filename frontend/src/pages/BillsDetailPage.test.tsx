@@ -192,3 +192,56 @@ describe("BillsDetailPage picker", () => {
     expect(screen.getByText("Internet")).toBeTruthy()
   })
 })
+
+describe("BillsDetailPage stats and table", () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it("shows stat labels and Firefly deep link on description", async () => {
+    mockFetch({ bills: [BILL_ALPHA], history: MOCK_HISTORY })
+    render(
+      <TestProviders initialEntry="/manage/bills/1">
+        <BillsDetailPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("12-month total")).toBeTruthy()
+    })
+
+    expect(screen.getByText("Calendar average")).toBeTruthy()
+    expect(screen.getByText("Active-month average")).toBeTruthy()
+
+    const txnLinks = screen.getAllByRole("link", { name: "Monthly internet" })
+    expect(txnLinks[0]?.getAttribute("href")).toContain("/transactions/show/501")
+  })
+
+  it("empty history renders empty table copy not error card", async () => {
+    mockFetch({
+      bills: [BILL_ALPHA],
+      history: {
+        ...MOCK_HISTORY,
+        total: "0.00",
+        calendar_average: "0.00",
+        active_month_average: "0.00",
+        active_month_count: 0,
+        transactions: [],
+      },
+    })
+    render(
+      <TestProviders initialEntry="/manage/bills/1">
+        <BillsDetailPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("No payments in this period")).toBeTruthy()
+    })
+
+    expect(
+      screen.queryByText("Could not load bill history. Try again."),
+    ).toBeNull()
+  })
+})
