@@ -81,6 +81,7 @@ export function BillDiscoverPage() {
   const { data: health, isPending: healthPending } = useHealth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [hideReview, setHideReview] = useState(false)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
   const [sheetOpen, setSheetOpen] = useState(false)
   const [selectedSuggestion, setSelectedSuggestion] =
     useState<BillSuggestion | null>(null)
@@ -163,6 +164,18 @@ export function BillDiscoverPage() {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev)
       next.set("lookback", String(nextMonths))
+      return next
+    })
+  }
+
+  function handleToggleExpanded(id: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
       return next
     })
   }
@@ -321,6 +334,9 @@ export function BillDiscoverPage() {
                   payeeName={payeeName}
                   rows={rows}
                   onAdopt={(row) => void openAdopt(row)}
+                  expandedIds={expandedIds}
+                  onToggleExpanded={handleToggleExpanded}
+                  lookbackMonths={lookbackMonths}
                 />
               )
             })}
