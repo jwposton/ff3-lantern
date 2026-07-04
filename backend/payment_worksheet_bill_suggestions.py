@@ -455,12 +455,18 @@ def _is_opaque_payee_cluster(txns: list[dict[str, Any]]) -> bool:
         for txn in txns
         if str(txn.get("category_name") or "").strip()
     }
-    amounts = {
-        txn.get("amount")
+    payees = {
+        str(txn.get("destination_name") or "").casefold()
         for txn in txns
-        if isinstance(txn.get("amount"), Decimal)
     }
-    return len(categories) >= 2 or len(amounts) >= 2
+    if any("apple.com/bill" in p for p in payees):
+        amounts = {
+            txn.get("amount")
+            for txn in txns
+            if isinstance(txn.get("amount"), Decimal)
+        }
+        return len(categories) >= 2 or len(amounts) >= 2
+    return len(categories) >= 2
 
 
 def _freq_to_repeat_freq(freq: str) -> str:

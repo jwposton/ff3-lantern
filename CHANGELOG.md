@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Fixed
 
-- **Bill suggestions API** — GET /payment-run/bill-suggestions analyzes withdrawal history and returns ranked bill candidates with wizard prefill (requires payment worksheet enabled)
+- **Bill suggestions opaque payee detection** — subscriptions with varying amounts (e.g. Spotify price changes) are no longer misclassified as combined Apple Services rows
 
 ## [2.0.0] - 2026-07-03
 

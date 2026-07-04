@@ -388,6 +388,17 @@ def test_spotify_bucket_streaming_media():
     assert suggestion["merchant"] == "Spotify"
 
 
+def test_spotify_varying_amounts_not_opaque():
+    result = build_bill_suggestions(spotify_varying_amounts(12), **_engine_kwargs())
+    assert len(result["data"]) == 1
+    suggestion = result["data"][0]
+    assert suggestion["bucket"] == "Streaming & Media"
+    assert suggestion["merchant"] == "Spotify"
+    assert suggestion["status"] != "review" or "opaque_payee" not in suggestion.get("reasons", [])
+    assert suggestion.get("notes") != OPAQUE_NOTES
+    assert suggestion["register_prefill"]["category_name"] == "Music Streaming"
+
+
 def test_all_american_waste_bucket_trash():
     result = build_bill_suggestions(all_american_waste_monthly(12), **_engine_kwargs())
     assert len(result["data"]) == 1
