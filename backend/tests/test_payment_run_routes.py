@@ -206,6 +206,24 @@ def test_put_worksheet_ccasset_account_sanitizes_firefly_body(
     import asyncio
 
     asyncio.run(_seed_worksheet_snapshot(month))
+
+    async def _add_cc9_stub() -> None:
+        row = await sidecar_db.get_worksheet_refresh(month)
+        balances = json.loads(row["balances_json"])
+        balances["credit_cards"]["cc9"] = {
+            "name": "Amex",
+            "owed": "500.00",
+            "new_total": "50.00",
+            "interest_accrued": "0.00",
+            "fees": "0.00",
+        }
+        await sidecar_db.upsert_worksheet_refresh(
+            month=month,
+            refreshed_at=row["refreshed_at"],
+            balances_json=json.dumps(balances),
+        )
+
+    asyncio.run(_add_cc9_stub())
     put_bodies: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -684,9 +702,9 @@ def test_get_worksheet_bills(monkeypatch, client, data_dir, payment_worksheet_en
     body = response.json()
     assert len(body["bills"]) == 1
     assert body["bills"][0]["row_key"] == bill_row_key(reg_id)
-    assert body["bills"][0]["owed"] == "99.00"
-    assert body["section_subtotals"]["bills"]["owed"] == "99.00"
-    assert body["grand_totals"]["owed"] == "99.00"
+    assert body["bills"][0]["amount_due"] == "99.00"
+    assert body["section_subtotals"]["bills"]["due"] == "99.00"
+    assert body["grand_totals"]["due"] == "99.00"
     assert body["grand_totals"]["planned_cash"] == "99.00"
 
 

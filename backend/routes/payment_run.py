@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -579,14 +580,15 @@ async def bill_history(
     existing = await sidecar_db.get_worksheet_registry(registry_id)
     if existing is None or not existing.get("firefly_bill_id"):
         raise HTTPException(status_code=404, detail="Registered bill not found.")
-    start, end = bill_history_date_window()
+    today = date.today()
+    start, end = bill_history_date_window(today)
     try:
         rows = await client.fetch_bill_transactions(
             str(existing["firefly_bill_id"]), start, end
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    stats = compute_bill_history_stats(rows)
+    stats = compute_bill_history_stats(rows, today=today)
     transactions = sorted(rows, key=lambda row: row.get("date") or "", reverse=True)
     payload: dict[str, Any] = {
         "registry_id": registry_id,

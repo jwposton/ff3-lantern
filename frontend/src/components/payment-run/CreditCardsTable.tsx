@@ -138,6 +138,75 @@ function SortableHead({
   )
 }
 
+type ActivitySortKey =
+  | "date"
+  | "description"
+  | "payee"
+  | "category"
+  | "budget"
+  | "amount"
+
+function defaultActivityCompare(
+  a: CreditCardActivityTransaction,
+  b: CreditCardActivityTransaction,
+): number {
+  const budgetCmp = (a.budget ?? "").localeCompare(b.budget ?? "")
+  if (budgetCmp !== 0) return budgetCmp
+  return (a.category ?? "").localeCompare(b.category ?? "")
+}
+
+function activitySortIndicator(
+  sortKey: ActivitySortKey | null,
+  columnKey: ActivitySortKey,
+  direction: SortDirection,
+): string {
+  if (sortKey === null) {
+    if (columnKey === "budget" || columnKey === "category") return "↑"
+    return "↕"
+  }
+  return sortDirectionIndicator(sortKey, columnKey, direction)
+}
+
+function ActivitySortableHead({
+  label,
+  columnKey,
+  sortKey,
+  direction,
+  onSort,
+  align = "left",
+}: {
+  label: string
+  columnKey: ActivitySortKey
+  sortKey: ActivitySortKey | null
+  direction: SortDirection
+  onSort: (key: ActivitySortKey) => void
+  align?: "left" | "right"
+}) {
+  return (
+    <th
+      className={cn(
+        "pr-3 font-medium text-muted-foreground",
+        align === "right" ? "text-right" : "text-left",
+        columnKey === "date" && "whitespace-nowrap",
+      )}
+    >
+      <button
+        type="button"
+        className={cn(
+          "inline-flex items-center gap-0.5 hover:text-foreground",
+          align === "right" && "w-full justify-end",
+        )}
+        onClick={() => onSort(columnKey)}
+      >
+        <span>{label}</span>
+        <span className="text-muted-foreground text-[10px]" aria-hidden>
+          {activitySortIndicator(sortKey, columnKey, direction)}
+        </span>
+      </button>
+    </th>
+  )
+}
+
 function NewActivitySubTable({
   transactions,
   fireflyBaseUrl,
@@ -145,6 +214,43 @@ function NewActivitySubTable({
   transactions: CreditCardActivityTransaction[]
   fireflyBaseUrl?: string
 }) {
+  const [sortKey, setSortKey] = useState<ActivitySortKey | null>(null)
+  const [sortDir, setSortDir] = useState<SortDirection>("asc")
+
+  const comparators = useMemo(
+    (): Record<
+      ActivitySortKey,
+      (a: CreditCardActivityTransaction, b: CreditCardActivityTransaction) => number
+    > => ({
+      date: (a, b) => a.date.localeCompare(b.date),
+      description: (a, b) => a.description.localeCompare(b.description),
+      payee: (a, b) => (a.payee ?? "").localeCompare(b.payee ?? ""),
+      category: (a, b) => (a.category ?? "").localeCompare(b.category ?? ""),
+      budget: (a, b) => (a.budget ?? "").localeCompare(b.budget ?? ""),
+      amount: (a, b) => parseAmount(a.amount) - parseAmount(b.amount),
+    }),
+    [],
+  )
+
+  const sortedTransactions = useMemo(() => {
+    const copy = [...transactions]
+    if (sortKey === null) {
+      copy.sort(defaultActivityCompare)
+      return copy
+    }
+    const compare = comparators[sortKey]
+    copy.sort((a, b) => {
+      const result = compare(a, b)
+      return sortDir === "asc" ? result : -result
+    })
+    return copy
+  }, [transactions, sortKey, sortDir, comparators])
+
+  function toggleActivitySort(key: ActivitySortKey) {
+    setSortDir((currentDir) => nextSortDirection(sortKey, key, currentDir))
+    setSortKey(key)
+  }
+
   return (
     <div className="bg-muted/30 border-t px-4 py-2.5">
       <div className="ml-auto w-fit max-w-full overflow-x-auto">
@@ -159,16 +265,53 @@ function NewActivitySubTable({
           </colgroup>
           <thead>
             <tr>
-              <th className="pr-3 text-left whitespace-nowrap">Date</th>
-              <th className="pr-3 text-left">Description</th>
-              <th className="pr-3 text-left">Payee</th>
-              <th className="pr-3 text-left">Category</th>
-              <th className="pr-3 text-left">Budget</th>
-              <th className="text-right whitespace-nowrap">Amount</th>
+              <ActivitySortableHead
+                label="Date"
+                columnKey="date"
+                sortKey={sortKey}
+                direction={sortDir}
+                onSort={toggleActivitySort}
+              />
+              <ActivitySortableHead
+                label="Description"
+                columnKey="description"
+                sortKey={sortKey}
+                direction={sortDir}
+                onSort={toggleActivitySort}
+              />
+              <ActivitySortableHead
+                label="Payee"
+                columnKey="payee"
+                sortKey={sortKey}
+                direction={sortDir}
+                onSort={toggleActivitySort}
+              />
+              <ActivitySortableHead
+                label="Category"
+                columnKey="category"
+                sortKey={sortKey}
+                direction={sortDir}
+                onSort={toggleActivitySort}
+              />
+              <ActivitySortableHead
+                label="Budget"
+                columnKey="budget"
+                sortKey={sortKey}
+                direction={sortDir}
+                onSort={toggleActivitySort}
+              />
+              <ActivitySortableHead
+                label="Amount"
+                columnKey="amount"
+                sortKey={sortKey}
+                direction={sortDir}
+                onSort={toggleActivitySort}
+                align="right"
+              />
             </tr>
           </thead>
           <tbody>
-            {transactions.map((txn, index) => {
+            {sortedTransactions.map((txn, index) => {
               const fireflyUrl = buildFireflyTransactionUrl(
                 fireflyBaseUrl,
                 txn.journal_id,
