@@ -13,6 +13,7 @@ import { useMemo } from "react"
 import { NavLink, useLocation, useMatch } from "react-router-dom"
 
 import { AppVersionBadge } from "@/components/AppVersionBadge"
+import { ReferenceCacheMenuItem } from "@/components/ReferenceCacheButton"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
 import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
 import { useHealth } from "@/hooks/useHealth"
@@ -246,6 +247,7 @@ export function AppSidebar() {
           <AppVersionBadge className="text-[10px]" />
         </div>
         <SidebarMenu>
+          <ReferenceCacheMenuItem />
           <SidebarMenuItem>
             <NavLink to="/about" className="contents">
               {({ isActive }) => (

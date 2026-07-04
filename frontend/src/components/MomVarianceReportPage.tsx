@@ -510,398 +510,392 @@ export function MomVarianceReportPage({
 
   const controlsDisabled = compareLoading || hasFetchError
 
+  const varianceControls = (
+    <div
+      className={`flex flex-wrap items-center gap-4 text-sm ${controlsDisabled ? "opacity-50" : ""}`}
+    >
+      <div
+        className="inline-flex rounded-md border shadow-xs"
+        role="group"
+        aria-label="MoM view mode"
+      >
+        <Button
+          type="button"
+          variant={activeTab === "compare" ? "default" : "outline"}
+          size="sm"
+          className="rounded-r-none border-0"
+          disabled={controlsDisabled}
+          onClick={() => setActiveTab("compare")}
+        >
+          {tabCompareLabel}
+        </Button>
+        <Button
+          type="button"
+          variant={activeTab === "trend" ? "default" : "outline"}
+          size="sm"
+          className="rounded-l-none border-0 border-l"
+          disabled={controlsDisabled}
+          onClick={() => setActiveTab("trend")}
+        >
+          {tabTrendLabel}
+        </Button>
+      </div>
+
+      <div
+        className="inline-flex rounded-md border shadow-xs"
+        role="group"
+        aria-label="Compare mode"
+      >
+        <Button
+          type="button"
+          variant={compareMode === "vs-average" ? "default" : "outline"}
+          size="sm"
+          className="rounded-r-none border-0"
+          disabled={controlsDisabled}
+          onClick={() => {
+            setCompareMode("vs-average")
+            writeMomCompareMode(momTopNFamily, "vs-average")
+          }}
+        >
+          vs Average
+        </Button>
+        <Button
+          type="button"
+          variant={compareMode === "month-pair" ? "default" : "outline"}
+          size="sm"
+          className="rounded-l-none border-0 border-l"
+          disabled={controlsDisabled}
+          onClick={() => {
+            setCompareMode("month-pair")
+            writeMomCompareMode(momTopNFamily, "month-pair")
+            const pair = defaultMonthPair(selectableMonths)
+            setMonthA(pair.monthA)
+            setMonthB(pair.monthB)
+          }}
+        >
+          vs Month
+        </Button>
+      </div>
+
+      {compareMode === "vs-average" ? (
+        <>
+          <label className="flex items-center gap-2 font-medium">
+            {currentMonthLabel}
+            <select
+              className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
+              value={currentMonth}
+              disabled={controlsDisabled || selectableMonths.length === 0}
+              onChange={(e) => setCurrentMonth(e.target.value)}
+            >
+              {selectableMonths.map((month) => (
+                <option key={month} value={month}>
+                  {month}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 font-medium">
+            {averageWindowLabel}
+            <select
+              className="min-w-[72px] rounded-md border border-input bg-background px-2 py-1"
+              value={rollingWindow}
+              disabled={controlsDisabled}
+              onChange={(e) => {
+                const next = Number(e.target.value) as RollingWindowMonths
+                setRollingWindow(next)
+                writeMomRollingWindow(momTopNFamily, next)
+              }}
+            >
+              {ROLLING_WINDOW_OPTIONS.map((months) => (
+                <option key={months} value={months}>
+                  {months} mo
+                </option>
+              ))}
+            </select>
+          </label>
+          <div
+            className="inline-flex rounded-md border shadow-xs"
+            role="group"
+            aria-label="Rolling average method"
+          >
+            <Button
+              type="button"
+              variant={rollingAverageMethod === "mean" ? "default" : "outline"}
+              size="sm"
+              className="rounded-r-none border-0"
+              disabled={controlsDisabled}
+              onClick={() => {
+                setRollingAverageMethod("mean")
+                writeMomRollingAverageMethod(momTopNFamily, "mean")
+              }}
+            >
+              Mean
+            </Button>
+            <Button
+              type="button"
+              variant={
+                rollingAverageMethod === "median" ? "default" : "outline"
+              }
+              size="sm"
+              className="rounded-l-none border-0 border-l"
+              disabled={controlsDisabled}
+              onClick={() => {
+                setRollingAverageMethod("median")
+                writeMomRollingAverageMethod(momTopNFamily, "median")
+              }}
+            >
+              Median
+            </Button>
+          </div>
+        </>
+      ) : activeTab === "compare" ? (
+        <>
+          <label className="flex items-center gap-2 font-medium">
+            {monthALabel}
+            <select
+              className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
+              value={monthA}
+              disabled={controlsDisabled || selectableMonths.length < 2}
+              onChange={(e) => setMonthA(e.target.value)}
+            >
+              {selectableMonths.map((month) => (
+                <option key={month} value={month}>
+                  {month}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 font-medium">
+            {monthBLabel}
+            <select
+              className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
+              value={monthB}
+              disabled={controlsDisabled || selectableMonths.length < 2}
+              onChange={(e) => setMonthB(e.target.value)}
+            >
+              {selectableMonths.map((month) => (
+                <option key={month} value={month}>
+                  {month}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
+      ) : (
+        <>
+          <label className="flex items-center gap-2 font-medium">
+            To month
+            <select
+              className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
+              value={trendToMonth}
+              disabled={controlsDisabled || selectableMonths.length === 0}
+              onChange={(e) => setTrendToMonth(e.target.value)}
+            >
+              {selectableMonths.map((month) => (
+                <option key={month} value={month}>
+                  {month}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 font-medium">
+            {rangeMonthsLabel}
+            <select
+              className="min-w-[72px] rounded-md border border-input bg-background px-2 py-1"
+              value={rollingWindow}
+              disabled={controlsDisabled}
+              onChange={(e) => {
+                const next = Number(e.target.value) as RollingWindowMonths
+                setRollingWindow(next)
+                writeMomRollingWindow(momTopNFamily, next)
+              }}
+            >
+              {ROLLING_WINDOW_OPTIONS.map((months) => (
+                <option key={months} value={months}>
+                  {months} mo
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="text-muted-foreground">From {trendFromMonth}</span>
+        </>
+      )}
+
+      <label className="flex items-center gap-2 font-medium">
+        {displayTopNLabel}
+        <input
+          type="range"
+          min={TOP_N_MIN}
+          max={TOP_N_MAX}
+          value={topN}
+          disabled={controlsDisabled}
+          onChange={(e) => {
+            const n = Number(e.target.value)
+            setTopN(n)
+            writeMomTopN(momTopNFamily, n)
+            setSelectedBudget(null)
+          }}
+          className="accent-primary"
+          style={{ width: 120 }}
+        />
+        <span className="w-9 text-right font-mono tabular-nums">{topN}</span>
+      </label>
+    </div>
+  )
+
   return (
-    <div className="space-y-8">
-      <div className="space-y-1">
+    <div className="-m-6 flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div
+        className="shrink-0 space-y-3 border-b bg-background px-6 pb-3 pt-6"
+        data-testid="variance-toolbar"
+      >
         <ReportPageHeader title={pageTitle} />
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-xs">
           {VARIANCE_SCOPE_NOTE}
           {varianceRangeLabel ? ` ${varianceRangeLabel}.` : ""}
         </p>
+        {varianceControls}
       </div>
 
-      {hasFetchError ? (
-        <div
-          className="rounded-lg border border-destructive/50 bg-destructive/10 p-4"
-          role="alert"
-        >
-          <h2 className="text-sm font-semibold text-destructive">
-            Unable to load transactions
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Check that the backend is running and Firefly credentials are
-            configured.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-3"
-            onClick={() => {
-              void refetch()
-            }}
-          >
-            Retry
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div
-            className={`flex flex-wrap items-center gap-4 text-sm ${controlsDisabled ? "opacity-50" : ""}`}
-          >
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+        <div className="space-y-6 pt-6">
+          {hasFetchError ? (
             <div
-              className="inline-flex rounded-md border shadow-xs"
-              role="group"
-              aria-label="MoM view mode"
+              className="rounded-lg border border-destructive/50 bg-destructive/10 p-4"
+              role="alert"
             >
+              <h2 className="text-sm font-semibold text-destructive">
+                Unable to load transactions
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Check that the backend is running and Firefly credentials are
+                configured.
+              </p>
               <Button
                 type="button"
-                variant={activeTab === "compare" ? "default" : "outline"}
+                variant="outline"
                 size="sm"
-                className="rounded-r-none border-0"
-                disabled={controlsDisabled}
-                onClick={() => setActiveTab("compare")}
+                className="mt-3"
+                onClick={() => {
+                  void refetch()
+                }}
               >
-                {tabCompareLabel}
-              </Button>
-              <Button
-                type="button"
-                variant={activeTab === "trend" ? "default" : "outline"}
-                size="sm"
-                className="rounded-l-none border-0 border-l"
-                disabled={controlsDisabled}
-                onClick={() => setActiveTab("trend")}
-              >
-                {tabTrendLabel}
+                Retry
               </Button>
             </div>
-
-            <div
-              className="inline-flex rounded-md border shadow-xs"
-              role="group"
-              aria-label="Compare mode"
-            >
-                  <Button
-                    type="button"
-                    variant={
-                      compareMode === "vs-average" ? "default" : "outline"
-                    }
-                    size="sm"
-                    className="rounded-r-none border-0"
-                    disabled={controlsDisabled}
-                    onClick={() => {
-                      setCompareMode("vs-average")
-                      writeMomCompareMode(momTopNFamily, "vs-average")
-                    }}
-                  >
-                    vs Average
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={
-                      compareMode === "month-pair" ? "default" : "outline"
-                    }
-                    size="sm"
-                    className="rounded-l-none border-0 border-l"
-                    disabled={controlsDisabled}
-                    onClick={() => {
-                      setCompareMode("month-pair")
-                      writeMomCompareMode(momTopNFamily, "month-pair")
-                      const pair = defaultMonthPair(selectableMonths)
-                      setMonthA(pair.monthA)
-                      setMonthB(pair.monthB)
-                    }}
-                  >
-                    vs Month
-                  </Button>
-                </div>
-
-                {compareMode === "vs-average" ? (
-                  <>
-                    <label className="flex items-center gap-2 font-medium">
-                      {currentMonthLabel}
-                      <select
-                        className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
-                        value={currentMonth}
-                        disabled={controlsDisabled || selectableMonths.length === 0}
-                        onChange={(e) => setCurrentMonth(e.target.value)}
-                      >
-                        {selectableMonths.map((month) => (
-                          <option key={month} value={month}>
-                            {month}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="flex items-center gap-2 font-medium">
-                      {averageWindowLabel}
-                      <select
-                        className="min-w-[72px] rounded-md border border-input bg-background px-2 py-1"
-                        value={rollingWindow}
-                        disabled={controlsDisabled}
-                        onChange={(e) => {
-                          const next = Number(
-                            e.target.value,
-                          ) as RollingWindowMonths
-                          setRollingWindow(next)
-                          writeMomRollingWindow(momTopNFamily, next)
-                        }}
-                      >
-                        {ROLLING_WINDOW_OPTIONS.map((months) => (
-                          <option key={months} value={months}>
-                            {months} mo
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div
-                      className="inline-flex rounded-md border shadow-xs"
-                      role="group"
-                      aria-label="Rolling average method"
-                    >
-                      <Button
-                        type="button"
-                        variant={
-                          rollingAverageMethod === "mean" ? "default" : "outline"
-                        }
-                        size="sm"
-                        className="rounded-r-none border-0"
-                        disabled={controlsDisabled}
-                        onClick={() => {
-                          setRollingAverageMethod("mean")
-                          writeMomRollingAverageMethod(momTopNFamily, "mean")
-                        }}
-                      >
-                        Mean
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={
-                          rollingAverageMethod === "median"
-                            ? "default"
-                            : "outline"
-                        }
-                        size="sm"
-                        className="rounded-l-none border-0 border-l"
-                        disabled={controlsDisabled}
-                        onClick={() => {
-                          setRollingAverageMethod("median")
-                          writeMomRollingAverageMethod(momTopNFamily, "median")
-                        }}
-                      >
-                        Median
-                      </Button>
-                    </div>
-                  </>
-                ) : activeTab === "compare" ? (
-                  <>
-                    <label className="flex items-center gap-2 font-medium">
-                      {monthALabel}
-                      <select
-                        className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
-                        value={monthA}
-                        disabled={controlsDisabled || selectableMonths.length < 2}
-                        onChange={(e) => setMonthA(e.target.value)}
-                      >
-                        {selectableMonths.map((month) => (
-                          <option key={month} value={month}>
-                            {month}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="flex items-center gap-2 font-medium">
-                      {monthBLabel}
-                      <select
-                        className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
-                        value={monthB}
-                        disabled={controlsDisabled || selectableMonths.length < 2}
-                        onChange={(e) => setMonthB(e.target.value)}
-                      >
-                        {selectableMonths.map((month) => (
-                          <option key={month} value={month}>
-                            {month}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </>
-                ) : (
-                  <>
-                    <label className="flex items-center gap-2 font-medium">
-                      To month
-                      <select
-                        className="min-w-[140px] rounded-md border border-input bg-background px-2 py-1"
-                        value={trendToMonth}
-                        disabled={controlsDisabled || selectableMonths.length === 0}
-                        onChange={(e) => setTrendToMonth(e.target.value)}
-                      >
-                        {selectableMonths.map((month) => (
-                          <option key={month} value={month}>
-                            {month}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="flex items-center gap-2 font-medium">
-                      {rangeMonthsLabel}
-                      <select
-                        className="min-w-[72px] rounded-md border border-input bg-background px-2 py-1"
-                        value={rollingWindow}
-                        disabled={controlsDisabled}
-                        onChange={(e) => {
-                          const next = Number(
-                            e.target.value,
-                          ) as RollingWindowMonths
-                          setRollingWindow(next)
-                          writeMomRollingWindow(momTopNFamily, next)
-                        }}
-                      >
-                        {ROLLING_WINDOW_OPTIONS.map((months) => (
-                          <option key={months} value={months}>
-                            {months} mo
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <span className="text-muted-foreground">
-                      From {trendFromMonth}
-                    </span>
-                  </>
-                )}
-
-            <label className="flex items-center gap-2 font-medium">
-              {displayTopNLabel}
-              <input
-                type="range"
-                min={TOP_N_MIN}
-                max={TOP_N_MAX}
-                value={topN}
-                disabled={controlsDisabled}
-                onChange={(e) => {
-                  const n = Number(e.target.value)
-                  setTopN(n)
-                  writeMomTopN(momTopNFamily, n)
-                  setSelectedBudget(null)
-                }}
-                className="accent-primary"
-                style={{ width: 120 }}
-              />
-              <span className="w-9 text-right font-mono tabular-nums">
-                {topN}
-              </span>
-            </label>
-          </div>
-
-          {activeTab === "trend" ? (
-            <>
-              <MomTrendChart
-                deltaMonths={trendChartData.deltaMonths}
-                series={trendChartData.series}
-                loading={isPending}
-                emptyMessage={trendDisplayMessage}
-                chartTitle={trendChartTitle}
-                interactionHint={interactionHintTrend}
-                yAxisName={yAxisNameTrend}
-                onSelect={handleBudgetSelect}
-              />
-              {isPending || trendBudgetTableData != null ? (
-                <MomVarianceDataTable
-                  tableData={trendBudgetTableData}
-                  loading={isPending}
-                  emptyMessage={trendDisplayMessage}
-                  title={TREND_TABLE_TITLE}
-                  onRowSelect={handleBudgetSelect}
-                />
-              ) : null}
-            </>
           ) : (
             <>
-              <MomCompareChart
-                sortedNames={compareChartData.sortedNames}
-                deltas={compareChartData.deltas}
-                loading={compareLoading}
-                emptyMessage={compareDisplayMessage}
-                chartTitle={compareTitle}
-                interactionHint={interactionHintCompare}
-                yAxisName={yAxisNameCompare}
-                onSelect={handleBudgetSelect}
-              />
-              {compareLoading || compareBudgetTableData != null ? (
-                <MomVarianceDataTable
-                  tableData={compareBudgetTableData}
-                  loading={compareLoading}
-                  emptyMessage={compareDisplayMessage}
-                  title={COMPARE_TABLE_TITLE}
-                  onRowSelect={handleBudgetSelect}
-                />
+              {activeTab === "trend" ? (
+                <>
+                  <MomTrendChart
+                    deltaMonths={trendChartData.deltaMonths}
+                    series={trendChartData.series}
+                    loading={isPending}
+                    emptyMessage={trendDisplayMessage}
+                    chartTitle={trendChartTitle}
+                    interactionHint={interactionHintTrend}
+                    yAxisName={yAxisNameTrend}
+                    onSelect={handleBudgetSelect}
+                  />
+                  {isPending || trendBudgetTableData != null ? (
+                    <MomVarianceDataTable
+                      tableData={trendBudgetTableData}
+                      loading={isPending}
+                      emptyMessage={trendDisplayMessage}
+                      title={TREND_TABLE_TITLE}
+                      onRowSelect={handleBudgetSelect}
+                    />
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <MomCompareChart
+                    sortedNames={compareChartData.sortedNames}
+                    deltas={compareChartData.deltas}
+                    loading={compareLoading}
+                    emptyMessage={compareDisplayMessage}
+                    chartTitle={compareTitle}
+                    interactionHint={interactionHintCompare}
+                    yAxisName={yAxisNameCompare}
+                    onSelect={handleBudgetSelect}
+                  />
+                  {compareLoading || compareBudgetTableData != null ? (
+                    <MomVarianceDataTable
+                      tableData={compareBudgetTableData}
+                      loading={compareLoading}
+                      emptyMessage={compareDisplayMessage}
+                      title={COMPARE_TABLE_TITLE}
+                      onRowSelect={handleBudgetSelect}
+                    />
+                  ) : null}
+                </>
+              )}
+
+              {selectedBudget != null && !compareLoading ? (
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+                    <CardTitle className="text-base">
+                      {selectedBudget} breakdown
+                    </CardTitle>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedBudget(null)}
+                      aria-label="Clear MoM drilldown"
+                    >
+                      Clear
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {activeTab === "trend" ? (
+                      <>
+                        <MomTrendChart
+                          embedded
+                          deltaMonths={categoryTrendChartData.deltaMonths}
+                          series={categoryTrendChartData.series}
+                          loading={false}
+                          emptyMessage={DRILLDOWN_EMPTY_MESSAGE}
+                          chartTitle=""
+                          yAxisName={yAxisNameTrend}
+                        />
+                        {trendCategoryTableData != null ? (
+                          <MomVarianceDataTable
+                            embedded
+                            tableData={trendCategoryTableData}
+                            emptyMessage={DRILLDOWN_EMPTY_MESSAGE}
+                            title={TREND_TABLE_TITLE}
+                          />
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <MomCompareChart
+                          embedded
+                          sortedNames={categoryCompareChartData.sortedNames}
+                          deltas={categoryCompareChartData.deltas}
+                          loading={false}
+                          emptyMessage={DRILLDOWN_EMPTY_MESSAGE}
+                          chartTitle=""
+                          yAxisName={yAxisNameCompare}
+                        />
+                        {compareCategoryTableData != null ? (
+                          <MomVarianceDataTable
+                            embedded
+                            tableData={compareCategoryTableData}
+                            emptyMessage={DRILLDOWN_EMPTY_MESSAGE}
+                            title={COMPARE_TABLE_TITLE}
+                          />
+                        ) : null}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
               ) : null}
             </>
           )}
-
-          {selectedBudget != null && !compareLoading ? (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-                <CardTitle className="text-base">
-                  {selectedBudget} breakdown
-                </CardTitle>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedBudget(null)}
-                  aria-label="Clear MoM drilldown"
-                >
-                  Clear
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {activeTab === "trend" ? (
-                  <>
-                    <MomTrendChart
-                      embedded
-                      deltaMonths={categoryTrendChartData.deltaMonths}
-                      series={categoryTrendChartData.series}
-                      loading={false}
-                      emptyMessage={DRILLDOWN_EMPTY_MESSAGE}
-                      chartTitle=""
-                      yAxisName={yAxisNameTrend}
-                    />
-                    {trendCategoryTableData != null ? (
-                      <MomVarianceDataTable
-                        embedded
-                        tableData={trendCategoryTableData}
-                        emptyMessage={DRILLDOWN_EMPTY_MESSAGE}
-                        title={TREND_TABLE_TITLE}
-                      />
-                    ) : null}
-                  </>
-                ) : (
-                  <>
-                    <MomCompareChart
-                      embedded
-                      sortedNames={categoryCompareChartData.sortedNames}
-                      deltas={categoryCompareChartData.deltas}
-                      loading={false}
-                      emptyMessage={DRILLDOWN_EMPTY_MESSAGE}
-                      chartTitle=""
-                      yAxisName={yAxisNameCompare}
-                    />
-                    {compareCategoryTableData != null ? (
-                      <MomVarianceDataTable
-                        embedded
-                        tableData={compareCategoryTableData}
-                        emptyMessage={DRILLDOWN_EMPTY_MESSAGE}
-                        title={COMPARE_TABLE_TITLE}
-                      />
-                    ) : null}
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          ) : null}
         </div>
-      )}
+      </div>
     </div>
   )
 }

@@ -237,6 +237,21 @@ describe("AppSidebar Manage section", () => {
       expect(document.querySelector('a[href="/manage/payment-run"]')).toBeTruthy()
     })
   })
+
+  it("renders Clear cache control in the footer", async () => {
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Clear reference cache" }),
+      ).toBeTruthy()
+    })
+    expect(screen.getByText("Clear cache")).toBeTruthy()
+  })
 })
 
 describe("AppSidebar Charts section", () => {

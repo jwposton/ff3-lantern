@@ -347,7 +347,7 @@ describe("PaymentWorksheetPage", () => {
     expect(getCalls.length).toBeGreaterThan(0)
   })
 
-  it("empty-bucket state shows Add funding bucket CTA", async () => {
+  it("empty-bucket state shows Add bucket CTA", async () => {
     mockPaymentFetch({ envelope: EMPTY_ENVELOPE })
 
     render(
@@ -357,7 +357,7 @@ describe("PaymentWorksheetPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Add funding bucket" })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Add bucket" })).toBeTruthy()
     })
   })
 

@@ -1,5 +1,3 @@
-import { Plus } from "lucide-react"
-
 import { UserBalanceInput } from "@/components/payment-run/UserBalanceInput"
 import { COMPACT_TABLE } from "@/components/payment-run/worksheetTableUtils"
 import { Button } from "@/components/ui/button"
@@ -84,22 +82,19 @@ export function FundingBucketBar({
         {buckets.length > 0 ? (
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="h-7 gap-1 px-2 text-xs"
             onClick={onAddBucket}
-            aria-label="Add bucket"
           >
-            <Plus className="size-3.5" aria-hidden />
-            Add
+            Add bucket
           </Button>
         ) : null}
       </div>
 
       {buckets.length === 0 ? (
         <div className="flex items-center justify-center rounded-md border border-dashed bg-muted/30 px-4 py-3">
-          <Button type="button" size="sm" variant="outline" onClick={onAddBucket}>
-            Add funding bucket
+          <Button type="button" variant="outline" size="sm" onClick={onAddBucket}>
+            Add bucket
           </Button>
         </div>
       ) : (
