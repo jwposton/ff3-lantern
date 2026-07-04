@@ -20,6 +20,8 @@ describe("pathnameUsesGlobalDateRange", () => {
   it("hides on payment worksheet, variance, loans list, and about", () => {
     expect(pathnameUsesGlobalDateRange("/manage/payment-run")).toBe(false)
     expect(pathnameUsesGlobalDateRange("/manage/payment-run/setup")).toBe(false)
+    expect(pathnameUsesGlobalDateRange("/manage/bills")).toBe(false)
+    expect(pathnameUsesGlobalDateRange("/manage/bills/42")).toBe(false)
     expect(pathnameUsesGlobalDateRange("/manage/loans")).toBe(false)
     expect(pathnameUsesGlobalDateRange("/reports/spending/mom")).toBe(false)
     expect(pathnameUsesGlobalDateRange("/reports/cash-flow/mom")).toBe(false)

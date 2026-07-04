@@ -5,6 +5,10 @@ export function pathnameUsesGlobalDateRange(pathname: string): boolean {
   if (pathname === "/manage/categorize") return true
   if (pathname === "/manage/loans/queue") return true
 
+  if (pathname === "/manage/bills" || pathname.startsWith("/manage/bills/")) {
+    return false
+  }
+
   if (
     pathname.startsWith("/manage/loans/") &&
     pathname !== "/manage/loans/queue"
