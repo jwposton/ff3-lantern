@@ -31,8 +31,16 @@ function capitalizeLabel(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
+export function billColumnSubtitle(row: BillSuggestion): string | null {
+  if (row.cluster) {
+    const raw = row.register_prefill.destination_account?.trim()
+    return raw ? `via ${raw}` : null
+  }
+  return row.notes?.trim() || null
+}
+
 function reviewHighlightClass(row: BillSuggestion): string {
-  if (row.status === "review" || row.notes) {
+  if (row.status === "review" || (row.notes && !row.cluster)) {
     return "border-l-4 border-l-amber-500/70 bg-amber-50/40 dark:bg-amber-950/20"
   }
   return ""
@@ -74,15 +82,17 @@ export function BillSuggestionBucketSection({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {rows.map((row) => {
+                const subtitle = billColumnSubtitle(row)
+                return (
                 <TableRow
                   key={row.id}
                   className={cn(reviewHighlightClass(row))}
                 >
                   <TableCell>
                     <div className="font-medium">{row.merchant}</div>
-                    {row.notes ? (
-                      <p className="text-xs text-muted-foreground">{row.notes}</p>
+                    {subtitle ? (
+                      <p className="text-xs text-muted-foreground">{subtitle}</p>
                     ) : null}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
@@ -129,13 +139,16 @@ export function BillSuggestionBucketSection({
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+                )
+              })}
             </TableBody>
           </Table>
         </div>
 
         <div className="space-y-3 sm:hidden">
-          {rows.map((row) => (
+          {rows.map((row) => {
+            const subtitle = billColumnSubtitle(row)
+            return (
             <div
               key={row.id}
               className={cn(
@@ -145,8 +158,8 @@ export function BillSuggestionBucketSection({
             >
               <div>
                 <p className="font-medium">{row.merchant}</p>
-                {row.notes ? (
-                  <p className="text-xs text-muted-foreground">{row.notes}</p>
+                {subtitle ? (
+                  <p className="text-xs text-muted-foreground">{subtitle}</p>
                 ) : null}
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums">
@@ -187,7 +200,8 @@ export function BillSuggestionBucketSection({
                 Adopt
               </Button>
             </div>
-          ))}
+            )
+          })}
         </div>
       </CardContent>
     </Card>

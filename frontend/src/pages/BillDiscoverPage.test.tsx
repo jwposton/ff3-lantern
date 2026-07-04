@@ -686,6 +686,164 @@ describe("BillDiscoverPage", () => {
     })
   })
 
+  it("shows via subtitle when cluster is set", async () => {
+    mockDiscoverFetch({
+      suggestions: {
+        data: [
+          makeSuggestion({
+            id: "icloud",
+            merchant: "Cloud Storage",
+            bucket: "APPLE.COM/BILL",
+            cluster: "apple-com-bill",
+            register_prefill: {
+              mode: "create_new",
+              name: "Cloud Storage",
+              destination_account: "APPLE.COM/BILL",
+            },
+          }),
+        ],
+        meta: {
+          withdrawals_analyzed: 100,
+          suggestions_count: 1,
+          period_start: "2025-07-04",
+          period_end: "2026-07-04",
+        },
+      },
+    })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByText("via APPLE.COM/BILL").length).toBeGreaterThan(0)
+    })
+  })
+
+  it("cluster subtitle suppresses notes when both are set", async () => {
+    mockDiscoverFetch({
+      suggestions: {
+        data: [
+          makeSuggestion({
+            id: "icloud",
+            merchant: "Cloud Storage",
+            bucket: "APPLE.COM/BILL",
+            cluster: "apple-com-bill",
+            notes: "Opaque payee warning should not show",
+            register_prefill: {
+              mode: "create_new",
+              name: "Cloud Storage",
+              destination_account: "APPLE.COM/BILL",
+            },
+          }),
+        ],
+        meta: {
+          withdrawals_analyzed: 100,
+          suggestions_count: 1,
+          period_start: "2025-07-04",
+          period_end: "2026-07-04",
+        },
+      },
+    })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByText("via APPLE.COM/BILL").length).toBeGreaterThan(0)
+    })
+    expect(
+      screen.queryByText("Opaque payee warning should not show"),
+    ).toBeNull()
+  })
+
+  it("ready cluster rows skip amber review highlight", async () => {
+    mockDiscoverFetch({
+      suggestions: {
+        data: [
+          makeSuggestion({
+            id: "icloud",
+            merchant: "Cloud Storage",
+            bucket: "APPLE.COM/BILL",
+            cluster: "apple-com-bill",
+            status: "ready",
+            register_prefill: {
+              mode: "create_new",
+              name: "Cloud Storage",
+              destination_account: "APPLE.COM/BILL",
+            },
+          }),
+        ],
+        meta: {
+          withdrawals_analyzed: 100,
+          suggestions_count: 1,
+          period_start: "2025-07-04",
+          period_end: "2026-07-04",
+        },
+      },
+    })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Cloud Storage").length).toBeGreaterThan(0)
+    })
+
+    const highlighted = document.querySelectorAll(".border-l-amber-500\\/70")
+    expect(highlighted.length).toBe(0)
+  })
+
+  it("review misc catch-all rows keep amber review highlight", async () => {
+    mockDiscoverFetch({
+      suggestions: {
+        data: [
+          makeSuggestion({
+            id: "misc",
+            merchant: "APPLE.COM/BILL (misc)",
+            bucket: "APPLE.COM/BILL",
+            cluster: "apple-com-bill",
+            status: "review",
+            register_prefill: {
+              mode: "create_new",
+              name: "APPLE.COM/BILL (misc)",
+              destination_account: "APPLE.COM/BILL",
+            },
+          }),
+        ],
+        meta: {
+          withdrawals_analyzed: 100,
+          suggestions_count: 1,
+          period_start: "2025-07-04",
+          period_end: "2026-07-04",
+        },
+      },
+    })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByText("APPLE.COM/BILL (misc)").length).toBeGreaterThan(
+        0,
+      )
+    })
+
+    const highlighted = document.querySelectorAll(".border-l-amber-500\\/70")
+    expect(highlighted.length).toBeGreaterThan(0)
+  })
+
   it("empty state shows positive message with worksheet and bills links", async () => {
     mockDiscoverFetch({
       suggestions: {
