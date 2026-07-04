@@ -398,6 +398,20 @@ class FireflyClient:
                 "attributes": data.get("attributes", {}),
             }
 
+    async def update_bill(self, bill_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.put(f"/api/v1/bills/{bill_id}", json=body)
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {_format_firefly_error(response)}"
+                )
+            payload = response.json()
+            data = payload.get("data", {})
+            return {
+                "id": str(data.get("id")),
+                "attributes": data.get("attributes", {}),
+            }
+
     async def delete_bill(self, bill_id: str) -> None:
         async with self._build_client() as client:
             response = await client.delete(f"/api/v1/bills/{bill_id}")

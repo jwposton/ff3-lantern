@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSearchParams } from "react-router-dom"
 
 import { MassEditBar } from "@/components/MassEditBar"
-import { FilterAiInput } from "@/components/FilterAiInput"
 import { TransactionFilters } from "@/components/TransactionFilters"
 import { TransactionTable } from "@/components/TransactionTable"
 import { Button } from "@/components/ui/button"
@@ -243,19 +242,6 @@ export function TransactionExplorerPage() {
         onShowAllTypesChange={setShowAllTypes}
         disabled={controlsDisabled}
       />
-
-      {metaQuery.data?.openrouter_configured ? (
-        <FilterAiInput
-          start={committedStart}
-          end={committedEnd}
-          filterParseModel={metaQuery.data.filter_parse_model}
-          disabled={controlsDisabled}
-          onApplyFilter={(nextFilter, _rationale) => {
-            setFilters(nextFilter)
-            setPageIndex(0)
-          }}
-        />
-      ) : null}
 
       {!metaQuery.isError && metaQuery.data ? (
         <MassEditBar

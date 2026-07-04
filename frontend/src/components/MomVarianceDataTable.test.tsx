@@ -74,6 +74,21 @@ describe("MomVarianceDataTable", () => {
     expect(onRowSelect).toHaveBeenCalledWith("Groceries")
   })
 
+  it("uses opaque sticky styling on the row label column", () => {
+    render(<MomVarianceDataTable tableData={sampleTable} />)
+
+    const stickyHeader = screen.getByText("Budget")
+    const stickyCell = screen.getByText("Groceries")
+
+    expect(stickyHeader.className).toContain("sticky")
+    expect(stickyHeader.className).toContain("color-mix")
+    expect(stickyHeader.className).toContain("z-20")
+    expect(stickyCell.className).toContain("sticky")
+    expect(stickyCell.className).toContain("color-mix")
+    expect(stickyCell.className).toContain("z-20")
+    expect(stickyCell.className).not.toContain("bg-muted/30")
+  })
+
   it("renders empty state when table data is null", () => {
     render(
       <MomVarianceDataTable

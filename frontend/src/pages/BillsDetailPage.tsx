@@ -10,7 +10,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { BillRegistrationSheet } from "@/components/payment-run/BillRegistrationSheet"
+import { BillRegistrationSheet, type BillRegistrationEditTarget } from "@/components/payment-run/BillRegistrationSheet"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -34,6 +34,7 @@ import {
   currentMonthKey,
   fetchAvailableBills,
   registerBill,
+  updateBillRegistry,
   type AvailableFireflyBill,
   type BillHistoryTransaction,
   type RegisterBillPayload,
@@ -272,10 +273,12 @@ function BillDetailPanel({
   registryId,
   bills,
   billsLoaded,
+  onEditRegistration,
 }: {
   registryId: string | undefined
   bills: RegisteredBillListItem[]
   billsLoaded: boolean
+  onEditRegistration?: (bill: RegisteredBillListItem) => void
 }) {
   const parsedId =
     registryId != null ? Number.parseInt(registryId, 10) : Number.NaN
@@ -362,6 +365,16 @@ function BillDetailPanel({
             <h2 className="text-xl font-semibold">
               {history.row_label ?? selectedBill?.row_label ?? "Bill"}
             </h2>
+            {selectedBill && onEditRegistration ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onEditRegistration(selectedBill)}
+              >
+                Edit registration
+              </Button>
+            ) : null}
             {billUrl ? (
               <Button asChild variant="link" size="sm" className="h-auto px-0">
                 <a href={billUrl} target="_blank" rel="noopener noreferrer">
@@ -434,6 +447,9 @@ export function BillsDetailPage() {
     [],
   )
   const [loadingAvailableBills, setLoadingAvailableBills] = useState(false)
+  const [editTarget, setEditTarget] = useState<BillRegistrationEditTarget | null>(
+    null,
+  )
 
   const bills = useMemo(() => {
     const rows = billsData?.data ?? []
@@ -460,7 +476,42 @@ export function BillsDetailPage() {
     }
   }
 
+  async function openEditRegistration(bill: RegisteredBillListItem) {
+    setEditTarget({
+      registryId: bill.registry_id,
+      row_label: bill.row_label,
+      worksheet_section: bill.worksheet_section,
+      payment_rail: bill.payment_rail,
+      funding_bucket_key: null,
+      credit_card_account_id: null,
+      amount_mode: bill.amount_mode,
+    })
+    setBillRegistrationOpen(true)
+  }
+
   async function handleRegisterBill(payload: RegisterBillPayload) {
+    if (editTarget) {
+      await updateBillRegistry(editTarget.registryId, {
+        name: payload.name,
+        row_label: payload.name,
+        amount_mode: payload.amount_mode,
+        worksheet_section: payload.worksheet_section,
+        payment_rail: payload.payment_rail,
+        funding_bucket_key: payload.funding_bucket_key,
+        credit_card_account_id: payload.credit_card_account_id,
+        amount_min: payload.amount_min,
+        amount_max: payload.amount_max,
+        repeat_freq: payload.repeat_freq,
+      })
+      await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+      await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
+      setBillRegistrationOpen(false)
+      setEditTarget(null)
+      toast.success(`${payload.name} updated`, { duration: 4000 })
+      await refetchBills()
+      return
+    }
+
     const result = await registerBill(payload)
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
     await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
@@ -544,14 +595,19 @@ export function BillsDetailPage() {
           registryId={registryId}
           bills={bills}
           billsLoaded={!billsPending}
+          onEditRegistration={(bill) => void openEditRegistration(bill)}
         />
       </div>
 
       <BillRegistrationSheet
         open={billRegistrationOpen}
-        onOpenChange={setBillRegistrationOpen}
+        onOpenChange={(open) => {
+          setBillRegistrationOpen(open)
+          if (!open) setEditTarget(null)
+        }}
         defaultSection="bills"
         initialMode={billRegistrationMode}
+        editTarget={editTarget}
         creditCards={worksheetData?.credit_cards ?? []}
         buckets={worksheetData?.buckets ?? []}
         availableBills={availableBills}

@@ -101,7 +101,7 @@ export function TransactionFilters({
   }
 
   return (
-    <div className="sticky top-0 z-20 space-y-2 rounded-lg border bg-background p-3 shadow-sm">
+    <div className="space-y-2 rounded-lg border bg-background p-3 shadow-sm">
       <div className="flex min-h-12 flex-wrap items-center gap-2">
         <details className="relative">
           <summary className="inline-flex h-9 cursor-pointer list-none items-center rounded-md border border-input bg-transparent px-3 text-sm font-medium hover:bg-accent">

@@ -5,10 +5,6 @@ import {
   buildExplorerPathFromPendingRow,
   buildExplorerPathFromRuleDraft,
   buildTransactionExplorerPath,
-  extractBroadSearchTerm,
-  parseAmountClauses,
-  tryDeterministicExplorerQuery,
-  normalizeAiParsedFilter,
   parseExplorerFiltersFromSearchParams,
 } from "./explorerFilterUrl"
 
@@ -94,117 +90,6 @@ describe("explorerFilterUrl", () => {
     expect(path).toContain("destination=Amazon")
     expect(path).toContain("amount=42.00")
     expect(path).not.toContain("show_all_types")
-  })
-
-  it("normalizeAiParsedFilter maps description_contains to search for broad queries", () => {
-    const normalized = normalizeAiParsedFilter(
-      { description_contains: "spotify" },
-      "spotify charges",
-    )
-    expect(normalized.search).toBe("spotify")
-    expect(normalized.description_contains).toBe("")
-  })
-
-  it("extractBroadSearchTerm strips natural-language phrasing", () => {
-    expect(extractBroadSearchTerm("all transactions with spotify")).toBe("spotify")
-    expect(extractBroadSearchTerm("spotify charges")).toBe("spotify")
-  })
-
-  it("tryDeterministicExplorerQuery parses OR keywords with amount", () => {
-    const parsed = tryDeterministicExplorerQuery(
-      "Spotify or CFBD or Patreon or amount is 700",
-    )
-    expect(parsed).toEqual({
-      search: "Spotify or CFBD or Patreon",
-      amount_exact: "700.00",
-      amount_min: "",
-      amount_max: "",
-    })
-  })
-
-  it("tryDeterministicExplorerQuery parses leading amount with OR keywords", () => {
-    const parsed = tryDeterministicExplorerQuery("700 and CFBD or patreon charges")
-    expect(parsed).toEqual({
-      search: "CFBD or patreon",
-      amount_exact: "700.00",
-      amount_min: "",
-      amount_max: "",
-    })
-  })
-
-  it("normalizeAiParsedFilter uses deterministic composite parsing", () => {
-    const normalized = normalizeAiParsedFilter(
-      { description_contains: "wrong" },
-      "700 and CFBD or patreon charges",
-    )
-    expect(normalized.search).toBe("CFBD or patreon")
-    expect(normalized.amount_exact).toBe("700.00")
-    expect(normalized.description_contains).toBe("")
-  })
-
-  it("parseAmountClauses parses over and between ranges", () => {
-    expect(parseAmountClauses("over 500")).toEqual({
-      amounts: {
-        amount_exact: "",
-        amount_min: "500.00",
-        amount_max: "",
-      },
-      remainder: "",
-    })
-    expect(parseAmountClauses("between 50 and 100")).toEqual({
-      amounts: {
-        amount_exact: "",
-        amount_min: "50.00",
-        amount_max: "100.00",
-      },
-      remainder: "",
-    })
-    expect(parseAmountClauses("amount between 100 and 200")).toEqual({
-      amounts: {
-        amount_exact: "",
-        amount_min: "100.00",
-        amount_max: "200.00",
-      },
-      remainder: "",
-    })
-    expect(parseAmountClauses("value between 50 and 100")).toEqual({
-      amounts: {
-        amount_exact: "",
-        amount_min: "50.00",
-        amount_max: "100.00",
-      },
-      remainder: "",
-    })
-  })
-
-  it("tryDeterministicExplorerQuery does not leave amount as search", () => {
-    const parsed = tryDeterministicExplorerQuery("amount between 100 and 200")
-    expect(parsed?.search).toBe("")
-    expect(parsed?.amount_min).toBe("100.00")
-    expect(parsed?.amount_max).toBe("200.00")
-  })
-
-  it("normalizeAiParsedFilter clears amount keyword when range is set", () => {
-    const normalized = normalizeAiParsedFilter(
-      {
-        search: "amount",
-        amount_min: "100.00",
-        amount_max: "200.00",
-      },
-      "amount between 100 and 200",
-    )
-    expect(normalized.search).toBe("")
-    expect(normalized.amount_min).toBe("100.00")
-  })
-
-  it("tryDeterministicExplorerQuery parses range with OR keywords", () => {
-    const parsed = tryDeterministicExplorerQuery("spotify or patreon under 20")
-    expect(parsed).toEqual({
-      search: "spotify or patreon",
-      amount_exact: "",
-      amount_min: "",
-      amount_max: "20.00",
-    })
   })
 
   it("buildTransactionExplorerPath encodes amount range params", () => {

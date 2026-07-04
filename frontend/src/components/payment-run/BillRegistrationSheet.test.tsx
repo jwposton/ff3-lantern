@@ -6,6 +6,16 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { BillRegistrationSheet } from "./BillRegistrationSheet"
 import type { RegisterBillPayload } from "@/lib/paymentRunApi"
 
+vi.mock("@/lib/paymentRunApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/paymentRunApi")>()
+  return {
+    ...actual,
+    fetchBillRegistry: vi.fn(),
+  }
+})
+
+import { fetchBillRegistry } from "@/lib/paymentRunApi"
+
 function TestProviders({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -124,6 +134,50 @@ describe("BillRegistrationSheet", () => {
 
     expect(screen.getAllByText("Suggested").length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText(/warning banner|opaque payee/i)).toBeNull()
+  })
+
+  it("prefills amount min and max when editing an existing registration", async () => {
+    vi.mocked(fetchBillRegistry).mockResolvedValue({
+      registry_id: 7,
+      row_label: "Electric",
+      firefly_bill_id: "bill-7",
+      worksheet_section: "bills",
+      payment_rail: "bank",
+      amount_mode: "recurring",
+      funding_bucket_key: "checking",
+      credit_card_account_id: null,
+      name: "Electric",
+      amount_min: "50.00",
+      amount_max: "50.00",
+      repeat_freq: "monthly",
+    })
+
+    render(
+      <TestProviders>
+        <BillRegistrationSheet
+          {...BASE_PROPS}
+          onSubmit={vi.fn()}
+          editTarget={{
+            registryId: 7,
+            row_label: "Electric",
+            worksheet_section: "bills",
+            payment_rail: "bank",
+            funding_bucket_key: "checking",
+            credit_card_account_id: null,
+            amount_mode: "recurring",
+          }}
+        />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(fetchBillRegistry).toHaveBeenCalledWith(7)
+    })
+
+    const minInput = screen.getByLabelText("Amount min") as HTMLInputElement
+    const maxInput = screen.getByLabelText("Amount max") as HTMLInputElement
+    expect(minInput.value).toBe("50.00")
+    expect(maxInput.value).toBe("50.00")
   })
 
   it("prefills credit card from paymentSourceHint when rail is credit_card", () => {

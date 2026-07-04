@@ -35,6 +35,8 @@ from payment_worksheet_bills import (
     BillRegistrationError,
     RegisterBillBody,
     register_bill,
+    serialize_bill_registry_for_edit,
+    update_linked_firefly_bill,
 )
 from payment_worksheet_bill_history import (
     bill_history_date_window,
@@ -176,6 +178,10 @@ class UpdateBillRegistryBody(BaseModel):
     credit_card_account_id: str | None = None
     row_label: str | None = None
     amount_mode: str | None = None
+    name: str | None = None
+    amount_min: str | None = None
+    amount_max: str | None = None
+    repeat_freq: str | None = None
 
 
 def _validate_month(month: str) -> str:
@@ -496,6 +502,22 @@ async def register_bill_route(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@router.get("/payment-run/bills/{registry_id}")
+async def get_bill_registry(
+    registry_id: int,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    existing = await sidecar_db.get_worksheet_registry(registry_id)
+    if existing is None or not existing.get("firefly_bill_id"):
+        raise HTTPException(status_code=404, detail="Registered bill not found.")
+    try:
+        firefly_bill = await client.fetch_bill(str(existing["firefly_bill_id"]))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return serialize_bill_registry_for_edit(existing, firefly_bill)
+
+
 @router.put("/payment-run/bills/{registry_id}")
 async def update_bill_registry(
     registry_id: int,
@@ -509,6 +531,14 @@ async def update_bill_registry(
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         return existing
+
+    firefly_name = updates.pop("name", None)
+    firefly_amount_min = updates.pop("amount_min", None)
+    firefly_amount_max = updates.pop("amount_max", None)
+    firefly_repeat_freq = updates.pop("repeat_freq", None)
+    if firefly_name is not None and "row_label" not in updates:
+        updates["row_label"] = firefly_name.strip() or None
+
     merged = {**existing, **updates, "id": registry_id}
     payment_rail = merged.get("payment_rail") or "bank"
     if payment_rail == "credit_card":
@@ -537,6 +567,30 @@ async def update_bill_registry(
     amount_mode = merged.get("amount_mode") or existing.get("amount_mode")
     if amount_mode:
         merged["planned_sync"] = _planned_sync_for_amount_mode(str(amount_mode))
+
+    firefly_bill_id = existing.get("firefly_bill_id")
+    if firefly_bill_id and any(
+        value is not None
+        for value in (
+            firefly_name,
+            firefly_amount_min,
+            firefly_amount_max,
+            firefly_repeat_freq,
+        )
+    ):
+        try:
+            await update_linked_firefly_bill(
+                client,
+                firefly_bill_id=str(firefly_bill_id),
+                name=firefly_name,
+                amount_min=firefly_amount_min,
+                amount_max=firefly_amount_max,
+                repeat_freq=firefly_repeat_freq,
+                amount_mode=str(amount_mode or "recurring"),
+            )
+        except BillRegistrationError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
     await sidecar_db.update_worksheet_registry(registry_id, merged)
     updated = await sidecar_db.get_worksheet_registry(registry_id)
     if updated is None:

@@ -611,3 +611,101 @@ async def register_bill(
     if body.mode == "create_new":
         return await register_new_bill(client, body)
     return await register_linked_bill(client, body)
+
+
+def _resolve_firefly_bill_amount_update(
+    *,
+    amount_min: str | None,
+    amount_max: str | None,
+    amount_mode: str,
+    current_min: str | None,
+    current_max: str | None,
+) -> tuple[str, str]:
+    min_raw = _optional_amount_text(amount_min) or _optional_amount_text(current_min)
+    max_raw = _optional_amount_text(amount_max) or _optional_amount_text(current_max)
+    if not min_raw and not max_raw:
+        if amount_mode == "intermittent":
+            return _INTERMITTENT_BILL_AMOUNT_MIN, _INTERMITTENT_BILL_AMOUNT_MAX
+        raise BillRegistrationError(
+            "Amount min or max is required for recurring bills."
+        )
+    if min_raw and not max_raw:
+        max_raw = min_raw
+    elif max_raw and not min_raw:
+        min_raw = max_raw
+    parsed_min = _parse_amount(min_raw)
+    parsed_max = _parse_amount(max_raw)
+    if parsed_min <= 0 or parsed_max <= 0:
+        raise BillRegistrationError("Bill amounts must be greater than zero.")
+    if parsed_min > parsed_max:
+        raise BillRegistrationError("Amount min cannot exceed amount max.")
+    return _format_amount(min_raw), _format_amount(max_raw)
+
+
+async def update_linked_firefly_bill(
+    client: FireflyClient,
+    *,
+    firefly_bill_id: str,
+    name: str | None = None,
+    amount_min: str | None = None,
+    amount_max: str | None = None,
+    repeat_freq: str | None = None,
+    amount_mode: str = "recurring",
+) -> None:
+    firefly_fields = (name, amount_min, amount_max, repeat_freq)
+    if not any(value is not None for value in firefly_fields):
+        return
+    try:
+        current = await client.fetch_bill(firefly_bill_id)
+    except RuntimeError as exc:
+        raise BillRegistrationError(str(exc), status_code=502) from exc
+
+    resolved_name = name.strip() if name is not None else (current.get("name") or "")
+    if not resolved_name:
+        raise BillRegistrationError("Bill name is required.")
+
+    resolved_min, resolved_max = _resolve_firefly_bill_amount_update(
+        amount_min=amount_min,
+        amount_max=amount_max,
+        amount_mode=amount_mode,
+        current_min=current.get("amount_min"),
+        current_max=current.get("amount_max"),
+    )
+    bill_body: dict[str, Any] = {
+        "name": resolved_name,
+        "amount_min": resolved_min,
+        "amount_max": resolved_max,
+        "date": _default_bill_date(),
+        "repeat_freq": (
+            (repeat_freq or current.get("repeat_freq") or "monthly").strip()
+            or "monthly"
+        ),
+        "active": True,
+    }
+    group_title = _bill_object_group_title()
+    if group_title:
+        bill_body["object_group_title"] = group_title
+    try:
+        await client.update_bill(firefly_bill_id, bill_body)
+    except RuntimeError as exc:
+        raise BillRegistrationError(str(exc), status_code=502) from exc
+
+
+def serialize_bill_registry_for_edit(
+    registry: dict[str, Any],
+    firefly_bill: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "registry_id": registry["id"],
+        "row_label": registry.get("row_label"),
+        "firefly_bill_id": registry.get("firefly_bill_id"),
+        "worksheet_section": registry.get("worksheet_section"),
+        "payment_rail": registry.get("payment_rail"),
+        "amount_mode": registry.get("amount_mode"),
+        "funding_bucket_key": registry.get("funding_bucket_key"),
+        "credit_card_account_id": registry.get("credit_card_account_id"),
+        "name": firefly_bill.get("name"),
+        "amount_min": firefly_bill.get("amount_min"),
+        "amount_max": firefly_bill.get("amount_max"),
+        "repeat_freq": firefly_bill.get("repeat_freq"),
+    }
