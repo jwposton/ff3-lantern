@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Bill discover page** — Find recurring bill suggestions at `/manage/payment-run/discover` when payment worksheet is enabled; adopt suggestions into registration wizard
 - **Bill suggestions API** — GET /payment-run/bill-suggestions analyzes withdrawal history and returns ranked bill candidates with wizard prefill (requires payment worksheet enabled)
+- **Opaque payee splitter** — PreApproved clusters split into separate bill suggestions per category+amount sub-group; discover shows `via {payee}` subtitle for cluster rows and raw payee bucket headers
 
 ### Fixed
 

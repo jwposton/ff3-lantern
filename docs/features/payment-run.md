@@ -396,6 +396,8 @@ Invalid lookback values return **422** with `lookback_months must be 6, 12, or 2
 
 Each suggestion includes `register_prefill` shaped for `POST /payment-run/bills/register` (wizard prefill). Results are **not persisted** — re-fetch on each GET. Implementation: `backend/payment_worksheet_bill_suggestions.py` (`fetch_bill_suggestions` → `build_bill_suggestions`).
 
+**Opaque payee clusters:** When a PreApproved/Bill User Payment payee has multiple distinct category+amount fingerprints (e.g. `APPLE.COM/BILL`, PayPal bill payments), the engine emits **one suggestion per sub-group** instead of a single combined row. Sub-groups share a discover **bucket** named from the raw Firefly payee string (not a friendly label). Each sub-group carries a `cluster` slug (slugified payee) and category-derived `merchant` label; a **misc catch-all** row (`{payee} (misc)`) may appear for unresolved one-offs with `status: review` and intermittent amounts. On the discover page, rows with `cluster` set show a muted Bill-column subtitle `via {destination_account}` (raw payee from `register_prefill`) instead of notes.
+
 ### Sidecar tables
 
 - `funding_buckets`
