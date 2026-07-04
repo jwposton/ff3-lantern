@@ -1,4 +1,5 @@
 import { Pencil } from "lucide-react"
+import { Link } from "react-router-dom"
 
 import { AmountDueInput } from "@/components/payment-run/AmountDueInput"
 import { COMPACT_TABLE, countPaidRows } from "@/components/payment-run/BillsTable"
@@ -80,7 +81,7 @@ type LiabilitiesTableProps = {
     body: { amount_due: string; clear_amount_due_override?: boolean },
   ) => Promise<void>
   onPaidChange: (row: LiabilityRow, paid: boolean) => Promise<void>
-  onEditRegistration: (row: LiabilityRow) => void
+  onEditRegistration?: (row: LiabilityRow) => void
   onEditAccount?: (row: LiabilityRow) => void
 }
 
@@ -216,7 +217,15 @@ export function LiabilitiesTable({
                     >
                       <Pencil className="size-3" aria-hidden />
                     </button>
-                  ) : !isAccount ? (
+                  ) : isAccount ? (
+                    <Link
+                      to="/manage/liabilities"
+                      className="text-muted-foreground hover:text-foreground text-xs font-medium"
+                      aria-label={`Manage ${name}`}
+                    >
+                      Manage
+                    </Link>
+                  ) : onEditRegistration ? (
                     <button
                       type="button"
                       className="text-muted-foreground hover:text-foreground rounded p-0.5"
@@ -225,6 +234,14 @@ export function LiabilitiesTable({
                     >
                       <Pencil className="size-3" aria-hidden />
                     </button>
+                  ) : row.registry_id ? (
+                    <Link
+                      to={`/manage/bills/${row.registry_id}`}
+                      className="text-muted-foreground hover:text-foreground text-xs font-medium"
+                      aria-label={`Manage ${name}`}
+                    >
+                      Manage
+                    </Link>
                   ) : null}
                 </TableCell>
               </TableRow>

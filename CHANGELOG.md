@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Bill history registration** — Bills page lets you link an existing Firefly bill or register a new one from the header or empty state, using the same registration wizard as discover and the payment worksheet
+- **Payment setup landing** — `/manage/payment-run/setup` is an overview with summary cards and punch-outs to Bills, Cash buckets, Credit cards, and Liabilities hubs (replaces the buried Configure worksheet sheet)
+- **Domain hub routes** — full management for cash buckets (`/manage/payment-run/buckets`), credit cards (`/manage/payment-run/cards`), and liability accounts (`/manage/liabilities`)
+
+### Changed
+
+- **Payment worksheet demotion** — worksheet is plan-only: inline planned/paid/balances stay; bill registration, configure sheet, and structural edit pencils are removed in favor of links to domain hubs and Payment setup
+- **Sidebar** — **Payment setup** nav entry when payment worksheet is enabled; worksheet header button renamed from Configure worksheet to Payment setup
 
 ## [2.1.0] - 2026-07-04
 

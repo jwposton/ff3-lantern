@@ -347,7 +347,7 @@ describe("PaymentWorksheetPage", () => {
     expect(getCalls.length).toBeGreaterThan(0)
   })
 
-  it("empty-bucket state points to Configure worksheet", async () => {
+  it("empty-bucket state points to Cash buckets hub", async () => {
     mockPaymentFetch({ envelope: EMPTY_ENVELOPE })
 
     render(
@@ -359,7 +359,9 @@ describe("PaymentWorksheetPage", () => {
     await waitFor(() => {
       const bar = screen.getByTestId("funding-bucket-bar")
       expect(bar.textContent).toMatch(/No funding buckets — add them in/i)
-      expect(bar.textContent).toContain("Configure worksheet")
+      expect(
+        bar.querySelector('a[href="/manage/payment-run/buckets"]'),
+      ).toBeTruthy()
     })
     expect(screen.queryByRole("button", { name: "Add bucket" })).toBeNull()
   })
@@ -379,10 +381,11 @@ describe("PaymentWorksheetPage", () => {
       expect(screen.getByText("AmEx")).toBeTruthy()
     })
 
-    const chaseLink = screen.getByRole("link", { name: /Chase VISA/i })
-    expect(chaseLink.getAttribute("href")).toBe(
-      "https://ff.example/accounts/show/42",
+    const chaseLinks = screen.getAllByRole("link", { name: /Chase VISA/i })
+    const fireflyLink = chaseLinks.find(
+      (link) => link.getAttribute("href") === "https://ff.example/accounts/show/42",
     )
+    expect(fireflyLink).toBeTruthy()
   })
 
   it("applies paid row styling with data-state=paid", async () => {
@@ -461,7 +464,7 @@ describe("PaymentWorksheetPage", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Manage cards (1 excluded)" }),
+        screen.getByRole("link", { name: "Manage cards (1 excluded)" }),
       ).toBeTruthy()
       expect(
         screen.getByRole("button", { name: "Credit card table help" }),

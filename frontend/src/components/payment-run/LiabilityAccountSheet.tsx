@@ -79,7 +79,7 @@ export function LiabilityAccountSheet({
     const label = row.name ?? row.account_id ?? "Liability"
     if (
       !window.confirm(
-        `Remove ${label} from this worksheet? You can add it back from Configure worksheet.`,
+        `Remove ${label} from this worksheet? You can add it back from the Liabilities hub.`,
       )
     ) {
       return
