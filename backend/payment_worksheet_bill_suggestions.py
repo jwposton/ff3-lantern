@@ -90,7 +90,7 @@ _CATEGORY_BLOCK_ALIASES: frozenset[str] = frozenset({
     "mortgage interest",
 })
 
-OPAQUE_NOTES = "Multiple subscriptions detected; sub-split rules in a future update"
+OPAQUE_NOTES = "Multiple subscriptions detected; review before adopting"
 
 PREAPPROVED_RE = re.compile(r"preapproved payment", re.IGNORECASE)
 BILL_USER_PAYMENT_RE = re.compile(r"bill user payment", re.IGNORECASE)
@@ -419,6 +419,15 @@ def _is_recurring_candidate(metrics: dict[str, Any]) -> bool:
     return False
 
 
+def _should_emit_opaque_subgroup(sub_metrics: dict[str, Any], *, is_misc: bool) -> bool:
+    """Stable opaque subgroups under D-34-01 may have only two hits."""
+    if is_misc:
+        return True
+    if _is_recurring_candidate(sub_metrics):
+        return True
+    return sub_metrics["occurrences"] >= 2
+
+
 def _score_confidence(metrics: dict[str, Any]) -> Literal["high", "medium", "low"]:
     freq = metrics["freq"]
     if (
@@ -603,9 +612,11 @@ def _subgroups_for_opaque_payee(
     txns: list[dict[str, Any]],
 ) -> list[tuple[list[dict[str, Any]], Literal["stable", "misc"]]]:
     by_fp: dict[tuple[str, Decimal], list[dict[str, Any]]] = {}
+    misc_txns: list[dict[str, Any]] = []
     for txn in txns:
         cat = str(txn.get("category_name") or "").strip()
         if not cat:
+            misc_txns.append(txn)
             continue
         amount = txn.get("amount")
         if not isinstance(amount, Decimal):
@@ -616,7 +627,6 @@ def _subgroups_for_opaque_payee(
         by_fp.setdefault(_fingerprint({**txn, "amount": amount}), []).append(txn)
 
     stable: list[tuple[list[dict[str, Any]], Literal["stable", "misc"]]] = []
-    misc_txns: list[dict[str, Any]] = []
     trigger_active = _should_subsplit_opaque_payee(txns)
 
     for group_txns in by_fp.values():
@@ -970,7 +980,7 @@ def build_bill_suggestions(
                     sub_metrics = _analyze_misc_metrics(key, subgroup_txns)
                 if sub_metrics is None:
                     continue
-                if not _is_recurring_candidate(sub_metrics) and not is_misc:
+                if not _should_emit_opaque_subgroup(sub_metrics, is_misc=is_misc):
                     continue
                 if is_misc:
                     category = sub_metrics["category"]

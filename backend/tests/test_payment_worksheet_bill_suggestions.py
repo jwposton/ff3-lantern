@@ -630,6 +630,22 @@ def test_subsplit_trigger_true_for_two_fingerprints_with_two_dates_each():
     assert _should_subsplit_opaque_payee(txns) is True
 
 
+def test_opaque_two_hit_subsplit_emits_stable_subgroups():
+    """D-34-01 minimum trigger (2 fingerprints × 2 dates) must not return zero rows."""
+    txns = [
+        _opaque_txn(category="Cloud Storage", amount="10.09", date="2025-07-10"),
+        _opaque_txn(category="Cloud Storage", amount="10.09", date="2025-08-10"),
+        _opaque_txn(category="Ulysses App", amount="6.37", date="2025-07-15"),
+        _opaque_txn(category="Ulysses App", amount="6.37", date="2025-08-15"),
+    ]
+    result = build_bill_suggestions(txns, **_engine_kwargs())
+    merchants = {row["merchant"] for row in result["data"]}
+    assert len(result["data"]) >= 2
+    assert "Cloud Storage" in merchants
+    assert "Ulysses App" in merchants
+    assert all(row["cluster"] == "apple-com-bill" for row in result["data"])
+
+
 def test_subsplit_trigger_true_for_one_fingerprint_with_three_dates():
     txns = [
         _opaque_txn(category="App Subscriptions", amount="7.43", date="2025-09-10"),

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Opaque payee two-hit sub-split** — PreApproved clusters that trigger on two category+amount fingerprints with two charges each now emit separate suggestions instead of an empty list
 - **Bill discover UX** — registration success no longer shows an error when cache refresh fails; period dates use local calendar days; suggestion count respects hide-review; invalid lookback URLs normalize; credit-card adopt prefill picks the matching card; registration sheet cannot dismiss mid-save
 - **Bill suggestions opaque payee detection** — subscriptions with varying amounts (e.g. Spotify price changes) are no longer misclassified as combined Apple Services rows
 - **Bill suggestions irregular cadence prefill** — irregular-frequency candidates use intermittent amount mode without a misleading monthly repeat frequency
