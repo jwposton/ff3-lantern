@@ -169,6 +169,84 @@ def test_cc_withdrawal_source_role_is_credit_card():
     assert cc_rows[0].get("source_type") == "Asset account"
 
 
+def test_normalize_cc_asset_role():
+    from firefly_client import _normalize_account_role
+
+    assert _normalize_account_role("ccAsset") == "Credit card"
+    assert _normalize_account_role("creditCard") == "Credit card"
+
+
+def test_prepare_account_update_payload_ccasset_strips_liability_fields():
+    from firefly_client import prepare_account_update_payload
+
+    attrs = {
+        "name": "Chase",
+        "type": "asset",
+        "account_role": "ccAsset",
+        "notes": "old notes",
+        "liability_type": "loan",
+        "liability_direction": "credit",
+        "interest": None,
+        "interest_period": "monthly",
+    }
+    payload = prepare_account_update_payload(attrs, notes="new notes")
+    assert payload["notes"] == "new notes"
+    assert payload["credit_card_type"] == "monthlyFull"
+    assert payload["monthly_payment_date"] == "2000-01-01"
+    assert "liability_type" not in payload
+    assert "interest" not in payload
+
+
+def test_normalize_monthly_payment_date_formats():
+    from firefly_client import _normalize_monthly_payment_date
+
+    assert _normalize_monthly_payment_date(None) == "2000-01-01"
+    assert _normalize_monthly_payment_date("15") == "2000-01-15"
+    assert _normalize_monthly_payment_date("2020-05-11") == "2020-05-11"
+    assert _normalize_monthly_payment_date("2020-05-11T12:00:00+00:00") == "2020-05-11"
+
+
+def test_update_account_sends_sanitized_ccasset_body():
+    put_bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/accounts/9" and request.method == "PUT":
+            put_bodies.append(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "9",
+                        "attributes": put_bodies[-1],
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    asyncio.run(
+        client.update_account(
+            "9",
+            {
+                "name": "Chase",
+                "type": "asset",
+                "account_role": "ccAsset",
+                "notes": "profile",
+                "liability_type": "loan",
+            },
+        )
+    )
+    assert put_bodies
+    body = put_bodies[0]
+    assert body["credit_card_type"] == "monthlyFull"
+    assert body["monthly_payment_date"] == "2000-01-01"
+    assert "liability_type" not in body
+
+
 def test_account_role_not_replaced_by_account_type():
     accounts_payload = {
         "data": [
@@ -282,7 +360,14 @@ def test_fetch_rules_returns_id_and_title():
         api_token="tok",
     )
     rules = asyncio.run(client.fetch_rules())
-    assert rules == [{"id": "7", "title": "Auto categorize groceries", "triggers": []}]
+    assert rules == [
+        {
+            "id": "7",
+            "title": "Auto categorize groceries",
+            "triggers": [],
+            "actions": [],
+        }
+    ]
 
 
 def test_create_rule_posts_active_body():
@@ -481,3 +566,254 @@ def test_fetch_account_returns_notes():
     account = asyncio.run(client.fetch_account("42"))
     assert account["id"] == "42"
     assert account["attributes"]["notes"] == "loan profile here"
+
+
+def test_fetch_bills_paginates_and_maps_fields():
+    page = {"current": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/bills") and request.method == "GET":
+            page["current"] += 1
+            if page["current"] == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {
+                                "type": "bills",
+                                "id": "1",
+                                "attributes": {
+                                    "name": "Rent",
+                                    "amount_min": "1200.00",
+                                    "amount_max": "1200.00",
+                                    "repeat_freq": "monthly",
+                                },
+                            }
+                        ],
+                        "meta": {
+                            "pagination": {"current_page": 1, "total_pages": 2}
+                        },
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "bills",
+                            "id": "2",
+                            "attributes": {
+                                "name": "Internet",
+                                "amount_min": "80.00",
+                                "amount_max": "80.00",
+                                "repeat_frequency": "monthly",
+                            },
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 2, "total_pages": 2}},
+                },
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    bills = asyncio.run(client.fetch_bills())
+    assert len(bills) == 2
+    assert bills[0] == {
+        "id": "1",
+        "name": "Rent",
+        "amount_min": "1200.00",
+        "amount_max": "1200.00",
+        "repeat_freq": "monthly",
+    }
+    assert bills[1]["id"] == "2"
+    assert bills[1]["repeat_freq"] == "monthly"
+
+
+def test_fetch_bill_returns_single_bill():
+    payload = {
+        "data": {
+            "type": "bills",
+            "id": "5",
+            "attributes": {
+                "name": "Electric",
+                "amount_min": "90.00",
+                "amount_max": "150.00",
+                "repeat_freq": "monthly",
+            },
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills/5":
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    bill = asyncio.run(client.fetch_bill("5"))
+    assert bill["id"] == "5"
+    assert bill["name"] == "Electric"
+    assert bill["amount_min"] == "90.00"
+
+
+def test_fetch_bill_raises_on_404():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills/99":
+            return httpx.Response(404, text="Not found")
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    with pytest.raises(RuntimeError, match="404"):
+        asyncio.run(client.fetch_bill("99"))
+
+
+def test_fetch_bill_transactions():
+    bill_id = "7"
+    page = {"current": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(f"/bills/{bill_id}/transactions"):
+            page["current"] += 1
+            assert request.url.params["start"] == "2025-08-01"
+            assert request.url.params["end"] == "2026-07-03"
+            assert request.url.params["limit"] == "1000"
+            if page["current"] == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {
+                                "type": "transactions",
+                                "id": "200",
+                                "attributes": {
+                                    "description": "Rent payment",
+                                    "transactions": [
+                                        {
+                                            "type": "withdrawal",
+                                            "amount": "-1200.00",
+                                            "destination_name": "Landlord",
+                                            "date": "2026-01-15",
+                                            "description": "Rent payment",
+                                            "transaction_journal_id": "2001",
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                        "meta": {
+                            "pagination": {"current_page": 1, "total_pages": 2}
+                        },
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "transactions",
+                            "id": "201",
+                            "attributes": {
+                                "description": "Rent payment",
+                                "transactions": [
+                                    {
+                                        "type": "withdrawal",
+                                        "amount": "-1200.00",
+                                        "destination_name": "Landlord",
+                                        "date": "2026-02-15",
+                                        "description": "February rent",
+                                        "transaction_journal_id": "2002",
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 2, "total_pages": 2}},
+                },
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    flat = asyncio.run(
+        client.fetch_bill_transactions(bill_id, "2025-08-01", "2026-07-03")
+    )
+    assert len(flat) == 2
+    assert flat[0]["journal_id"] == "200"
+    assert flat[0]["bill_id"] == bill_id
+    assert flat[0]["date"] == "2026-01-15"
+    assert flat[0]["amount"] == "-1200.00"
+    assert flat[0]["payee"] == "Landlord"
+    assert flat[0]["description"] == "Rent payment"
+    assert flat[0]["type"] == "withdrawal"
+    assert flat[0]["transaction_journal_id"] == "2001"
+    assert flat[1]["journal_id"] == "201"
+    assert flat[1]["bill_id"] == bill_id
+    assert all(row["bill_id"] == bill_id for row in flat)
+    assert all(row["journal_id"] for row in flat)
+
+
+def test_create_bill_posts_and_returns_id():
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills" and request.method == "POST":
+            seen.append(json.loads(request.content.decode()))
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "15",
+                        "attributes": {
+                            "name": seen[-1]["name"],
+                            "amount_min": "50.00",
+                            "amount_max": "50.00",
+                            "repeat_freq": "monthly",
+                        },
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    body = {"name": "Water", "amount_min": "50.00", "amount_max": "50.00"}
+    result = asyncio.run(client.create_bill(body))
+    assert result["id"] == "15"
+    assert result["attributes"]["name"] == "Water"
+    assert seen[0] == body
+
+
+def test_create_bill_raises_on_422():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills" and request.method == "POST":
+            return httpx.Response(
+                422,
+                json={"message": "The name field is required."},
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    with pytest.raises(RuntimeError, match="name field is required"):
+        asyncio.run(client.create_bill({"amount_min": "10.00"}))

@@ -30,6 +30,7 @@ def test_health_env_presence_booleans_unset(client):
     assert data["firefly_api_token_configured"] is False
     assert data["openrouter_configured"] is False
     assert data["sidecar_writable"] is True
+    assert data["payment_worksheet_enabled"] is False
 
 
 def test_health_openrouter_and_sidecar_flags(monkeypatch, tmp_path):
@@ -58,6 +59,7 @@ def test_health_does_not_leak_secrets(client, monkeypatch):
     monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example/")
     monkeypatch.setenv("FIREFLY_API_TOKEN", "secret-token")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret")
+    monkeypatch.setenv("FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED", "true")
     from main import app
 
     response = TestClient(app).get("/health")
@@ -69,3 +71,13 @@ def test_health_does_not_leak_secrets(client, monkeypatch):
     assert "firefly_api_token" not in response.json()
     assert "FIREFLY_API_TOKEN" not in body
     assert "OPENROUTER_API_KEY" not in body
+    assert response.json()["payment_worksheet_enabled"] is True
+
+
+def test_health_payment_worksheet_disabled(monkeypatch, tmp_path):
+    monkeypatch.delenv("FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED", raising=False)
+    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    from main import app
+
+    response = TestClient(app).get("/health")
+    assert response.json()["payment_worksheet_enabled"] is False

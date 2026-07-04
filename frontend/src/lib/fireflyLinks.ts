@@ -47,3 +47,28 @@ export function buildFireflyAccountUrl(
   const base = fireflyBaseUrl.replace(/\/+$/, "")
   return `${base}/accounts/show/${id}`
 }
+
+/**
+ * Build Firefly III bill show URL from API-provided base only.
+ * Returns null when base or bill id is invalid.
+ */
+export function buildFireflyBillUrl(
+  fireflyBaseUrl: string | undefined | null,
+  billId: string | undefined | null,
+): string | null {
+  if (fireflyBaseUrl == null || fireflyBaseUrl.trim() === "") {
+    return null
+  }
+
+  if (billId == null || billId.trim() === "") {
+    return null
+  }
+
+  const id = billId.trim()
+  if (!/^\d+$/.test(id)) {
+    return null
+  }
+
+  const base = fireflyBaseUrl.replace(/\/+$/, "")
+  return `${base}/bills/show/${id}`
+}

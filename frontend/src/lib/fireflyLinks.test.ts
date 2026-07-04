@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   buildFireflyAccountUrl,
+  buildFireflyBillUrl,
   buildFireflyTransactionUrl,
 } from "./fireflyLinks"
 
@@ -40,5 +41,18 @@ describe("buildFireflyAccountUrl", () => {
   it("returns null for empty base or invalid account id", () => {
     expect(buildFireflyAccountUrl("", "42")).toBeNull()
     expect(buildFireflyAccountUrl("https://ff.example", "abc")).toBeNull()
+  })
+})
+
+describe("buildFireflyBillUrl", () => {
+  it("builds show URL from base and numeric bill id", () => {
+    expect(buildFireflyBillUrl("https://ff.example/", "99")).toBe(
+      "https://ff.example/bills/show/99",
+    )
+  })
+
+  it("returns null for empty base or invalid bill id", () => {
+    expect(buildFireflyBillUrl("", "99")).toBeNull()
+    expect(buildFireflyBillUrl("https://ff.example", "abc")).toBeNull()
   })
 })

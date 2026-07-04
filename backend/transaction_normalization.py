@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from payment_worksheet_cc import SERVER_CC_PAYMENT_BUDGET, _is_credit_card
+
 _DIGIT_RUN = re.compile(r"\d+")
 _PUNCT_RUN = re.compile(r"[^\w\s]+", re.UNICODE)
 _WHITESPACE = re.compile(r"\s+")
@@ -47,7 +49,7 @@ def assign_transfer_labels(row: dict[str, Any]) -> dict[str, Any]:
     source_type = row.get("source_type") or ""
     source_role = row.get("source_role") or ""
 
-    is_cc = dest_role == "Credit card"
+    is_cc = dest_role == "Credit card" or _is_credit_card(dest_type, dest_role)
     if (
         not is_cc
         and dest_type == "Asset account"
@@ -58,7 +60,7 @@ def assign_transfer_labels(row: dict[str, Any]) -> dict[str, Any]:
         is_cc = True
 
     if is_cc:
-        row["budget"] = "Credit Card Payment"
+        row["budget"] = SERVER_CC_PAYMENT_BUDGET
         row["category"] = f"{dest_name} Payment"
     else:
         row["category"] = f"Transfer to {dest_name}"

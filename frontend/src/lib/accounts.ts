@@ -13,7 +13,7 @@ export function normalizeAccountRole(
 ): string | null {
   if (role == null || role === "") return null
   const key = role.replace(/_/g, "").toLowerCase()
-  if (key === "creditcard") return "Credit card"
+  if (key === "creditcard" || key === "ccasset") return "Credit card"
   if (key === "defaultasset") return "Default account"
   if (key === "savings") return "Savings"
   // Backend used to fall back to account type "asset" as role — not a real role
@@ -40,6 +40,17 @@ export function isCreditCard(
   return (
     normalizeAccountType(type) === "Asset account" &&
     normalizeAccountRole(role) === "Credit card"
+  )
+}
+
+/** Asset accounts that may fund a payment worksheet bucket (excludes credit cards). */
+export function isFundingBucketAsset(
+  type: string | null | undefined,
+  role: string | null | undefined,
+): boolean {
+  return (
+    normalizeAccountType(type ?? null) === "Asset account" &&
+    !isCreditCard(type ?? null, role ?? null)
   )
 }
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   isBankAccount,
   isCreditCard,
+  isFundingBucketAsset,
   isSpendingBankAccount,
   normalizeAccountRole,
 } from "@/lib/accounts"
@@ -20,6 +21,13 @@ describe("accounts:", () => {
     expect(normalizeAccountRole("creditCard")).toBe("Credit card")
     expect(isCreditCard("Asset account", "creditCard")).toBe(true)
     expect(isBankAccount("Asset account", "creditCard")).toBe(false)
+    expect(isFundingBucketAsset("Asset account", "creditCard")).toBe(false)
+  })
+
+  it("classifies ccAsset as credit card and ineligible for funding buckets", () => {
+    expect(normalizeAccountRole("ccAsset")).toBe("Credit card")
+    expect(isFundingBucketAsset("asset", "ccAsset")).toBe(false)
+    expect(isFundingBucketAsset("asset", "defaultAsset")).toBe(true)
   })
 
   it("classifies raw defaultAsset as bank for spending type layer", () => {

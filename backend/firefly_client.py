@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from copy import deepcopy
 from typing import Any, Callable
 
@@ -49,6 +50,7 @@ _ACCOUNT_TYPE_MAP = {
 
 _ACCOUNT_ROLE_MAP = {
     "creditcard": "Credit card",
+    "ccasset": "Credit card",
     "defaultasset": "Default account",
 }
 
@@ -66,6 +68,155 @@ def _normalize_account_role(raw: str | None) -> str | None:
     if key == "asset":
         return None
     return _ACCOUNT_ROLE_MAP.get(key, raw)
+
+
+def _account_role_key(raw: str | None) -> str:
+    return (raw or "").replace("_", "").lower()
+
+
+def _map_bill_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    attrs = entry.get("attributes", {})
+    repeat_freq = attrs.get("repeat_freq") or attrs.get("repeat_frequency")
+    return {
+        "id": str(entry.get("id")),
+        "name": attrs.get("name"),
+        "amount_min": attrs.get("amount_min"),
+        "amount_max": attrs.get("amount_max"),
+        "repeat_freq": repeat_freq,
+    }
+
+
+_MONTHLY_PAYMENT_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+def _normalize_monthly_payment_date(raw: Any) -> str:
+    """Return YYYY-MM-DD for Firefly ccAsset monthly_payment_date validation."""
+    if raw is None:
+        return "2000-01-01"
+    text = str(raw).strip()
+    if not text:
+        return "2000-01-01"
+    match = _MONTHLY_PAYMENT_DATE_RE.match(text)
+    if match:
+        return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        return text[:10]
+    if text.isdigit():
+        day = int(text)
+        if 1 <= day <= 31:
+            return f"2000-01-{day:02d}"
+    return "2000-01-01"
+
+
+def prepare_account_update_payload(
+    attrs: dict[str, Any],
+    **updates: Any,
+) -> dict[str, Any]:
+    """Build a Firefly-safe PUT body from GET attributes plus field updates."""
+    merged = {**attrs, **updates}
+    acct_type = str(merged.get("type") or "").lower()
+    role_key = _account_role_key(merged.get("account_role"))
+
+    asset_fields = {
+        "name",
+        "active",
+        "type",
+        "account_role",
+        "currency_id",
+        "currency_code",
+        "virtual_balance",
+        "include_net_worth",
+        "iban",
+        "bic",
+        "account_number",
+        "opening_balance",
+        "opening_balance_date",
+        "notes",
+        "credit_card_type",
+        "monthly_payment_date",
+    }
+    liability_fields = {
+        "name",
+        "active",
+        "type",
+        "account_role",
+        "currency_id",
+        "currency_code",
+        "virtual_balance",
+        "include_net_worth",
+        "iban",
+        "bic",
+        "account_number",
+        "opening_balance",
+        "opening_balance_date",
+        "notes",
+        "liability_type",
+        "liability_direction",
+        "interest",
+        "interest_period",
+    }
+    generic_fields = {
+        "name",
+        "active",
+        "type",
+        "account_role",
+        "currency_id",
+        "currency_code",
+        "virtual_balance",
+        "include_net_worth",
+        "notes",
+    }
+
+    if acct_type == "asset":
+        allowed = asset_fields
+    elif acct_type in {"liabilities", "liability"}:
+        allowed = liability_fields
+    else:
+        allowed = generic_fields
+
+    payload: dict[str, Any] = {}
+    for key in allowed:
+        if key in updates:
+            value = updates[key]
+        else:
+            value = merged.get(key)
+        if value is not None:
+            payload[key] = value
+
+    if role_key in {"ccasset", "creditcard"}:
+        payload.setdefault("type", "asset")
+        payload.setdefault("account_role", merged.get("account_role") or "ccAsset")
+        payload.setdefault(
+            "credit_card_type",
+            merged.get("credit_card_type") or "monthlyFull",
+        )
+        payload["monthly_payment_date"] = _normalize_monthly_payment_date(
+            payload.get("monthly_payment_date", merged.get("monthly_payment_date")),
+        )
+
+    if acct_type in {"liabilities", "liability"}:
+        payload.setdefault("liability_type", merged.get("liability_type") or "loan")
+        payload.setdefault(
+            "liability_direction",
+            merged.get("liability_direction") or "credit",
+        )
+        payload.setdefault("interest", merged.get("interest") or "0")
+        payload.setdefault(
+            "interest_period",
+            merged.get("interest_period") or "monthly",
+        )
+
+    return payload
+
+
+def _map_rule_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    attrs = entry.get("attributes", {})
+    return {
+        "id": str(entry.get("id")),
+        "title": attrs.get("title"),
+        "triggers": attrs.get("triggers") or [],
+        "actions": attrs.get("actions") or [],
+    }
 
 
 class FireflyClient:
@@ -199,11 +350,7 @@ class FireflyClient:
     async def fetch_rules(self) -> list[dict[str, Any]]:
         return await self._fetch_paginated_list(
             "/api/v1/rules",
-            map_item=lambda entry: {
-                "id": str(entry.get("id")),
-                "title": entry.get("attributes", {}).get("title"),
-                "triggers": entry.get("attributes", {}).get("triggers") or [],
-            },
+            map_item=_map_rule_entry,
         )
 
     async def fetch_rule_groups(self) -> list[dict[str, Any]]:
@@ -214,6 +361,58 @@ class FireflyClient:
                 "title": entry.get("attributes", {}).get("title"),
             },
         )
+
+    async def fetch_bill_rules(self, bill_id: str) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            f"/api/v1/bills/{bill_id}/rules",
+            map_item=_map_rule_entry,
+        )
+
+    async def fetch_bills(self) -> list[dict[str, Any]]:
+        return await self._fetch_paginated_list(
+            "/api/v1/bills",
+            map_item=_map_bill_entry,
+        )
+
+    async def fetch_bill(self, bill_id: str) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.get(f"/api/v1/bills/{bill_id}")
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            payload = response.json()
+            return _map_bill_entry(payload.get("data", {}))
+
+    async def create_bill(self, body: dict[str, Any]) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.post("/api/v1/bills", json=body)
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {_format_firefly_error(response)}"
+                )
+            payload = response.json()
+            data = payload.get("data", {})
+            return {
+                "id": str(data.get("id")),
+                "attributes": data.get("attributes", {}),
+            }
+
+    async def delete_bill(self, bill_id: str) -> None:
+        async with self._build_client() as client:
+            response = await client.delete(f"/api/v1/bills/{bill_id}")
+            if response.status_code not in (200, 204, 404):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+
+    async def delete_rule(self, rule_id: str) -> None:
+        async with self._build_client() as client:
+            response = await client.delete(f"/api/v1/rules/{rule_id}")
+            if response.status_code not in (200, 204, 404):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
 
     async def create_rule_group(self, title: str) -> dict[str, Any]:
         async with self._build_client() as client:
@@ -361,10 +560,11 @@ class FireflyClient:
     async def update_account(
         self, account_id: str, attributes: dict[str, Any]
     ) -> dict[str, Any]:
+        payload = prepare_account_update_payload(attributes)
         async with self._build_client() as client:
             response = await client.put(
                 f"/api/v1/accounts/{account_id}",
-                json=attributes,
+                json=payload,
             )
             if response.status_code not in (200, 201):
                 raise RuntimeError(
@@ -441,6 +641,64 @@ class FireflyClient:
                 total_pages = pagination.get("total_pages", 1)
                 logger.info(
                     "Fetched transactions page %s/%s (%s journals)",
+                    current,
+                    total_pages,
+                    len(journals),
+                )
+                if current >= total_pages:
+                    break
+                page += 1
+        return flat
+
+    async def fetch_bill_transactions(
+        self, bill_id: str, start: str, end: str
+    ) -> list[dict[str, Any]]:
+        flat: list[dict[str, Any]] = []
+        page = 1
+        async with self._build_client() as client:
+            while True:
+                response = await client.get(
+                    f"/api/v1/bills/{bill_id}/transactions",
+                    params={
+                        "start": start,
+                        "end": end,
+                        "limit": 1000,
+                        "page": page,
+                    },
+                )
+                if response.status_code != 200:
+                    raise RuntimeError(
+                        f"Firefly API error {response.status_code}: {response.text}"
+                    )
+                payload = response.json()
+                journals = payload.get("data", [])
+                for entry in journals:
+                    journal_id = str(entry.get("id") or "")
+                    attrs = entry.get("attributes", {})
+                    parent_description = attrs.get("description")
+                    for split in attrs.get("transactions", []):
+                        tjid = split.get("transaction_journal_id")
+                        flat.append(
+                            {
+                                "journal_id": journal_id,
+                                "bill_id": bill_id,
+                                "type": split.get("type"),
+                                "amount": split.get("amount"),
+                                "date": split.get("date"),
+                                "payee": split.get("destination_name"),
+                                "description": split.get("description")
+                                or parent_description,
+                                "transaction_journal_id": str(tjid)
+                                if tjid is not None
+                                else None,
+                            }
+                        )
+                pagination = payload.get("meta", {}).get("pagination", {})
+                current = pagination.get("current_page", 1)
+                total_pages = pagination.get("total_pages", 1)
+                logger.info(
+                    "Fetched bill %s transactions page %s/%s (%s journals)",
+                    bill_id,
                     current,
                     total_pages,
                     len(journals),

@@ -3,26 +3,27 @@ import {
   Info,
   Landmark,
   LayoutDashboard,
+  Receipt,
   Table,
   Tags,
   TrendingUp,
+  Wallet,
   type LucideIcon,
 } from "lucide-react"
 import { useMemo } from "react"
-import { NavLink, useLocation, useMatch, useNavigate } from "react-router-dom"
+import { NavLink, useLocation, useMatch } from "react-router-dom"
 
 import { AppVersionBadge } from "@/components/AppVersionBadge"
+import { ReferenceCacheMenuItem } from "@/components/ReferenceCacheButton"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
 import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
-import { Button } from "@/components/ui/button"
+import { useHealth } from "@/hooks/useHealth"
 import { useManageQueueCounts } from "@/hooks/useManageQueueCounts"
 import {
   CHART_NAV_ENTRIES,
   buildChartNavPath,
   detectReportLens,
-  swapReportLensPath,
   type ChartNavSuffix,
-  type ReportLens,
 } from "@/lib/reportLens"
 
 import {
@@ -37,6 +38,7 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
 } from "@/components/ui/sidebar"
 
 const generalNavItems = [
@@ -59,7 +61,7 @@ const chartNavMeta: Record<
   "/mom": { label: "Variance", icon: ComparisonGraphIcon },
 }
 
-const manageNavItems = [
+const baseManageNavItems = [
   {
     to: "/manage/categorize",
     label: "Categorize",
@@ -73,6 +75,20 @@ const manageNavItems = [
     end: true,
   },
 ] as const
+
+const paymentWorksheetNavItem = {
+  to: "/manage/payment-run",
+  label: "Payment Worksheet",
+  icon: Wallet,
+  end: true,
+} as const
+
+const billsNavItem = {
+  to: "/manage/bills",
+  label: "Bills",
+  icon: Receipt,
+  end: false,
+} as const
 
 function formatBadgeCount(count: number): string {
   return count > 99 ? "99+" : String(count)
@@ -106,33 +122,6 @@ function NavItems({
   )
 }
 
-function ReportLensToggle({
-  lens,
-  pathname,
-}: {
-  lens: ReportLens
-  pathname: string
-}) {
-  const navigate = useNavigate()
-
-  return (
-    <div className="flex gap-1" role="group" aria-label="Report lens">
-      {(["spending", "cash-flow"] as const).map((option) => (
-        <Button
-          key={option}
-          type="button"
-          size="xs"
-          className="h-6 flex-1 px-1.5 text-[11px] font-medium"
-          variant={lens === option ? "default" : "outline"}
-          onClick={() => navigate(swapReportLensPath(pathname, option))}
-        >
-          {option === "spending" ? "Spending" : "Cash Flow"}
-        </Button>
-      ))}
-    </div>
-  )
-}
-
 function ChartsNavGroup() {
   const { pathname } = useLocation()
   const lens = detectReportLens(pathname)
@@ -152,10 +141,7 @@ function ChartsNavGroup() {
 
   return (
     <SidebarGroup>
-      <SidebarGroupLabel className="h-auto flex-col items-stretch gap-1.5 py-1.5 group-data-[collapsible=icon]:hidden">
-        <span>Charts</span>
-        <ReportLensToggle lens={lens} pathname={pathname} />
-      </SidebarGroupLabel>
+      <SidebarGroupLabel>Charts</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           <NavItems items={chartNavItems} />
@@ -198,10 +184,16 @@ function ManageNavItem({
 function ManageNavItems({
   categorizeCount,
   loanSplitCount,
+  paymentWorksheetEnabled,
 }: {
   categorizeCount: number
   loanSplitCount: number
+  paymentWorksheetEnabled: boolean
 }) {
+  const manageNavItems = paymentWorksheetEnabled
+    ? [...baseManageNavItems, paymentWorksheetNavItem, billsNavItem]
+    : baseManageNavItems
+
   const badgeCounts: Record<string, number> = {
     "/manage/categorize": categorizeCount,
     "/manage/loans/queue": loanSplitCount,
@@ -222,16 +214,16 @@ function ManageNavItems({
 
 export function AppSidebar() {
   const { categorizeCount, loanSplitCount } = useManageQueueCounts()
+  const { data: health } = useHealth()
+  const paymentWorksheetEnabled = health?.payment_worksheet_enabled ?? false
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex h-12 items-center px-2 font-semibold tracking-tight group-data-[collapsible=icon]:justify-center">
-          <span className="truncate group-data-[collapsible=icon]:hidden">
+        <div className="flex h-12 items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center">
+          <SidebarTrigger aria-label="Toggle sidebar" />
+          <span className="truncate font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
             FF3Analytics
-          </span>
-          <span className="hidden text-xs font-semibold group-data-[collapsible=icon]:inline">
-            FF3
           </span>
         </div>
       </SidebarHeader>
@@ -251,6 +243,7 @@ export function AppSidebar() {
               <ManageNavItems
                 categorizeCount={categorizeCount}
                 loanSplitCount={loanSplitCount}
+                paymentWorksheetEnabled={paymentWorksheetEnabled}
               />
             </SidebarMenu>
           </SidebarGroupContent>
@@ -261,6 +254,7 @@ export function AppSidebar() {
           <AppVersionBadge className="text-[10px]" />
         </div>
         <SidebarMenu>
+          <ReferenceCacheMenuItem />
           <SidebarMenuItem>
             <NavLink to="/about" className="contents">
               {({ isActive }) => (

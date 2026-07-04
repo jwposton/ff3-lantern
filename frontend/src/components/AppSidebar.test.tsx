@@ -33,9 +33,22 @@ function TestProviders({
   )
 }
 
-function mockPendingFetch(categorizeCount: number, loanSplitCount: number) {
+function mockPendingFetch(categorizeCount: number, loanSplitCount: number, paymentEnabled = false) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input)
+    if (url.includes("/health")) {
+      return new Response(
+        JSON.stringify({
+          status: "ok",
+          firefly_base_url_configured: true,
+          firefly_api_token_configured: true,
+          openrouter_configured: false,
+          sidecar_writable: true,
+          payment_worksheet_enabled: paymentEnabled,
+        }),
+        { status: 200 },
+      )
+    }
     if (url.includes("/api/categorize/pending")) {
       return new Response(
         JSON.stringify({
@@ -195,6 +208,91 @@ describe("AppSidebar Manage section", () => {
       expect(document.querySelector('[data-sidebar="menu-badge"]')).toBeNull()
     })
   })
+
+  it("hides Payment Worksheet nav when payment_worksheet_enabled is false", async () => {
+    mockPendingFetch(0, 0, false)
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Manage")).toBeTruthy()
+    })
+    expect(document.querySelector('a[href="/manage/payment-run"]')).toBeNull()
+  })
+
+  it("shows Payment Worksheet nav when payment_worksheet_enabled is true", async () => {
+    mockPendingFetch(0, 0, true)
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(document.querySelector('a[href="/manage/payment-run"]')).toBeTruthy()
+    })
+  })
+
+  it("hides Bills nav when payment_worksheet_enabled is false", async () => {
+    mockPendingFetch(0, 0, false)
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Manage")).toBeTruthy()
+    })
+    expect(document.querySelector('a[href="/manage/bills"]')).toBeNull()
+  })
+
+  it("shows Bills nav when payment_worksheet_enabled is true", async () => {
+    mockPendingFetch(0, 0, true)
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(document.querySelector('a[href="/manage/bills"]')).toBeTruthy()
+    })
+  })
+
+  it("renders Clear cache control in the footer", async () => {
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Clear reference cache" }),
+      ).toBeTruthy()
+    })
+    expect(screen.getByText("Clear cache")).toBeTruthy()
+  })
+
+  it("renders sidebar toggle in the header", async () => {
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Toggle sidebar" })).toBeTruthy()
+    })
+  })
 })
 
 describe("AppSidebar Charts section", () => {
@@ -202,18 +300,16 @@ describe("AppSidebar Charts section", () => {
     mockPendingFetch(0, 0)
   })
 
-  it("renders a single Charts group with lens toggle instead of separate Spending/Cash Flow groups", () => {
+  it("renders a Charts group with chart-type nav only (no lens toggle in sidebar)", () => {
     renderSidebar("/reports/spending")
     const groupLabelText = Array.from(
       document.querySelectorAll('[data-sidebar="group-label"]'),
     ).map((el) => el.textContent?.trim())
-    expect(groupLabelText.some((text) => text?.startsWith("Charts"))).toBe(true)
+    expect(groupLabelText.some((text) => text === "Charts")).toBe(true)
     expect(groupLabelText.some((text) => text === "Manage")).toBe(true)
     expect(groupLabelText.some((text) => text === "Spending")).toBe(false)
     expect(groupLabelText.some((text) => text === "Cash Flow")).toBe(false)
-    expect(screen.getByRole("group", { name: "Report lens" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Spending" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Cash Flow" })).toBeTruthy()
+    expect(screen.queryByRole("group", { name: "Report lens" })).toBeNull()
   })
 
   it("builds chart nav links from the active cash-flow lens", () => {

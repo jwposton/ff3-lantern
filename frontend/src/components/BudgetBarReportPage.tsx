@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 
 import { BudgetReportDrilldown } from "@/components/BudgetReportDrilldown"
+import { ReportPageHeader } from "@/components/ReportPageHeader"
 import { SpendingBarChart } from "@/components/SpendingBarChart"
 import { Button } from "@/components/ui/button"
 import { useDateRange } from "@/context/DateRangeContext"
@@ -68,7 +69,7 @@ export function BudgetBarReportPage({
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold tracking-tight">{pageTitle}</h1>
+      <ReportPageHeader title={pageTitle} />
 
       {isError ? (
         <div

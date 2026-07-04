@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import type { ReactElement } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
 
@@ -146,6 +147,12 @@ const pageProps = {
 
 const alwaysTrue = () => true
 
+function renderVariancePage(ui: ReactElement) {
+  return render(
+    <MemoryRouter initialEntries={["/reports/spending/mom"]}>{ui}</MemoryRouter>,
+  )
+}
+
 const groceriesRows = [
   {
     ...mainCheckingWithdrawal,
@@ -214,7 +221,7 @@ describe("MomVarianceReportPage", () => {
   })
 
   it("renders Compare tab active with MomCompareChart by default", () => {
-    render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+    renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
     expect(screen.getByRole("button", { name: "Compare" })).toBeTruthy()
     expect(screen.getByTestId("mom-compare-chart-mock")).toBeTruthy()
@@ -222,7 +229,7 @@ describe("MomVarianceReportPage", () => {
   })
 
   it("renders MomTrendChart when Trend tab selected", () => {
-    render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+    renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
     fireEvent.click(screen.getByRole("button", { name: "Trend" }))
 
@@ -232,7 +239,7 @@ describe("MomVarianceReportPage", () => {
   })
 
   it("shows vs Average controls on Compare tab by default", () => {
-    render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+    renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
     expect(screen.getByText("Current month")).toBeTruthy()
     expect(screen.getByText("Avg window")).toBeTruthy()
@@ -243,7 +250,7 @@ describe("MomVarianceReportPage", () => {
   })
 
   it("shows month pair selectors when vs Month mode selected on Compare tab", () => {
-    render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+    renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
     fireEvent.click(screen.getByRole("button", { name: "vs Month" }))
 
@@ -254,7 +261,7 @@ describe("MomVarianceReportPage", () => {
   })
 
   it("applies defaultMonthPair in vs Month compare mode", () => {
-    render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+    renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
     fireEvent.click(screen.getByRole("button", { name: "vs Month" }))
 
@@ -264,7 +271,7 @@ describe("MomVarianceReportPage", () => {
   })
 
   it("shows trend range controls on Trend tab in vs Month mode", () => {
-    render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+    renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
     fireEvent.click(screen.getByRole("button", { name: "vs Month" }))
     fireEvent.click(screen.getByRole("button", { name: "Trend" }))
@@ -283,14 +290,14 @@ describe("MomVarianceReportPage", () => {
       refetch: vi.fn(),
     }))
 
-    render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+    renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
     expect(screen.getByRole("alert")).toBeTruthy()
     expect(screen.getByText("Unable to load transactions")).toBeTruthy()
   })
 
   it("renders Top-N slider with Budgets shown label", () => {
-    render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+    renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
     expect(screen.getByText("Budgets shown:")).toBeTruthy()
     const slider = screen.getByRole("slider")
@@ -299,8 +306,9 @@ describe("MomVarianceReportPage", () => {
   })
 
   it("shows variance scope note instead of relying on global date filter", () => {
-    render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+    renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
+    expect(screen.getByTestId("variance-toolbar")).toBeTruthy()
     expect(
       screen.getByText(/global date filter does not apply/i),
     ).toBeTruthy()
@@ -323,7 +331,7 @@ describe("MomVarianceReportPage", () => {
       refetch: vi.fn(),
     }))
 
-    render(
+    renderVariancePage(
       <MomVarianceReportPage filter={() => false} {...pageProps} />,
     )
 
@@ -348,11 +356,7 @@ describe("MomVarianceReportPage", () => {
 
     it("navigates to categorize queue when Uncategorized selected on trend chart", () => {
       mockNavigate.mockClear()
-      render(
-        <MemoryRouter>
-          <MomVarianceReportPage filter={alwaysTrue} {...pageProps} />
-        </MemoryRouter>,
-      )
+      renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
       fireEvent.click(screen.getByRole("button", { name: "Trend" }))
       fireEvent.click(screen.getByTestId("trend-uncategorized-trigger"))
@@ -364,7 +368,7 @@ describe("MomVarianceReportPage", () => {
     })
 
     it("opens category drilldown card when budget selected on Trend tab", () => {
-      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+      renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
       fireEvent.click(screen.getByRole("button", { name: "Trend" }))
       fireEvent.click(screen.getByTestId("trend-drill-trigger"))
@@ -378,7 +382,7 @@ describe("MomVarianceReportPage", () => {
     })
 
     it("opens category drilldown from Compare tab with compare chart type", () => {
-      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+      renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
       fireEvent.click(screen.getByTestId("compare-drill-trigger"))
 
@@ -387,7 +391,7 @@ describe("MomVarianceReportPage", () => {
     })
 
     it("hides drilldown when Clear is clicked", () => {
-      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+      renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
       fireEvent.click(screen.getByRole("button", { name: "Trend" }))
       fireEvent.click(screen.getByTestId("trend-drill-trigger"))
@@ -402,7 +406,7 @@ describe("MomVarianceReportPage", () => {
     })
 
     it("clears drill when Top-N slider changes", () => {
-      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+      renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
       fireEvent.click(screen.getByRole("button", { name: "Trend" }))
       fireEvent.click(screen.getByTestId("trend-drill-trigger"))
@@ -414,7 +418,7 @@ describe("MomVarianceReportPage", () => {
     })
 
     it("preserves selectedBudget when switching tabs while drilled", () => {
-      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+      renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
       fireEvent.click(screen.getByRole("button", { name: "Trend" }))
       fireEvent.click(screen.getByTestId("trend-drill-trigger"))
@@ -428,7 +432,7 @@ describe("MomVarianceReportPage", () => {
     })
 
     it("clears drill when compare mode changes", () => {
-      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+      renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
       fireEvent.click(screen.getByRole("button", { name: "Trend" }))
       fireEvent.click(screen.getByTestId("trend-drill-trigger"))
@@ -440,7 +444,7 @@ describe("MomVarianceReportPage", () => {
     })
 
     it("keeps drill when month pair changes on Compare tab in vs Month mode", () => {
-      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+      renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
       fireEvent.click(screen.getByRole("button", { name: "vs Month" }))
       fireEvent.click(screen.getByTestId("compare-drill-trigger"))
@@ -465,7 +469,7 @@ describe("MomVarianceReportPage", () => {
     })
 
     it("shows compare budget table beneath the chart", () => {
-      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+      renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
       expect(screen.getByTestId("mom-variance-table")).toBeTruthy()
       expect(screen.getByText("Monthly amounts")).toBeTruthy()
@@ -473,7 +477,7 @@ describe("MomVarianceReportPage", () => {
     })
 
     it("shows trend delta table when Trend tab is selected", () => {
-      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+      renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
       fireEvent.click(screen.getByRole("button", { name: "Trend" }))
 
@@ -482,7 +486,7 @@ describe("MomVarianceReportPage", () => {
     })
 
     it("shows category table in drilldown card", () => {
-      render(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
+      renderVariancePage(<MomVarianceReportPage filter={alwaysTrue} {...pageProps} />)
 
       fireEvent.click(screen.getByTestId("compare-drill-trigger"))
 

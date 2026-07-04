@@ -1,6 +1,8 @@
 export type LoanAccountOption = {
   id: string
   name: string
+  type?: string | null
+  role?: string | null
 }
 
 export type LoanMeta = {
