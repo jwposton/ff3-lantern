@@ -2,7 +2,7 @@
 
 **Status:** Design — not yet planned or implemented  
 **Captured:** 2026-06-30  
-**App:** FF3Analytics (`selfhosted/FF3Analytics`)
+**App:** FF3 Lantern (`selfhosted/FF3 Lantern`)
 
 ## Problem
 
@@ -16,7 +16,7 @@ This split is done manually today and is tedious to repeat every month.
 
 ## Goal
 
-FF3Analytics should **detect** matching lump payments, **calculate** principal/interest/escrow amounts, let the user **review and apply** splits, and **write** the result back to Firefly via API. Firefly remains the **system of record** for transactions and account balances; FF3Analytics owns automation logic and editing UX.
+FF3 Lantern should **detect** matching lump payments, **calculate** principal/interest/escrow amounts, let the user **review and apply** splits, and **write** the result back to Firefly via API. Firefly remains the **system of record** for transactions and account balances; FF3 Lantern owns automation logic and editing UX.
 
 ## Non-goals (initial version)
 
@@ -35,7 +35,7 @@ SimpleFin / bank import
         ↓
 Firefly III (lump transfer lands, single split)
         ↓
-FF3Analytics: match → calculate → review queue
+FF3 Lantern: match → calculate → review queue
         ↓
 User confirms (or auto-apply when confident)
         ↓
@@ -49,13 +49,13 @@ Existing analytics pipeline reads already-split rows
 | Concern | Owner |
 |---------|--------|
 | Transactions, balances, budgets, categories | Firefly III |
-| Loan profile config (match rules + split targets) | Firefly liability account notes (JSON), edited via FF3Analytics UI |
-| Match + amortization logic | FF3Analytics backend |
-| Review / apply UX | FF3Analytics frontend |
+| Loan profile config (match rules + split targets) | Firefly liability account notes (JSON), edited via FF3 Lantern UI |
+| Match + amortization logic | FF3 Lantern backend |
+| Review / apply UX | FF3 Lantern frontend |
 
-**Config storage:** Embed a versioned JSON blob in the Firefly **liability account `notes`** field, delimited by a marker such as `<!-- ff3analytics:loan_profile.v1 -->`. FF3Analytics reads/writes through the Firefly Accounts API. This avoids a sidecar database and keeps config tied to the account Firefly already manages.
+**Config storage:** Embed a versioned JSON blob in the Firefly **liability account `notes`** field, delimited by `<!-- ff3lantern:loan_profile.v1 -->` (v2 writes; parsers also read legacy `ff3analytics:loan_profile.v1`). FF3 Lantern reads/writes through the Firefly Accounts API. This avoids a sidecar database and keeps config tied to the account Firefly already manages.
 
-**Fallback (if notes prove awkward):** Small SQLite/JSON sidecar in FF3Analytics keyed by Firefly `account_id`. Prefer Firefly notes first.
+**Fallback (if notes prove awkward):** Small SQLite/JSON sidecar in FF3 Lantern keyed by Firefly `account_id`. Prefer Firefly notes first.
 
 ## Import payee vs split destinations
 

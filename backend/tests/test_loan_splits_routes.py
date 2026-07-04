@@ -122,7 +122,7 @@ def _handler_factory(monkeypatch):
             return httpx.Response(200, json=txns)
         return httpx.Response(404)
 
-    monkeypatch.setenv("FF3ANALYTICS_LOAN_SPLITS_SINCE", "2026-07-01")
+    monkeypatch.setenv("FF3LANTERN_LOAN_SPLITS_SINCE", "2026-07-01")
     from firefly_client import FireflyClient
     from main import app
     from routes import loans as loans_mod

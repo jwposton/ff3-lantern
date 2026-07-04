@@ -22,8 +22,8 @@ from firefly_client import FireflyClient
 
 
 def test_build_firefly_rule_body_includes_active_and_tag(monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_RULE_GROUP", "Test Group")
-    monkeypatch.setenv("FF3ANALYTICS_AI_TAG", "ai-tagged")
+    monkeypatch.setenv("FF3LANTERN_RULE_GROUP", "Test Group")
+    monkeypatch.setenv("FF3LANTERN_AI_TAG", "ai-tagged")
     draft = RuleDraft(
         title="Amazon",
         description_contains="AMZN MKTP",
@@ -46,7 +46,7 @@ def test_build_firefly_rule_body_includes_active_and_tag(monkeypatch):
 
 
 def test_build_firefly_rule_body_includes_amount_when_set(monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_RULE_GROUP", "Test Group")
+    monkeypatch.setenv("FF3LANTERN_RULE_GROUP", "Test Group")
     draft = RuleDraft(
         title="Netflix",
         description_contains="NETFLIX.COM",
@@ -93,7 +93,7 @@ async def test_preview_rule_matches_amount_filter():
 
 
 def test_build_firefly_rule_body_destination_account_trigger(monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_RULE_GROUP", "Test Group")
+    monkeypatch.setenv("FF3LANTERN_RULE_GROUP", "Test Group")
     draft = RuleDraft(
         title="Safeway → Groceries",
         description_contains="",
@@ -118,7 +118,7 @@ def test_build_firefly_rule_body_destination_account_trigger(monkeypatch):
 def test_build_firefly_rule_body_destination_match_types(
     monkeypatch, match_type, firefly_type, needle
 ):
-    monkeypatch.setenv("FF3ANALYTICS_RULE_GROUP", "Test Group")
+    monkeypatch.setenv("FF3LANTERN_RULE_GROUP", "Test Group")
     draft = RuleDraft(
         title="Amazon",
         description_contains="",
@@ -382,7 +382,7 @@ async def test_find_duplicate_rules_by_trigger():
 
 @pytest.mark.asyncio
 async def test_create_approved_rule_posts_and_audits(monkeypatch, tmp_path):
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     posted: list[dict] = []
 
     class _Client:
@@ -437,7 +437,7 @@ async def test_create_duplicate_raises():
 
 @pytest.mark.asyncio
 async def test_trigger_backfill_audits(monkeypatch, tmp_path):
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     triggered: list[tuple[str, str, str]] = []
 
     class _Client:

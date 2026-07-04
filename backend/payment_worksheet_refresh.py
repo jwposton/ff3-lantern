@@ -41,14 +41,14 @@ def _parse_category_list(env_key: str, default: str) -> list[str]:
 
 def interest_categories() -> list[str]:
     return _parse_category_list(
-        "FF3ANALYTICS_PAYMENT_WORKSHEET_INTEREST_CATEGORIES",
+        "FF3LANTERN_PAYMENT_WORKSHEET_INTEREST_CATEGORIES",
         DEFAULT_INTEREST_CATEGORIES,
     )
 
 
 def fee_categories() -> list[str]:
     return _parse_category_list(
-        "FF3ANALYTICS_PAYMENT_WORKSHEET_FEE_CATEGORIES",
+        "FF3LANTERN_PAYMENT_WORKSHEET_FEE_CATEGORIES",
         DEFAULT_FEE_CATEGORIES,
     )
 

@@ -42,7 +42,7 @@ def test_mutate_fn_adds_ai_tag():
 
 
 def test_ignore_mutate_fn_adds_ignore_tag(monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_CATEGORIZE_IGNORE_TAG", "skip-queue")
+    monkeypatch.setenv("FF3LANTERN_CATEGORIZE_IGNORE_TAG", "skip-queue")
     attrs = load_fixture("transactions_put_roundtrip.json")["data"]["attributes"]
     mutate = build_ignore_mutate_fn("5001")
     updated = mutate(attrs)
@@ -52,7 +52,7 @@ def test_ignore_mutate_fn_adds_ignore_tag(monkeypatch):
 
 
 def test_is_categorize_ignored_detects_tag(monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_CATEGORIZE_IGNORE_TAG", "categorize-ignore")
+    monkeypatch.setenv("FF3LANTERN_CATEGORIZE_IGNORE_TAG", "categorize-ignore")
     assert is_categorize_ignored({"tags": ["categorize-ignore"]})
     assert is_categorize_ignored({"tags": "categorize-ignore,other"})
     assert not is_categorize_ignored({"tags": ["other"]})
@@ -81,7 +81,7 @@ def test_mutate_fn_raises_when_journal_missing():
 
 
 def test_apply_category_put_preserves_splits(monkeypatch, tmp_path):
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     get_payload = load_fixture("transactions_put_roundtrip.json")
     put_bodies: list[dict] = []
 

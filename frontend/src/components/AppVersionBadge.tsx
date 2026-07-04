@@ -10,7 +10,7 @@ export function AppVersionBadge({ className }: AppVersionBadgeProps) {
 
   return (
     <span
-      title={`FF3Analytics ${label}`}
+      title={`FF3 Lantern ${label}`}
       className={cn(
         "select-none tabular-nums tracking-wide text-muted-foreground/60",
         className,

@@ -1,4 +1,4 @@
-"""FF3Analytics API — Phase 1 foundation (health only)."""
+"""FF3 Lantern API — Phase 1 foundation (health only)."""
 import os
 from contextlib import asynccontextmanager
 
@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="FF3Analytics API", version="1.0.2", lifespan=lifespan)
+app = FastAPI(title="FF3 Lantern API", version="2.0.0", lifespan=lifespan)
 app.include_router(api_router, prefix="/api")
 app.include_router(categorize_router, prefix="/api")
 app.include_router(loans_router, prefix="/api")

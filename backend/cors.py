@@ -1,4 +1,4 @@
-"""CORS origin parsing for FF3Analytics API (OPS-01)."""
+"""CORS origin parsing for FF3 Lantern API (OPS-01)."""
 
 from __future__ import annotations
 

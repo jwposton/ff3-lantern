@@ -6,14 +6,26 @@ import json
 
 from firefly_client import FireflyClient
 
-LOAN_PROFILE_MARKER = "<!-- ff3analytics:loan_profile.v1 -->"
+LOAN_PROFILE_MARKER = "<!-- ff3lantern:loan_profile.v1 -->"
+LOAN_PROFILE_LEGACY_MARKER = "<!-- ff3analytics:loan_profile.v1 -->"
+_LOAN_PROFILE_MARKERS = (LOAN_PROFILE_MARKER, LOAN_PROFILE_LEGACY_MARKER)
+
+
+def _find_marker(notes: str) -> tuple[str, int] | None:
+    found: tuple[str, int] | None = None
+    for marker in _LOAN_PROFILE_MARKERS:
+        idx = notes.find(marker)
+        if idx != -1 and (found is None or idx < found[1]):
+            found = (marker, idx)
+    return found
 
 
 def _extract_json_after_marker(notes: str) -> str | None:
-    idx = notes.find(LOAN_PROFILE_MARKER)
-    if idx == -1:
+    found = _find_marker(notes)
+    if found is None:
         return None
-    rest = notes[idx + len(LOAN_PROFILE_MARKER) :].lstrip()
+    marker, idx = found
+    rest = notes[idx + len(marker) :].lstrip()
     if not rest.startswith("{"):
         return None
     depth = 0
@@ -27,8 +39,8 @@ def _extract_json_after_marker(notes: str) -> str | None:
     return None
 
 
-def _strip_profile_block(notes: str) -> str:
-    idx = notes.find(LOAN_PROFILE_MARKER)
+def _strip_marker_block(notes: str, marker: str) -> str:
+    idx = notes.find(marker)
     if idx == -1:
         return notes
     before = notes[:idx].rstrip()
@@ -36,11 +48,18 @@ def _strip_profile_block(notes: str) -> str:
     raw_json = _extract_json_after_marker(suffix)
     if raw_json is None:
         return before
-    after_marker = suffix[len(LOAN_PROFILE_MARKER) :].lstrip()
+    after_marker = suffix[len(marker) :].lstrip()
     json_pos = after_marker.find(raw_json)
     after_json = after_marker[json_pos + len(raw_json) :].strip()
     parts = [p for p in (before, after_json) if p]
     return "\n\n".join(parts)
+
+
+def _strip_profile_block(notes: str) -> str:
+    result = notes
+    for marker in _LOAN_PROFILE_MARKERS:
+        result = _strip_marker_block(result, marker)
+    return result
 
 
 def parse_loan_profile_from_notes(notes: str) -> dict | None:

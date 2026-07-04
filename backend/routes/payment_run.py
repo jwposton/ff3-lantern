@@ -44,7 +44,7 @@ router = APIRouter()
 
 def payment_worksheet_enabled() -> bool:
     return (
-        os.environ.get("FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED", "").strip().lower()
+        os.environ.get("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "").strip().lower()
         in ("1", "true", "yes")
     )
 

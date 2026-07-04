@@ -12,13 +12,29 @@ import sidecar_db
 
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     return tmp_path
 
 
 def test_init_db_creates_tables(data_dir):
     asyncio.run(sidecar_db.init_db())
     assert sidecar_db.get_db_path().exists()
+    assert sidecar_db.get_db_path().name == "ff3lantern.db"
+
+
+def test_migrates_legacy_db_filename(data_dir):
+    async def setup_legacy():
+        import aiosqlite
+
+        legacy = data_dir / "ff3analytics.db"
+        async with aiosqlite.connect(legacy) as db:
+            await db.execute("CREATE TABLE probe (id INTEGER)")
+            await db.commit()
+
+    asyncio.run(setup_legacy())
+    asyncio.run(sidecar_db.init_db())
+    assert not (data_dir / "ff3analytics.db").exists()
+    assert (data_dir / "ff3lantern.db").exists()
 
 
 def test_is_writable_true_on_tmp_path(data_dir):

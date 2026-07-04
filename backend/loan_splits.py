@@ -14,7 +14,7 @@ from firefly_client import FireflyClient
 
 
 def _loan_tag() -> str:
-    return os.environ.get("FF3ANALYTICS_LOAN_TAG", "loan-split").strip() or "loan-split"
+    return os.environ.get("FF3LANTERN_LOAN_TAG", "loan-split").strip() or "loan-split"
 
 
 def apply_penny_adjust_to_amounts(

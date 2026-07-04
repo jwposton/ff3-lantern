@@ -25,7 +25,7 @@ from payment_worksheet_bills import (
 
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     return tmp_path
 
 
@@ -128,7 +128,7 @@ def test_compute_bill_owed_from_firefly_intermittent_is_zero():
 @pytest.mark.asyncio
 async def test_register_wizard(data_dir, monkeypatch):
     monkeypatch.setenv(
-        "FF3ANALYTICS_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+        "FF3LANTERN_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
     )
     bill_posts: list[dict] = []
     rule_posts: list[dict] = []
@@ -224,7 +224,7 @@ async def test_register_wizard(data_dir, monkeypatch):
 @pytest.mark.asyncio
 async def test_register_intermittent_without_amount(data_dir, monkeypatch):
     monkeypatch.setenv(
-        "FF3ANALYTICS_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+        "FF3LANTERN_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
     )
     bill_posts: list[dict] = []
     rule_posts: list[dict] = []
@@ -311,7 +311,7 @@ async def test_register_intermittent_without_amount(data_dir, monkeypatch):
 @pytest.mark.asyncio
 async def test_register_credit_card_rail_counts_toward_cash_plan_off(data_dir, monkeypatch):
     monkeypatch.setenv(
-        "FF3ANALYTICS_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+        "FF3LANTERN_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
     )
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -595,7 +595,7 @@ async def test_link_existing_without_rule_or_trigger_raises_422(data_dir):
 @pytest.mark.asyncio
 async def test_register_new_bill_compensates_on_rule_failure(data_dir, monkeypatch):
     monkeypatch.setenv(
-        "FF3ANALYTICS_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+        "FF3LANTERN_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
     )
     deleted_bills: list[str] = []
 

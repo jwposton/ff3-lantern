@@ -2,7 +2,7 @@
 
 **Status:** Design — not yet planned or implemented  
 **Captured:** 2026-06-30  
-**App:** FF3Analytics (`selfhosted/FF3Analytics`)
+**App:** FF3 Lantern (`selfhosted/FF3 Lantern`)
 
 ## Problem
 
@@ -17,12 +17,12 @@ Firefly's built-in rule editor is capable but requires the user to think through
 
 ## Goal
 
-FF3Analytics should **surface** uncategorized transactions, **propose** category (and optionally budget) assignments via an LLM through [OpenRouter](https://openrouter.ai/), and let the user **approve** before:
+FF3 Lantern should **surface** uncategorized transactions, **propose** category (and optionally budget) assignments via an LLM through [OpenRouter](https://openrouter.ai/), and let the user **approve** before:
 
 1. **Direct categorize** — update the transaction's category (and budget) in Firefly via API, or
 2. **Create rule** — create a Firefly rule that auto-categorizes matching future (and optionally past) transactions
 
-Firefly remains the **system of record** for transactions, categories, budgets, and rules. FF3Analytics owns AI prompting, suggestion quality, and the review/apply UX.
+Firefly remains the **system of record** for transactions, categories, budgets, and rules. FF3 Lantern owns AI prompting, suggestion quality, and the review/apply UX.
 
 ## Non-goals (initial version)
 
@@ -40,7 +40,7 @@ SimpleFin / bank import
         ↓
 Firefly III (uncategorized withdrawals/deposits)
         ↓
-FF3Analytics: detect uncategorized → build AI context → OpenRouter
+FF3 Lantern: detect uncategorized → build AI context → OpenRouter
         ↓
 Review queue (suggestions + confidence + rule vs direct recommendation)
         ↓
@@ -56,11 +56,11 @@ Existing analytics pipeline reads updated rows on next fetch
 | Concern | Owner |
 |---------|--------|
 | Transactions, categories, budgets, rules | Firefly III |
-| OpenRouter API key, model selection, prompt templates | FF3Analytics backend (env + config) |
-| Suggestion cache / review queue state | FF3Analytics SQLite sidecar (see [Resolved decisions](#resolved-decisions)) |
-| Review / apply UX | FF3Analytics frontend |
+| OpenRouter API key, model selection, prompt templates | FF3 Lantern backend (env + config) |
+| Suggestion cache / review queue state | FF3 Lantern SQLite sidecar (see [Resolved decisions](#resolved-decisions)) |
+| Review / apply UX | FF3 Lantern frontend |
 
-**No Firefly-side config blob** is required for this feature (unlike loan profiles). Optional: store user preferences (default model, auto-suggest on load) in a small FF3Analytics config file or env.
+**No Firefly-side config blob** is required for this feature (unlike loan profiles). Optional: store user preferences (default model, auto-suggest on load) in a small FF3 Lantern config file or env.
 
 ## What counts as "uncategorized"
 
@@ -101,12 +101,12 @@ Use when the payee looks **one-off** or the user only wants to fix this row.
 
 Use when the same description fragment appears on **multiple** uncategorized rows, or the model confidence is high that it will recur.
 
-- **User must explicitly approve every rule** — FF3Analytics never creates or activates rules without a confirm click on the rule draft (title, triggers, actions). No background rule creation.
+- **User must explicitly approve every rule** — FF3 Lantern never creates or activates rules without a confirm click on the rule draft (title, triggers, actions). No background rule creation.
 - `POST /api/v1/rules` with:
   - `trigger`: `store-journal` (runs on new/edited transactions)
   - `triggers`: e.g. `description_contains: "AMZN MKTP"` (+ optional `transaction_type: withdrawal`)
   - `actions`: `set_category`; `set_budget` when AI suggested and user kept it in the draft; **`add_tag: ai-categorized`** always
-  - `rule_group_title`: from `FF3ANALYTICS_RULE_GROUP` env (default `FF3Analytics AI`; create group if missing)
+  - `rule_group_title`: from `FF3LANTERN_RULE_GROUP` env (default `FF3 Lantern AI`; create group if missing)
 - After user approval, **optional** backfill via **`POST /api/v1/rules/{id}/trigger`** — checkbox **default OFF**; user opts in after seeing test-hit count
 - Before create, preview match count against cached splits (or **`GET /api/v1/rules/{id}/test`** post-create for verification)
 
@@ -133,8 +133,8 @@ Use when the same description fragment appears on **multiple** uncategorized row
 | `OPENROUTER_API_KEY` | Server-side only; never exposed to frontend |
 | `OPENROUTER_MODEL` | Default `openai/gpt-4o-mini`; override via env for harder merchants |
 | `OPENROUTER_BASE_URL` | Optional override (default `https://openrouter.ai/api/v1`) |
-| `FF3ANALYTICS_RULE_GROUP` | Firefly rule group title (default `FF3Analytics AI`) |
-| `FF3ANALYTICS_AI_TAG` | Tag applied on AI writes (default `ai-categorized`) |
+| `FF3LANTERN_RULE_GROUP` | Firefly rule group title (default `FF3 Lantern AI`) |
+| `FF3LANTERN_AI_TAG` | Tag applied on AI writes (default `ai-categorized`) |
 
 Add to `.env.example`; document in README. Feature disabled gracefully when key missing (queue shows "AI not configured").
 
@@ -270,7 +270,7 @@ Today `fetch_splits` omits `description` and per-split journal ids — both are 
 | `GET /api/v1/categories` | Build allowed category list for prompts + dropdowns |
 | `GET /api/v1/budgets` | Optional budget list |
 | `GET /api/v1/rules` | Detect duplicate/overlapping rules before create |
-| `GET /api/v1/rule-groups` | Resolve/create `FF3Analytics AI` group |
+| `GET /api/v1/rule-groups` | Resolve/create `FF3 Lantern AI` group |
 
 ### Write path (new)
 
@@ -367,7 +367,7 @@ Once categories are applied in Firefly:
 ## Security
 
 - `OPENROUTER_API_KEY` and `FIREFLY_API_TOKEN` server-side only (existing pattern)
-- All writes require authenticated FF3Analytics session (Authelia proxy)
+- All writes require authenticated FF3 Lantern session (Authelia proxy)
 - Validate category/budget ids against freshly fetched Firefly lists before PUT/POST
 - User must explicitly click Approve — no silent writes
 - Audit log (local): `{ timestamp, journal_id, action, category_id, rule_id?, model }`
@@ -378,15 +378,15 @@ Captured 2026-06-30 during design review.
 
 | # | Question | Decision |
 |---|----------|----------|
-| 1 | Suggestion cache storage | **SQLite** sidecar in FF3Analytics — persists suggestions + audit log across restarts |
+| 1 | Suggestion cache storage | **SQLite** sidecar in FF3 Lantern — persists suggestions + audit log across restarts |
 | 2 | Default OpenRouter model | **`openai/gpt-4o-mini`** — upgrade via `OPENROUTER_MODEL` env when needed |
 | 3 | Rule actions (after user approval) | **`set_category` + `set_budget` when AI suggested and user kept it** in the rule draft; never auto-create rules |
 | 4 | Backfill on rule create | **Opt-in, default OFF** — show test-hit count; user checks box to trigger |
 | 5 | Discover new uncategorized rows | **Poll on categorize page load** + **manual Suggest**; no Firefly webhooks in v1 |
 | 6 | Audit tag in Firefly | **Always** — `add_tag: ai-categorized` on direct apply and on every AI-created rule |
-| 7 | Rule group name | Default **`FF3Analytics AI`**, overridable via **`FF3ANALYTICS_RULE_GROUP`** env |
+| 7 | Rule group name | Default **`FF3 Lantern AI`**, overridable via **`FF3LANTERN_RULE_GROUP`** env |
 
-**Approval invariant:** Every write to Firefly (transaction update or rule create) requires an explicit user **Approve** / **Create rule** click. AI proposes only; FF3Analytics never writes autonomously.
+**Approval invariant:** Every write to Firefly (transaction update or rule create) requires an explicit user **Approve** / **Create rule** click. AI proposes only; FF3 Lantern never writes autonomously.
 
 ## References
 

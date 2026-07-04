@@ -1,7 +1,7 @@
 services:
   backend:
-    image: ghcr.io/${GITHUB_OWNER:-jwposton}/ff3analytics-backend:${FF3ANALYTICS_TAG:-latest}
-    container_name: ff3analytics-backend
+    image: ghcr.io/${GITHUB_OWNER:-jwposton}/ff3-lantern-backend:${FF3LANTERN_TAG:-latest}
+    container_name: ff3-lantern-backend
     build: ./backend
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
@@ -21,12 +21,12 @@ services:
       FIREFLY_API_TOKEN: ${FIREFLY_API_TOKEN:-}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
     volumes:
-      # Host path: FF3ANALYTICS_DATA_PATH → /data (image sets FF3ANALYTICS_DATA_DIR=/data).
-      - ${FF3ANALYTICS_DATA_PATH:-./data}:/data
+      # Host path: FF3LANTERN_DATA_PATH → /data (image sets FF3LANTERN_DATA_DIR=/data).
+      - ${FF3LANTERN_DATA_PATH:-./data}:/data
 
   frontend:
-    image: ghcr.io/${GITHUB_OWNER:-jwposton}/ff3analytics-frontend:${FF3ANALYTICS_TAG:-latest}
-    container_name: ff3analytics-frontend
+    image: ghcr.io/${GITHUB_OWNER:-jwposton}/ff3-lantern-frontend:${FF3LANTERN_TAG:-latest}
+    container_name: ff3-lantern-frontend
     build: ./frontend
     restart: unless-stopped
     ports:

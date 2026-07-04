@@ -78,7 +78,7 @@ jobs:
           file: ./backend/Dockerfile
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/ff3analytics-backend:${{ steps.tag.outputs.value }}
+          tags: ghcr.io/${{ github.repository_owner }}/ff3-lantern-backend:${{ steps.tag.outputs.value }}
           cache-from: type=gha,scope=backend-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=backend-${{ matrix.arch }}
 
@@ -108,10 +108,10 @@ jobs:
           owner="${{ github.repository_owner }}"
           version="${{ steps.version.outputs.value }}"
           docker buildx imagetools create \
-            -t "ghcr.io/${owner}/ff3analytics-backend:${version}" \
-            -t "ghcr.io/${owner}/ff3analytics-backend:latest" \
-            "ghcr.io/${owner}/ff3analytics-backend:${version}-amd64" \
-            "ghcr.io/${owner}/ff3analytics-backend:${version}-arm64"
+            -t "ghcr.io/${owner}/ff3-lantern-backend:${version}" \
+            -t "ghcr.io/${owner}/ff3-lantern-backend:latest" \
+            "ghcr.io/${owner}/ff3-lantern-backend:${version}-amd64" \
+            "ghcr.io/${owner}/ff3-lantern-backend:${version}-arm64"
 
   build-frontend:
     runs-on: ${{ matrix.runner }}
@@ -152,7 +152,7 @@ jobs:
           file: ./frontend/Dockerfile
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/ff3analytics-frontend:${{ steps.tag.outputs.value }}
+          tags: ghcr.io/${{ github.repository_owner }}/ff3-lantern-frontend:${{ steps.tag.outputs.value }}
           cache-from: type=gha,scope=frontend-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=frontend-${{ matrix.arch }}
 
@@ -182,7 +182,7 @@ jobs:
           owner="${{ github.repository_owner }}"
           version="${{ steps.version.outputs.value }}"
           docker buildx imagetools create \
-            -t "ghcr.io/${owner}/ff3analytics-frontend:${version}" \
-            -t "ghcr.io/${owner}/ff3analytics-frontend:latest" \
-            "ghcr.io/${owner}/ff3analytics-frontend:${version}-amd64" \
-            "ghcr.io/${owner}/ff3analytics-frontend:${version}-arm64"
+            -t "ghcr.io/${owner}/ff3-lantern-frontend:${version}" \
+            -t "ghcr.io/${owner}/ff3-lantern-frontend:latest" \
+            "ghcr.io/${owner}/ff3-lantern-frontend:${version}-amd64" \
+            "ghcr.io/${owner}/ff3-lantern-frontend:${version}-arm64"

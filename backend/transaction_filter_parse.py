@@ -19,7 +19,7 @@ from transaction_filter_normalize import (
     try_deterministic_search_query,
 )
 
-FILTER_PARSE_SYSTEM_PROMPT = """You convert plain-language transaction search requests into structured filter JSON for FF3Analytics Transaction Explorer.
+FILTER_PARSE_SYSTEM_PROMPT = """You convert plain-language transaction search requests into structured filter JSON for FF3 Lantern Transaction Explorer.
 
 Rules:
 - Output ONLY fields relevant to the user's request; leave others at defaults (empty string, null, false, empty array).
