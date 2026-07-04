@@ -7,8 +7,43 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { BillsDetailPage } from "./BillsDetailPage"
 import type {
   BillHistoryEnvelope,
+  PaymentWorksheetEnvelope,
   RegisteredBillListItem,
 } from "@/lib/paymentRunApi"
+
+const EMPTY_WORKSHEET: PaymentWorksheetEnvelope = {
+  month: "2026-07",
+  refreshed_at: null,
+  buckets: [
+    {
+      id: "checking",
+      label: "Checking",
+      sort_order: 0,
+      reported_balance: "5000.00",
+      user_balance: "5000.00",
+      user_balance_override: false,
+      planned_outflows: "0.00",
+      remaining: "5000.00",
+    },
+  ],
+  credit_cards: [],
+  excluded_credit_cards: [],
+  bills: [],
+  liabilities: [],
+  excluded_liabilities: [],
+  section_subtotals: {
+    bills: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
+    liabilities: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
+    credit_cards: { planned_cash: "0.00" },
+  },
+  grand_totals: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
+  shortfall: false,
+  totals: {
+    reported_balance: "5000.00",
+    user_balance: "5000.00",
+    remaining: "5000.00",
+  },
+}
 
 const HEALTH_ENABLED = {
   status: "ok",
@@ -101,13 +136,49 @@ function mockFetch(options: {
   bills?: RegisteredBillListItem[]
   history?: BillHistoryEnvelope | null
   historyStatus?: number
+  worksheet?: PaymentWorksheetEnvelope
+  availableBills?: { id: string; name: string }[]
 }) {
   const bills = options.bills ?? [BILL_ALPHA, BILL_BETA]
+  const worksheet = options.worksheet ?? EMPTY_WORKSHEET
+  const availableBills = options.availableBills ?? [
+    { id: "99", name: "Trash service" },
+  ]
   let billsFetchCalls = 0
-  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input)
+    const method = init?.method ?? "GET"
     if (url.includes("/health")) {
       return new Response(JSON.stringify(HEALTH_ENABLED), { status: 200 })
+    }
+    if (url.includes("/api/categorize/meta")) {
+      return new Response(JSON.stringify({ categories: [], budgets: [] }), {
+        status: 200,
+      })
+    }
+    if (url.includes("/api/payment-run?") && !url.includes("bill-suggestions")) {
+      return new Response(JSON.stringify(worksheet), { status: 200 })
+    }
+    if (url.includes("/api/payment-run/available")) {
+      return new Response(JSON.stringify({ data: availableBills }), { status: 200 })
+    }
+    if (url.includes("/api/payment-run/bills/register") && method === "POST") {
+      return new Response(
+        JSON.stringify({
+          id: 42,
+          firefly_bill_id: "99",
+          worksheet_section: "bills",
+          funding_bucket_key: "checking",
+          amount_mode: "recurring",
+          planned_sync: "auto",
+          payment_rail: "bank",
+          counts_toward_cash_plan: true,
+          rule_id: "1",
+          row_label: "Trash service",
+          credit_card_account_id: null,
+        }),
+        { status: 200 },
+      )
     }
     if (url.match(/\/api\/payment-run\/bills\/\d+\/history/)) {
       if (options.historyStatus && options.historyStatus >= 400) {
@@ -162,7 +233,7 @@ describe("BillsDetailPage picker", () => {
     })
   })
 
-  it("empty picker links to payment worksheet setup", async () => {
+  it("empty picker offers link and register actions plus discover link", async () => {
     mockFetch({ bills: [] })
     render(
       <TestProviders initialEntry="/manage/bills">
@@ -174,8 +245,32 @@ describe("BillsDetailPage picker", () => {
       expect(screen.getByText("No bills registered yet")).toBeTruthy()
     })
 
-    const link = screen.getByRole("link", { name: "Manage registration" })
-    expect(link.getAttribute("href")).toBe("/manage/payment-run/setup")
+    expect(screen.getAllByRole("button", { name: "Link existing bill" }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole("button", { name: "Register new bill" }).length).toBeGreaterThan(0)
+    expect(
+      screen.getByRole("link", { name: "find recurring bills" }).getAttribute("href"),
+    ).toBe("/manage/payment-run/discover")
+  })
+
+  it("opens registration sheet in link mode from header", async () => {
+    mockFetch({ bills: [BILL_ALPHA] })
+    render(
+      <TestProviders initialEntry="/manage/bills/1">
+        <BillsDetailPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Link existing bill" })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Link existing bill" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register a bill" })).toBeTruthy()
+    })
+
+    expect(screen.getByRole("button", { name: "Link existing", pressed: true })).toBeTruthy()
   })
 
   it("shows inline error for invalid registry id while picker stays usable", async () => {

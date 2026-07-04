@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom"
+
 import { UserBalanceInput } from "@/components/payment-run/UserBalanceInput"
 import { COMPACT_TABLE } from "@/components/payment-run/worksheetTableUtils"
 import { Button } from "@/components/ui/button"
@@ -21,7 +23,6 @@ type FundingBucketBarProps = {
     remaining: string
   }
   accountNameById: Map<string, string>
-  onEditBucket: (bucket: FundingBucketRollup) => void
   onBalanceBlur: (
     bucketId: string,
     body: { user_balance: string; reset_to_reported?: boolean },
@@ -67,7 +68,6 @@ export function FundingBucketBar({
   buckets,
   totals,
   accountNameById,
-  onEditBucket,
   onBalanceBlur,
   onResetBalance,
 }: FundingBucketBarProps) {
@@ -80,7 +80,13 @@ export function FundingBucketBar({
         data-testid="funding-bucket-bar"
       >
         No funding buckets — add them in{" "}
-        <span className="font-medium text-foreground">Configure worksheet</span>.
+        <Link
+          to="/manage/payment-run/buckets"
+          className="font-medium text-foreground underline-offset-2 hover:underline"
+        >
+          Cash buckets
+        </Link>
+        .
       </div>
     )
   }
@@ -108,13 +114,7 @@ export function FundingBucketBar({
                 <TableRow key={bucket.id}>
                   <TableCell className="max-w-[14rem]">
                     <div className="flex min-w-0 items-center gap-1">
-                      <button
-                        type="button"
-                        className="shrink-0 text-left font-medium hover:underline"
-                        onClick={() => onEditBucket(bucket)}
-                      >
-                        {bucket.label}
-                      </button>
+                      <span className="shrink-0 font-medium">{bucket.label}</span>
                       {accountLabels ? (
                         <span
                           className="text-muted-foreground min-w-0 truncate text-[10px]"

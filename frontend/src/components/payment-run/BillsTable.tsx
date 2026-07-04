@@ -1,4 +1,5 @@
 import { Pencil } from "lucide-react"
+import { Link } from "react-router-dom"
 
 import { AmountDueInput } from "@/components/payment-run/AmountDueInput"
 import { PlannedAmountInput } from "@/components/payment-run/PlannedAmountInput"
@@ -69,7 +70,7 @@ type BillsTableProps = {
     body: { amount_due: string; clear_amount_due_override?: boolean },
   ) => Promise<void>
   onPaidChange: (row: BillRow, paid: boolean) => Promise<void>
-  onEditRegistration: (row: BillRow) => void
+  onEditRegistration?: (row: BillRow) => void
 }
 
 export function BillsTable({
@@ -176,14 +177,24 @@ export function BillsTable({
                   />
                 </TableCell>
                 <TableCell className={ACTIONS_CELL_CLASS}>
-                  <button
-                    type="button"
-                    className="text-muted-foreground hover:text-foreground rounded p-0.5"
-                    aria-label={`Edit ${billName} registration`}
-                    onClick={() => onEditRegistration(row)}
-                  >
-                    <Pencil className="size-3" aria-hidden />
-                  </button>
+                  {onEditRegistration ? (
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground rounded p-0.5"
+                      aria-label={`Edit ${billName} registration`}
+                      onClick={() => onEditRegistration(row)}
+                    >
+                      <Pencil className="size-3" aria-hidden />
+                    </button>
+                  ) : row.registry_id ? (
+                    <Link
+                      to={`/manage/bills/${row.registry_id}`}
+                      className="text-muted-foreground hover:text-foreground text-xs font-medium"
+                      aria-label={`Manage ${billName}`}
+                    >
+                      Manage
+                    </Link>
+                  ) : null}
                 </TableCell>
               </TableRow>
             )

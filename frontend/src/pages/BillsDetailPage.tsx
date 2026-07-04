@@ -1,26 +1,43 @@
-import { useMemo } from "react"
-import { ExternalLink, RefreshCw } from "lucide-react"
+import { useMemo, useState } from "react"
+import { ExternalLink, Plus, RefreshCw } from "lucide-react"
 import {
   Link,
   Navigate,
   NavLink,
+  useNavigate,
   useParams,
 } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 
+import { BillRegistrationSheet } from "@/components/payment-run/BillRegistrationSheet"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useBillHistory, useRegisteredBills } from "@/hooks/useBillHistory"
+import {
+  registeredBillsQueryKey,
+  useBillHistory,
+  useRegisteredBills,
+} from "@/hooks/useBillHistory"
 import { useHealth } from "@/hooks/useHealth"
+import {
+  paymentRunQueryKey,
+  usePaymentWorksheet,
+} from "@/hooks/usePaymentWorksheet"
 import {
   buildFireflyBillUrl,
   buildFireflyTransactionUrl,
 } from "@/lib/fireflyLinks"
 import { formatDisplayAmount, formatDisplayDate } from "@/lib/formatDisplay"
-import type {
-  BillHistoryTransaction,
-  RegisteredBillListItem,
+import {
+  currentMonthKey,
+  fetchAvailableBills,
+  registerBill,
+  type AvailableFireflyBill,
+  type BillHistoryTransaction,
+  type RegisterBillPayload,
+  type RegisteredBillListItem,
 } from "@/lib/paymentRunApi"
 
 function MetricBlock({
@@ -73,11 +90,15 @@ function BillPickerList({
   loading,
   error,
   onRetry,
+  onLinkExisting,
+  onRegisterNew,
 }: {
   bills: RegisteredBillListItem[]
   loading: boolean
   error: boolean
   onRetry: () => void
+  onLinkExisting: () => void
+  onRegisterNew: () => void
 }) {
   if (loading) {
     return (
@@ -107,12 +128,27 @@ function BillPickerList({
       <div className="rounded-lg border bg-card p-8 text-center space-y-3">
         <p className="font-medium">No bills registered yet</p>
         <p className="text-muted-foreground text-sm">
-          Register bills on the payment worksheet to see their payment history
-          here.
+          Link a bill that already exists in Firefly, or register a new one, to
+          see payment history here.
         </p>
-        <Button asChild variant="default">
-          <Link to="/manage/payment-run/setup">Manage registration</Link>
-        </Button>
+        <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+          <Button type="button" onClick={onLinkExisting}>
+            Link existing bill
+          </Button>
+          <Button type="button" variant="outline" onClick={onRegisterNew}>
+            Register new bill
+          </Button>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          Or{" "}
+          <Link
+            to="/manage/payment-run/discover"
+            className="font-medium text-primary underline-offset-2 hover:underline"
+          >
+            find recurring bills
+          </Link>{" "}
+          from withdrawal history.
+        </p>
       </div>
     )
   }
@@ -346,7 +382,7 @@ function BillDetailPanel({
                 <MetricBlock
                   label="Calendar average"
                   value={formatDisplayAmount(history.calendar_average)}
-                  hint="Rolling 12 months ÷ 12 (drops oldest month)"
+                  hint="12-month window ÷ 12 (prior 12 months until this month's bill posts)"
                 />
                 <MetricBlock
                   label="Active-month average"
@@ -375,8 +411,12 @@ function BillDetailPanel({
 }
 
 export function BillsDetailPage() {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const month = currentMonthKey()
   const { registryId } = useParams<{ registryId?: string }>()
   const { data: health, isPending: healthPending } = useHealth()
+  const { data: worksheetData } = usePaymentWorksheet(month)
   const {
     data: billsData,
     isPending: billsPending,
@@ -386,6 +426,15 @@ export function BillsDetailPage() {
   } = useRegisteredBills()
   const refreshing = billsFetching && !billsPending
 
+  const [billRegistrationOpen, setBillRegistrationOpen] = useState(false)
+  const [billRegistrationMode, setBillRegistrationMode] = useState<
+    "create_new" | "link_existing"
+  >("link_existing")
+  const [availableBills, setAvailableBills] = useState<AvailableFireflyBill[]>(
+    [],
+  )
+  const [loadingAvailableBills, setLoadingAvailableBills] = useState(false)
+
   const bills = useMemo(() => {
     const rows = billsData?.data ?? []
     return [...rows].sort((a, b) =>
@@ -394,6 +443,35 @@ export function BillsDetailPage() {
       }),
     )
   }, [billsData])
+
+  async function openBillRegistration(
+    mode: "create_new" | "link_existing",
+  ) {
+    setBillRegistrationMode(mode)
+    setBillRegistrationOpen(true)
+    setLoadingAvailableBills(true)
+    try {
+      const { data } = await fetchAvailableBills()
+      setAvailableBills(data)
+    } catch {
+      setAvailableBills([])
+    } finally {
+      setLoadingAvailableBills(false)
+    }
+  }
+
+  async function handleRegisterBill(payload: RegisterBillPayload) {
+    const result = await registerBill(payload)
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
+    setBillRegistrationOpen(false)
+    toast.success(`${payload.name} registered`, { duration: 4000 })
+    if (result.id) {
+      navigate(`/manage/bills/${result.id}`)
+    } else {
+      await refetchBills()
+    }
+  }
 
   if (!healthPending && health && !health.payment_worksheet_enabled) {
     return <Navigate to="/" replace />
@@ -410,28 +488,46 @@ export function BillsDetailPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Bill history</h1>
           <p className="text-muted-foreground text-sm">
             Last 12 months of payments for bills registered on your payment
-            worksheet.
+            worksheet. Link or register bills here to start tracking history.
           </p>
           {registryId ? (
             <BillWindowCaption registryId={registryId} />
           ) : null}
         </div>
         {!billsPending ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="min-w-[7.5rem]"
-            onClick={() => void refetchBills()}
-            disabled={refreshing}
-          >
-            <RefreshCw
-              className={
-                refreshing ? "mr-2 size-4 animate-spin" : "mr-2 size-4"
-              }
-            />
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void openBillRegistration("link_existing")}
+            >
+              <Plus className="mr-2 size-4" />
+              Link existing bill
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void openBillRegistration("create_new")}
+            >
+              Register new bill
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="min-w-[7.5rem]"
+              onClick={() => void refetchBills()}
+              disabled={refreshing}
+            >
+              <RefreshCw
+                className={
+                  refreshing ? "mr-2 size-4 animate-spin" : "mr-2 size-4"
+                }
+              />
+              Refresh
+            </Button>
+          </div>
         ) : null}
       </div>
 
@@ -441,6 +537,8 @@ export function BillsDetailPage() {
           loading={billsPending}
           error={billsError}
           onRetry={() => refetchBills()}
+          onLinkExisting={() => void openBillRegistration("link_existing")}
+          onRegisterNew={() => void openBillRegistration("create_new")}
         />
         <BillDetailPanel
           registryId={registryId}
@@ -448,6 +546,18 @@ export function BillsDetailPage() {
           billsLoaded={!billsPending}
         />
       </div>
+
+      <BillRegistrationSheet
+        open={billRegistrationOpen}
+        onOpenChange={setBillRegistrationOpen}
+        defaultSection="bills"
+        initialMode={billRegistrationMode}
+        creditCards={worksheetData?.credit_cards ?? []}
+        buckets={worksheetData?.buckets ?? []}
+        availableBills={availableBills}
+        loadingAvailable={loadingAvailableBills}
+        onSubmit={handleRegisterBill}
+      />
     </div>
   )
 }

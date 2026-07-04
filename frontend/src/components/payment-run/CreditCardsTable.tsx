@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Pencil } from "lucide-react"
 import { Fragment, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 
 import { PlannedAmountInput } from "@/components/payment-run/PlannedAmountInput"
 import {
@@ -50,7 +51,7 @@ type CreditCardsTableProps = {
     body: { planned_amount: string; clear_planned_override?: boolean },
   ) => Promise<void>
   onPaidChange: (row: CreditCardRow, paid: boolean) => Promise<void>
-  onEditDetails: (row: CreditCardRow) => void
+  onEditDetails?: (row: CreditCardRow) => void
 }
 
 type CcSortKey =
@@ -679,14 +680,24 @@ export function CreditCardsTable({
                       />
                     </TableCell>
                     <TableCell className={ACTIONS_CELL_CLASS}>
-                      <button
-                        type="button"
-                        className="text-muted-foreground hover:text-foreground rounded p-0.5"
-                        aria-label={`Edit ${cardName} worksheet details`}
-                        onClick={() => onEditDetails(row)}
-                      >
-                        <Pencil className="size-3" aria-hidden />
-                      </button>
+                      {onEditDetails ? (
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground rounded p-0.5"
+                          aria-label={`Edit ${cardName} worksheet details`}
+                          onClick={() => onEditDetails(row)}
+                        >
+                          <Pencil className="size-3" aria-hidden />
+                        </button>
+                      ) : (
+                        <Link
+                          to="/manage/payment-run/cards"
+                          className="text-muted-foreground hover:text-foreground text-xs font-medium"
+                          aria-label={`Manage ${cardName}`}
+                        >
+                          Manage
+                        </Link>
+                      )}
                     </TableCell>
                   </TableRow>
                   {isExpanded && canExpand ? (
