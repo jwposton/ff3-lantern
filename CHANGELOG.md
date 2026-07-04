@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-07-04
+
 ### Added
 
 - **Bill discover transaction drill-down** — expand a suggestion row on the discover page to audit underlying withdrawal transactions (date, amount, description, category, payee, budget) before Adopt; chevron expand is separate from Adopt; respects active lookback window
@@ -314,7 +316,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/jwposton/ff3-lantern/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/jwposton/ff3-lantern/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/jwposton/FF3Analytics/compare/v1.1.12...v1.2.0
 [1.1.12]: https://github.com/jwposton/FF3Analytics/compare/v1.1.11...v1.1.12
