@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import statistics
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, ROUND_UP, Decimal, InvalidOperation
 from typing import Any, Literal
 
 from payment_worksheet_liabilities import is_liability_summary
+from payment_worksheet_profiles import is_credit_card_asset
 from transaction_normalization import description_fingerprint
 
 LOOKBACK_CHOICES: tuple[int, ...] = (6, 12, 24)
@@ -72,6 +74,10 @@ APPLE_CASH_P2P_RE = re.compile(r"APPLE CASH SENT MONEY", re.IGNORECASE)
 CC_INTEREST_DESC_RE = re.compile(r"interest charge", re.IGNORECASE)
 
 _BLOCKLIST_FOLDED: frozenset[str] = frozenset(c.casefold() for c in CATEGORY_BLOCKLIST)
+
+OPAQUE_NOTES = "Multiple subscriptions detected; sub-split rules in a future update"
+
+PREAPPROVED_RE = re.compile(r"preapproved payment", re.IGNORECASE)
 
 
 def _should_exclude_category(category: str) -> bool:
@@ -352,11 +358,205 @@ def _assign_status(
     return "review"
 
 
-def _metrics_to_suggestion(metrics: dict[str, Any]) -> dict[str, Any]:
-    confidence = _score_confidence(metrics)
-    status = _assign_status(confidence)
+def _friendly_merchant_name(raw_payee: str) -> str:
+    text = (raw_payee or "").strip()
+    if not text:
+        return ""
+    while True:
+        stripped = LEGAL_SUFFIX_RE.sub("", text).strip()
+        if stripped == text:
+            break
+        text = stripped
+    words: list[str] = []
+    for word in text.split():
+        if word.isupper() and len(word) <= 4:
+            words.append(word)
+        elif "&" in word:
+            words.append(word)
+        else:
+            words.append(word.capitalize())
+    return " ".join(words)
+
+
+def _pad_amounts(
+    amount_min: Decimal,
+    amount_max: Decimal,
+    *,
+    pct: Decimal = Decimal("0.05"),
+) -> tuple[str, str]:
+    lo = (amount_min * (Decimal("1") - pct)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    hi = (amount_max * (Decimal("1") + pct)).quantize(Decimal("0.01"), ROUND_UP)
+    return f"{lo}", f"{hi}"
+
+
+def _assign_bucket(
+    merchant: str,
+    category: str,
+    description: str,
+    *,
+    is_opaque: bool = False,
+) -> str:
+    if is_opaque:
+        return "Apple Services"
+    merchant_lower = merchant.casefold()
+    category_lower = category.casefold()
+    description_lower = description.casefold()
+    if "spotify" in merchant_lower or "music streaming" in category_lower:
+        return "Streaming & Media"
+    if "all american waste" in merchant_lower or "trash" in category_lower:
+        return "Utilities — Trash"
+    if any(token in category_lower for token in ("streaming", "media")):
+        return "Streaming & Media"
+    if "utility" in category_lower or "telecom" in category_lower:
+        return "Utilities & Telecom"
+    if "insurance" in category_lower or "insurance" in merchant_lower:
+        return "Insurance"
+    if "rent" in category_lower or "rent" in merchant_lower:
+        return "Housing — Rent"
+    if "hosting" in merchant_lower or "domain" in merchant_lower:
+        return "Hosting & Domains"
+    if "ticket" in merchant_lower or "event" in description_lower:
+        return "Tickets & Events"
+    if any(token in merchant_lower for token in ("openai", "anthropic", "github", "cursor")):
+        return "AI & Dev Tools"
+    return "Other Recurring"
+
+
+def _recommend_amount_mode(metrics: dict[str, Any]) -> Literal["recurring", "intermittent"]:
+    if metrics["amt_variance_pct"] <= 10 and metrics["regularity"] >= 0.5:
+        return "recurring"
+    return "intermittent"
+
+
+def _infer_payment_rail(
+    txns: list[dict[str, Any]],
+    accounts: dict[str, dict[str, Any]],
+) -> Literal["bank", "credit_card"]:
+    latest = max(txns, key=lambda txn: str(txn.get("date") or ""))
+    source_id = str(latest.get("source_id") or "")
+    summary = accounts.get(source_id, {})
+    attrs = {
+        "type": summary.get("type") or latest.get("source_type") or "",
+        "account_role": summary.get("role") or latest.get("source_role") or "",
+    }
+    if summary.get("role") == "Credit card" or is_credit_card_asset(attrs):
+        return "credit_card"
+    return "bank"
+
+
+def _is_opaque_payee_cluster(txns: list[dict[str, Any]]) -> bool:
+    descriptions = {str(txn.get("description") or "").strip() for txn in txns}
+    if not any(PREAPPROVED_RE.search(desc) for desc in descriptions):
+        return False
+    categories = {
+        str(txn.get("category_name") or "").strip()
+        for txn in txns
+        if str(txn.get("category_name") or "").strip()
+    }
+    amounts = {
+        txn.get("amount")
+        for txn in txns
+        if isinstance(txn.get("amount"), Decimal)
+    }
+    return len(categories) >= 2 or len(amounts) >= 2
+
+
+def _freq_to_repeat_freq(freq: str) -> str:
+    mapping = {
+        "monthly": "monthly",
+        "biweekly": "every 2 weeks",
+        "quarterly": "every 3 months",
+        "annual": "yearly",
+    }
+    return mapping.get(freq, "monthly")
+
+
+def _build_register_prefill(
+    metrics: dict[str, Any],
+    txns: list[dict[str, Any]],
+    accounts: dict[str, dict[str, Any]],
+    *,
+    raw_payee: str,
+    is_opaque: bool = False,
+) -> dict[str, Any]:
+    friendly = _friendly_merchant_name(raw_payee)
+    amount_min, amount_max = _pad_amounts(metrics["amount_min"], metrics["amount_max"])
     return {
-        "merchant": metrics["merchant"],
+        "mode": "create_new",
+        "name": friendly,
+        "amount_mode": _recommend_amount_mode(metrics),
+        "amount_min": amount_min,
+        "amount_max": amount_max,
+        "repeat_freq": _freq_to_repeat_freq(metrics["freq"]),
+        "worksheet_section": "bills",
+        "payment_rail": _infer_payment_rail(txns, accounts),
+        "destination_account": raw_payee,
+        "category_name": "" if is_opaque else metrics["category"],
+        "description_contains": "",
+        "amount_exactly": None,
+    }
+
+
+def _make_suggestion_id(key: str) -> str:
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+    return f"sug-{digest}"
+
+
+def _build_reasons(metrics: dict[str, Any], *, is_opaque: bool) -> list[str]:
+    reasons: list[str] = []
+    if metrics["freq"] == "monthly" and metrics["regularity"] >= 0.7:
+        reasons.append("regular_monthly")
+    if metrics["amt_variance_pct"] < 5:
+        reasons.append("stable_amount")
+    if is_opaque:
+        reasons.append("opaque_payee")
+    return reasons
+
+
+def _sort_suggestions(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    bucket_rank = {name: index for index, name in enumerate(BUCKET_ORDER)}
+
+    def sort_key(item: dict[str, Any]) -> tuple[int, int, int, str]:
+        bucket = item.get("bucket") or "Other Recurring"
+        confidence = str(item.get("confidence") or "low")
+        return (
+            bucket_rank.get(bucket, len(BUCKET_ORDER)),
+            CONFIDENCE_RANK.get(confidence, 99),
+            -int(item.get("occurrences") or 0),
+            str(item.get("last_date") or ""),
+        )
+
+    return sorted(items, key=sort_key)
+
+
+def _enrich_suggestion(
+    key: str,
+    txns: list[dict[str, Any]],
+    metrics: dict[str, Any],
+    accounts: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    raw_payee = str(metrics["merchant"] or key).strip() or key
+    is_opaque = _is_opaque_payee_cluster(txns)
+    friendly = _friendly_merchant_name(raw_payee)
+    confidence = _score_confidence(metrics)
+    status = _assign_status(confidence, is_opaque_combined=is_opaque)
+    latest_category = metrics["category"]
+    bucket = _assign_bucket(
+        raw_payee,
+        latest_category,
+        " ".join(metrics.get("sample_descriptions") or []),
+        is_opaque=is_opaque,
+    )
+    register_prefill = _build_register_prefill(
+        metrics,
+        txns,
+        accounts,
+        raw_payee=raw_payee,
+        is_opaque=is_opaque,
+    )
+    suggestion: dict[str, Any] = {
+        "id": _make_suggestion_id(key),
+        "merchant": friendly,
         "confidence": confidence,
         "status": status,
         "amount_min": _format_decimal(metrics["amount_min"]),
@@ -367,10 +567,17 @@ def _metrics_to_suggestion(metrics: dict[str, Any]) -> dict[str, Any]:
         "regularity": round(metrics["regularity"], 2),
         "last_date": metrics["last_date"],
         "first_date": metrics["first_date"],
-        "category": metrics["category"],
+        "category": latest_category,
         "payment_source": metrics["payment_source"],
         "sample_descriptions": metrics["sample_descriptions"],
+        "bucket": bucket,
+        "cluster": None,
+        "register_prefill": register_prefill,
+        "reasons": _build_reasons(metrics, is_opaque=is_opaque),
     }
+    if is_opaque:
+        suggestion["notes"] = OPAQUE_NOTES
+    return suggestion
 
 
 def build_bill_suggestions(
@@ -396,13 +603,15 @@ def build_bill_suggestions(
             continue
         if not _is_recurring_candidate(metrics):
             continue
-        suggestions.append(_metrics_to_suggestion(metrics))
+        suggestions.append(_enrich_suggestion(key, txns, metrics, accounts))
+
+    sorted_suggestions = _sort_suggestions(suggestions)
 
     return {
-        "data": suggestions,
+        "data": sorted_suggestions,
         "meta": {
             "withdrawals_analyzed": len(parsed),
-            "suggestions_count": len(suggestions),
+            "suggestions_count": len(sorted_suggestions),
             "period_start": period_start,
             "period_end": period_end,
         },

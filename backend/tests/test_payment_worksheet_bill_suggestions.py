@@ -7,7 +7,11 @@ from typing import Any
 
 import pytest
 
-from payment_worksheet_bill_suggestions import build_bill_suggestions
+from payment_worksheet_bill_suggestions import (
+    OPAQUE_NOTES,
+    _pad_amounts,
+    build_bill_suggestions,
+)
 
 
 def _engine_kwargs() -> dict[str, Any]:
@@ -93,7 +97,7 @@ def low_confidence_quarterly(count: int = 2) -> list[dict[str, Any]]:
             "date": dates[i],
             "destination_name": "Quarterly Sub Co",
             "description": "Subscription renewal",
-            "category_name": "Subscriptions",
+            "category_name": "Professional Services",
             "source_name": "Checking",
             "source_id": "checking",
             "source_type": "Asset account",
@@ -221,6 +225,55 @@ def loan_payment_noise(count: int = 6) -> list[dict[str, Any]]:
     return rows
 
 
+def spotify_varying_amounts(count: int = 12) -> list[dict[str, Any]]:
+    amount_cycle = ("21.26", "22.15", "23.39")
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": amount_cycle[i % len(amount_cycle)],
+            "date": f"{year}-{month:02d}-15",
+            "destination_name": "Spotify USA Inc",
+            "description": "PreApproved Payment Bill User Payment",
+            "category_name": "Music Streaming",
+            "source_name": "PayPal Credit",
+            "source_id": "cc-paypal",
+            "source_type": "Asset account",
+            "source_role": "Credit card",
+        })
+    return rows
+
+
+def apple_services_combined(count: int = 12) -> list[dict[str, Any]]:
+    categories = ("iCloud+", "App Store", "Apple Music")
+    amounts = ("2.99", "9.99", "10.99")
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": amounts[i % len(amounts)],
+            "date": f"{year}-{month:02d}-10",
+            "destination_name": "APPLE.COM/BILL",
+            "description": "PreApproved Payment Bill User Payment",
+            "category_name": categories[i % len(categories)],
+            "source_name": "PayPal Credit",
+            "source_id": "cc-paypal",
+            "source_type": "Asset account",
+            "source_role": "Credit card",
+        })
+    return rows
+
+
 def test_spotify_monthly_high_confidence():
     result = build_bill_suggestions(
         spotify_monthly_withdrawals(12),
@@ -267,7 +320,7 @@ def test_grouping_by_payee():
     result = build_bill_suggestions(splits, **_engine_kwargs())
     assert len(result["data"]) == 2
     merchants = {row["merchant"] for row in result["data"]}
-    assert "Spotify USA Inc" in merchants
+    assert "Spotify" in merchants
     assert "All American Waste" in merchants
 
 
@@ -307,4 +360,66 @@ def test_noise_does_not_block_spotify():
     splits = spotify_monthly_withdrawals(12) + gas_station_noise(6) + restaurant_noise(6)
     result = build_bill_suggestions(splits, **_engine_kwargs())
     assert len(result["data"]) == 1
-    assert result["data"][0]["merchant"] == "Spotify USA Inc"
+    assert result["data"][0]["merchant"] == "Spotify"
+
+
+def test_spotify_bucket_streaming_media():
+    result = build_bill_suggestions(spotify_monthly_withdrawals(12), **_engine_kwargs())
+    assert len(result["data"]) == 1
+    suggestion = result["data"][0]
+    assert suggestion["bucket"] == "Streaming & Media"
+    assert suggestion["merchant"] == "Spotify"
+
+
+def test_all_american_waste_bucket_trash():
+    result = build_bill_suggestions(all_american_waste_monthly(12), **_engine_kwargs())
+    assert len(result["data"]) == 1
+    assert result["data"][0]["bucket"] == "Utilities — Trash"
+
+
+def test_pad_amounts_five_percent():
+    lo, hi = _pad_amounts(Decimal("21.26"), Decimal("23.39"))
+    assert lo == "20.20"
+    assert hi == "24.56"
+
+
+def test_spotify_prefill_rail_and_amount_mode():
+    result = build_bill_suggestions(spotify_monthly_withdrawals(12), **_engine_kwargs())
+    prefill = result["data"][0]["register_prefill"]
+    assert prefill["payment_rail"] == "credit_card"
+    assert prefill["amount_mode"] == "recurring"
+    assert prefill["name"] == "Spotify"
+    assert prefill["destination_account"] == "Spotify USA Inc"
+
+
+def test_spotify_category_field():
+    result = build_bill_suggestions(spotify_monthly_withdrawals(12), **_engine_kwargs())
+    assert result["data"][0]["category"] == "Music Streaming"
+
+
+def test_apple_services_combined_opaque():
+    result = build_bill_suggestions(apple_services_combined(12), **_engine_kwargs())
+    assert len(result["data"]) == 1
+    suggestion = result["data"][0]
+    assert suggestion["bucket"] == "Apple Services"
+    assert suggestion["cluster"] is None
+    assert suggestion["status"] == "review"
+    assert suggestion["notes"] == OPAQUE_NOTES
+
+
+def test_sort_bucket_confidence_occurrences():
+    splits = (
+        spotify_monthly_withdrawals(12)
+        + all_american_waste_monthly(12)
+        + low_confidence_quarterly(2)
+    )
+    result = build_bill_suggestions(splits, **_engine_kwargs())
+    assert len(result["data"]) == 3
+    buckets = [row["bucket"] for row in result["data"]]
+    assert buckets[0] == "Streaming & Media"
+    assert buckets[1] == "Utilities — Trash"
+    assert buckets[2] == "Other Recurring"
+    assert result["data"][0]["confidence"] == "high"
+    assert result["data"][1]["confidence"] in ("high", "medium")
+    assert result["data"][2]["confidence"] in ("low", "medium")
+    assert result["data"][0]["occurrences"] >= result["data"][1]["occurrences"]
