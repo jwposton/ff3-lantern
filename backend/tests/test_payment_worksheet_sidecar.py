@@ -205,7 +205,9 @@ def test_bill_group_crud_round_trip(data_dir):
     )
     members = asyncio.run(sidecar_db.list_bill_group_members("mobile-apps"))
     assert {m["registry_id"] for m in members} == {registry_id, registry_id_b}
-    assert all(m["show_in_group"] is False for m in members)
+    members_by_id = {m["registry_id"]: m for m in members}
+    assert members_by_id[registry_id]["show_in_group"] is True
+    assert members_by_id[registry_id_b]["show_in_group"] is False
 
     asyncio.run(sidecar_db.replace_bill_group_members("mobile-apps", []))
     cleared_a = asyncio.run(sidecar_db.get_worksheet_registry(registry_id))
