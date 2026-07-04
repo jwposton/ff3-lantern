@@ -334,6 +334,34 @@ def apple_services_operator_fixture() -> list[dict[str, Any]]:
     return rows
 
 
+def paypal_preapproved_multi_category() -> list[dict[str, Any]]:
+    """Generic opaque payee — Software Subscription + Cloud Storage, no Apple string."""
+    rows: list[dict[str, Any]] = []
+    combos = (
+        ("Software Subscription", "14.99"),
+        ("Cloud Storage", "9.99"),
+    )
+    for category, amount in combos:
+        for month in range(1, 7):
+            date_month = month + 6
+            year = 2025 if date_month <= 12 else 2026
+            if date_month > 12:
+                date_month -= 12
+            rows.append({
+                "type": "withdrawal",
+                "amount": amount,
+                "date": f"{year}-{date_month:02d}-05",
+                "destination_name": "PAYPAL *DIGITALGOODS",
+                "description": "PreApproved Payment Bill User Payment",
+                "category_name": category,
+                "source_name": "Checking",
+                "source_id": "checking",
+                "source_type": "Asset account",
+                "source_role": "Default asset",
+            })
+    return rows
+
+
 def registered_spotify_registry_row() -> list[dict[str, Any]]:
     return [{"row_label": "Spotify", "firefly_bill_id": None}]
 
@@ -679,6 +707,60 @@ def test_apple_no_monolithic_parent():
     for row in result["data"]:
         assert row["merchant"] != "Apple.com/bill"
         assert row.get("notes") != OPAQUE_NOTES
+
+
+def test_opaque_no_monolithic_parent():
+    """Multi-fingerprint opaque clusters never emit a single combined parent row."""
+    for fixture in (apple_services_operator_fixture(), paypal_preapproved_multi_category()):
+        result = build_bill_suggestions(fixture, **_engine_kwargs())
+        assert len(result["data"]) >= 2
+        payee = fixture[0]["destination_name"]
+        assert not any(
+            row["merchant"] == _friendly_merchant_from_payee(payee)
+            for row in result["data"]
+        )
+        assert all(row.get("notes") != OPAQUE_NOTES for row in result["data"])
+
+
+def _friendly_merchant_from_payee(raw_payee: str) -> str:
+    from payment_worksheet_bill_suggestions import _friendly_merchant_name
+    return _friendly_merchant_name(raw_payee)
+
+
+@pytest.mark.parametrize(
+    ("raw_payee", "expected_slug"),
+    [
+        ("APPLE.COM/BILL", "apple-com-bill"),
+        ("PAYPAL *DIGITALGOODS", "paypal-digitalgoods"),
+    ],
+)
+def test_cluster_slug(raw_payee: str, expected_slug: str):
+    assert _slugify_cluster(raw_payee) == expected_slug
+    if raw_payee == "APPLE.COM/BILL":
+        fixture = apple_services_operator_fixture()
+    else:
+        fixture = paypal_preapproved_multi_category()
+    result = build_bill_suggestions(fixture, **_engine_kwargs())
+    assert result["data"]
+    assert all(row["cluster"] == expected_slug for row in result["data"])
+
+
+def test_paypal_opaque_splits_generic():
+    result = build_bill_suggestions(paypal_preapproved_multi_category(), **_engine_kwargs())
+    data = result["data"]
+    assert len(data) == 2
+    assert all(row["bucket"] == "PAYPAL *DIGITALGOODS" for row in data)
+    assert all(row["cluster"] == "paypal-digitalgoods" for row in data)
+    merchants = {row["merchant"] for row in data}
+    assert "Cloud Storage" in merchants
+    assert "Software Subscription" in merchants
+    assert not any("apple" in row["merchant"].casefold() for row in data)
+    assert not any("apple" in row["bucket"].casefold() for row in data)
+    ids = {row["id"] for row in data}
+    assert len(ids) == 2
+    for row in data:
+        assert row["register_prefill"]["destination_account"] == "PAYPAL *DIGITALGOODS"
+        assert_valid_register_prefill(row["register_prefill"])
 
 
 def test_sort_bucket_confidence_occurrences():
