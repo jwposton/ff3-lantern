@@ -1,8 +1,19 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { BillRegistrationSheet } from "./BillRegistrationSheet"
 import type { RegisterBillPayload } from "@/lib/paymentRunApi"
+
+function TestProviders({ children }: { children: ReactNode }) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  )
+}
 
 const BASE_PROPS = {
   open: true,
@@ -56,13 +67,15 @@ describe("BillRegistrationSheet", () => {
     const onSubmit = vi.fn(async (_payload: RegisterBillPayload) => {})
 
     render(
-      <BillRegistrationSheet {...BASE_PROPS} onSubmit={onSubmit} />,
+      <TestProviders>
+        <BillRegistrationSheet {...BASE_PROPS} onSubmit={onSubmit} />
+      </TestProviders>,
     )
 
     fireEvent.change(screen.getByLabelText("Bill name"), {
       target: { value: "Electric" },
     })
-    fireEvent.change(screen.getByLabelText("Amount"), {
+    fireEvent.change(screen.getByLabelText("Amount min"), {
       target: { value: "99.00" },
     })
     fireEvent.change(screen.getByLabelText(/Rule — description contains/i), {
@@ -76,7 +89,7 @@ describe("BillRegistrationSheet", () => {
         expect.objectContaining({
           mode: "create_new",
           name: "Electric",
-          amount: "99.00",
+          amount_min: "99.00",
           description_contains: "ELECTRIC CO",
           worksheet_section: "bills",
           payment_rail: "bank",
@@ -84,5 +97,32 @@ describe("BillRegistrationSheet", () => {
         }),
       )
     })
+  })
+
+  it("prefills name and payee from initialPrefill with Suggested badges", () => {
+    render(
+      <TestProviders>
+        <BillRegistrationSheet
+          {...BASE_PROPS}
+          onSubmit={vi.fn()}
+          initialPrefill={{
+            mode: "create_new",
+            name: "Spotify",
+            destination_account: "SPOTIFY USA",
+          }}
+        />
+      </TestProviders>,
+    )
+
+    const nameInput = screen.getByLabelText("Bill name") as HTMLInputElement
+    expect(nameInput.value).toBe("Spotify")
+
+    const payeeInput = screen.getByLabelText(
+      /Rule — payee contains/i,
+    ) as HTMLInputElement
+    expect(payeeInput.value).toBe("SPOTIFY USA")
+
+    expect(screen.getAllByText("Suggested").length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText(/warning banner|opaque payee/i)).toBeNull()
   })
 })

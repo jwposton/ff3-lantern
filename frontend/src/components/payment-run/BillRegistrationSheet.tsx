@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -15,6 +16,7 @@ import {
   fetchBillLinkRules,
   type AvailableFireflyBill,
   type BillLinkRule,
+  type BillRegistrationPrefill,
   type CreditCardRow,
   type FundingBucketRollup,
   type RegisterBillPayload,
@@ -39,11 +41,49 @@ type BillRegistrationSheetProps = {
   initialMode?: RegistrationMode
   initialFireflyBillId?: string | null
   editTarget?: BillRegistrationEditTarget | null
+  initialPrefill?: BillRegistrationPrefill | null
   creditCards: CreditCardRow[]
   buckets: FundingBucketRollup[]
   availableBills: AvailableFireflyBill[]
   loadingAvailable?: boolean
   onSubmit: (payload: RegisterBillPayload) => Promise<void>
+}
+
+function buildSuggestedFields(prefill: BillRegistrationPrefill): Set<string> {
+  const keys = new Set<string>()
+  for (const key of Object.keys(prefill) as (keyof BillRegistrationPrefill)[]) {
+    if (prefill[key] !== undefined) {
+      keys.add(key)
+    }
+  }
+  return keys
+}
+
+function FieldLabelWithSuggested({
+  htmlFor,
+  fieldKey,
+  suggestedFields,
+  children,
+}: {
+  htmlFor?: string
+  fieldKey: string
+  suggestedFields: Set<string>
+  children: ReactNode
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {htmlFor ? (
+        <label className="text-sm font-medium" htmlFor={htmlFor}>
+          {children}
+        </label>
+      ) : (
+        <span className="text-sm font-medium">{children}</span>
+      )}
+      {suggestedFields.has(fieldKey) ? (
+        <Badge variant="secondary">Suggested</Badge>
+      ) : null}
+    </div>
+  )
 }
 
 const selectClassName =
@@ -56,6 +96,7 @@ export function BillRegistrationSheet({
   initialMode = "create_new",
   initialFireflyBillId = null,
   editTarget = null,
+  initialPrefill = null,
   creditCards,
   buckets,
   availableBills,
@@ -88,6 +129,9 @@ export function BillRegistrationSheet({
   const [useExistingRule, setUseExistingRule] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [suggestedFields, setSuggestedFields] = useState<Set<string>>(
+    () => new Set(),
+  )
 
   const { data: categorizeMeta } = useCategorizeMeta()
   const categories = categorizeMeta?.categories ?? []
@@ -124,6 +168,30 @@ export function BillRegistrationSheet({
       setLinkRules([])
       setUseExistingRule(false)
       setError(null)
+      setSuggestedFields(new Set())
+      return
+    }
+    if (initialPrefill) {
+      setMode(initialPrefill.mode ?? "create_new")
+      setName(initialPrefill.name ?? "")
+      setAmountMin(initialPrefill.amount_min ?? "")
+      setAmountMax(initialPrefill.amount_max ?? "")
+      setAmountMode(initialPrefill.amount_mode ?? "recurring")
+      setRepeatFreq(initialPrefill.repeat_freq ?? "monthly")
+      setWorksheetSection(initialPrefill.worksheet_section ?? defaultSection)
+      setPaymentRail(initialPrefill.payment_rail ?? "bank")
+      setFundingBucketKey(buckets[0]?.id ?? "")
+      setCreditCardAccountId(creditCards[0]?.account_id ?? "")
+      setPayeeContains(initialPrefill.destination_account ?? "")
+      setCategoryName(initialPrefill.category_name ?? "")
+      setDescriptionContains(initialPrefill.description_contains ?? "")
+      setAmountExactly(initialPrefill.amount_exactly ?? "")
+      setSelectedBillId("")
+      setSelectedRuleId("")
+      setLinkRules([])
+      setUseExistingRule(false)
+      setError(null)
+      setSuggestedFields(buildSuggestedFields(initialPrefill))
       return
     }
     setMode(initialMode)
@@ -145,15 +213,23 @@ export function BillRegistrationSheet({
     setLinkRules([])
     setUseExistingRule(false)
     setError(null)
+    setSuggestedFields(new Set())
   }, [
     open,
     defaultSection,
     initialMode,
     initialFireflyBillId,
+    initialPrefill,
     editTarget,
     buckets,
     creditCards,
   ])
+
+  useEffect(() => {
+    if (!open) {
+      setSuggestedFields(new Set())
+    }
+  }, [open])
 
   useEffect(() => {
     if (!selectedBillId) return
@@ -408,9 +484,13 @@ export function BillRegistrationSheet({
           ) : null}
 
           <div className="space-y-1">
-            <label className="text-sm font-medium" htmlFor="bill-name">
+            <FieldLabelWithSuggested
+              htmlFor="bill-name"
+              fieldKey="name"
+              suggestedFields={suggestedFields}
+            >
               Bill name
-            </label>
+            </FieldLabelWithSuggested>
             <Input
               id="bill-name"
               value={name}
@@ -420,10 +500,14 @@ export function BillRegistrationSheet({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-sm font-medium" htmlFor="bill-amount-min">
+              <FieldLabelWithSuggested
+                htmlFor="bill-amount-min"
+                fieldKey="amount_min"
+                suggestedFields={suggestedFields}
+              >
                 Amount min
                 {amountMode === "intermittent" ? " (optional)" : ""}
-              </label>
+              </FieldLabelWithSuggested>
               <Input
                 id="bill-amount-min"
                 inputMode="decimal"
@@ -433,10 +517,14 @@ export function BillRegistrationSheet({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium" htmlFor="bill-amount-max">
+              <FieldLabelWithSuggested
+                htmlFor="bill-amount-max"
+                fieldKey="amount_max"
+                suggestedFields={suggestedFields}
+              >
                 Amount max
                 {amountMode === "intermittent" ? " (optional)" : ""}
-              </label>
+              </FieldLabelWithSuggested>
               <Input
                 id="bill-amount-max"
                 inputMode="decimal"
@@ -453,7 +541,12 @@ export function BillRegistrationSheet({
           </p>
 
           <div className="space-y-1">
-            <span className="text-sm font-medium">Amount mode</span>
+            <FieldLabelWithSuggested
+              fieldKey="amount_mode"
+              suggestedFields={suggestedFields}
+            >
+              Amount mode
+            </FieldLabelWithSuggested>
             <div className="flex gap-2">
               <Button
                 type="button"
@@ -482,9 +575,13 @@ export function BillRegistrationSheet({
           </div>
 
           <div className="space-y-1">
-            <label className="text-sm font-medium" htmlFor="bill-repeat">
+            <FieldLabelWithSuggested
+              htmlFor="bill-repeat"
+              fieldKey="repeat_freq"
+              suggestedFields={suggestedFields}
+            >
               Repeat
-            </label>
+            </FieldLabelWithSuggested>
             <select
               id="bill-repeat"
               className={selectClassName}
@@ -498,9 +595,13 @@ export function BillRegistrationSheet({
           </div>
 
           <div className="space-y-1">
-            <label className="text-sm font-medium" htmlFor="bill-section">
+            <FieldLabelWithSuggested
+              htmlFor="bill-section"
+              fieldKey="worksheet_section"
+              suggestedFields={suggestedFields}
+            >
               Worksheet section
-            </label>
+            </FieldLabelWithSuggested>
             <select
               id="bill-section"
               className={selectClassName}
@@ -515,7 +616,12 @@ export function BillRegistrationSheet({
           </div>
 
           <div className="space-y-1">
-            <span className="text-sm font-medium">Payment rail</span>
+            <FieldLabelWithSuggested
+              fieldKey="payment_rail"
+              suggestedFields={suggestedFields}
+            >
+              Payment rail
+            </FieldLabelWithSuggested>
             <div className="flex gap-2">
               <Button
                 type="button"
@@ -657,9 +763,13 @@ export function BillRegistrationSheet({
               {!(mode === "link_existing" && useExistingRule) ? (
                 <>
                   <div className="space-y-1">
-                    <label className="text-sm font-medium" htmlFor="rule-payee">
+                    <FieldLabelWithSuggested
+                      htmlFor="rule-payee"
+                      fieldKey="destination_account"
+                      suggestedFields={suggestedFields}
+                    >
                       Rule — payee contains
-                    </label>
+                    </FieldLabelWithSuggested>
                     <Input
                       id="rule-payee"
                       value={payeeContains}
@@ -671,9 +781,13 @@ export function BillRegistrationSheet({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-sm font-medium" htmlFor="rule-description">
+                    <FieldLabelWithSuggested
+                      htmlFor="rule-description"
+                      fieldKey="description_contains"
+                      suggestedFields={suggestedFields}
+                    >
                       Rule — description contains
-                    </label>
+                    </FieldLabelWithSuggested>
                     <Input
                       id="rule-description"
                       value={descriptionContains}
@@ -688,9 +802,13 @@ export function BillRegistrationSheet({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-sm font-medium" htmlFor="rule-category">
+                    <FieldLabelWithSuggested
+                      htmlFor="rule-category"
+                      fieldKey="category_name"
+                      suggestedFields={suggestedFields}
+                    >
                       Rule — category is
-                    </label>
+                    </FieldLabelWithSuggested>
                     <select
                       id="rule-category"
                       className={selectClassName}
@@ -710,9 +828,13 @@ export function BillRegistrationSheet({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-sm font-medium" htmlFor="rule-amount">
+                    <FieldLabelWithSuggested
+                      htmlFor="rule-amount"
+                      fieldKey="amount_exactly"
+                      suggestedFields={suggestedFields}
+                    >
                       Rule — amount exactly (optional)
-                    </label>
+                    </FieldLabelWithSuggested>
                     <Input
                       id="rule-amount"
                       inputMode="decimal"
