@@ -1275,3 +1275,223 @@ def test_delete_bill_registry_cleans_worksheet_state(
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 
+
+def _spotify_transactions_payload(count: int = 12) -> dict:
+    from tests.test_payment_worksheet_bill_suggestions import spotify_monthly_withdrawals
+
+    rows = spotify_monthly_withdrawals(count)
+    data = []
+    for i, row in enumerate(rows):
+        data.append(
+            {
+                "id": str(i + 1),
+                "attributes": {
+                    "description": row["description"],
+                    "category_name": row["category_name"],
+                    "transactions": [
+                        {
+                            "transaction_journal_id": str(1000 + i),
+                            "type": row["type"],
+                            "amount": f"-{row['amount']}",
+                            "date": row["date"],
+                            "description": row["description"],
+                            "destination_name": row["destination_name"],
+                            "category_name": row["category_name"],
+                            "source_id": row["source_id"],
+                            "destination_id": "expense-1",
+                            "source_name": row["source_name"],
+                        }
+                    ],
+                },
+            }
+        )
+    return {"data": data, "meta": {"pagination": {"current_page": 1, "total_pages": 1}}}
+
+
+def _bill_suggestions_accounts_payload() -> dict:
+    return {
+        "data": [
+            {
+                "id": "cc-paypal",
+                "attributes": {
+                    "name": "PayPal Credit",
+                    "type": "asset",
+                    "account_role": "creditCard",
+                },
+            },
+        ],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+
+
+def _bill_suggestions_handler(*, transactions_status: int = 200):
+    accounts = _bill_suggestions_accounts_payload()
+    txns = _spotify_transactions_payload(12)
+    empty_bills = {
+        "data": [],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/accounts" and request.method == "GET":
+            return httpx.Response(200, json=accounts)
+        if request.url.path == "/api/v1/transactions" and request.method == "GET":
+            if transactions_status != 200:
+                return httpx.Response(transactions_status, text="Firefly down")
+            return httpx.Response(200, json=txns)
+        if request.url.path == "/api/v1/bills" and request.method == "GET":
+            return httpx.Response(200, json=empty_bills)
+        return httpx.Response(404)
+
+    return handler
+
+
+def test_bill_suggestions_disabled_returns_404(monkeypatch, client):
+    monkeypatch.delenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", raising=False)
+    response = client.get("/api/payment-run/bill-suggestions")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Payment worksheet is not enabled."
+
+
+def test_bill_suggestions_default_lookback(monkeypatch, client, data_dir, payment_worksheet_env):
+    import firefly_reference_cache
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    firefly_reference_cache.clear()
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(_bill_suggestions_handler()),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = client.get("/api/payment-run/bill-suggestions")
+        assert response.status_code == 200
+        body = response.json()
+        assert "data" in body
+        assert isinstance(body["data"], list)
+        meta = body["meta"]
+        assert "withdrawals_analyzed" in meta
+        assert "suggestions_count" in meta
+        assert "period_start" in meta
+        assert "period_end" in meta
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+@pytest.mark.parametrize("lookback", [6, 24])
+def test_bill_suggestions_lookback_6_and_24(
+    monkeypatch, client, data_dir, payment_worksheet_env, lookback
+):
+    import firefly_reference_cache
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    firefly_reference_cache.clear()
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(_bill_suggestions_handler()),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = client.get(
+            "/api/payment-run/bill-suggestions",
+            params={"lookback_months": lookback},
+        )
+        assert response.status_code == 200
+        assert "meta" in response.json()
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_bill_suggestions_invalid_lookback_422(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import firefly_reference_cache
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    firefly_reference_cache.clear()
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(_bill_suggestions_handler()),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = client.get(
+            "/api/payment-run/bill-suggestions",
+            params={"lookback_months": 18},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "lookback_months must be 6, 12, or 24."
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_bill_suggestions_firefly_error_502(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import firefly_reference_cache
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    firefly_reference_cache.clear()
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(_bill_suggestions_handler(transactions_status=500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = client.get("/api/payment-run/bill-suggestions")
+        assert response.status_code == 502
+        assert "Firefly API error 500" in response.json()["detail"]
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_bill_suggestions_no_sidecar_writes(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import firefly_reference_cache
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    write_calls: list[str] = []
+
+    def _wrap_async(name: str, original):
+        async def wrapped(*args, **kwargs):
+            write_calls.append(name)
+            return await original(*args, **kwargs)
+
+        return wrapped
+
+    for fn_name in (
+        "insert_worksheet_registry",
+        "update_worksheet_registry",
+        "delete_worksheet_registry",
+        "upsert_funding_bucket",
+        "delete_funding_bucket",
+        "upsert_worksheet_state_row",
+        "upsert_worksheet_refresh",
+        "upsert_bucket_balance",
+        "upsert_suggestion",
+    ):
+        monkeypatch.setattr(
+            sidecar_db,
+            fn_name,
+            _wrap_async(fn_name, getattr(sidecar_db, fn_name)),
+        )
+
+    firefly_reference_cache.clear()
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(_bill_suggestions_handler()),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = client.get("/api/payment-run/bill-suggestions")
+        assert response.status_code == 200
+        assert write_calls == []
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
