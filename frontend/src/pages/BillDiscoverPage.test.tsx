@@ -1235,6 +1235,11 @@ describe("BillDiscoverPage", () => {
     await waitFor(() => {
       expect(chevron.getAttribute("aria-expanded")).toBe("true")
     })
+    await waitFor(() => {
+      expect(
+        screen.getAllByText("SPOTIFY USA CHARGE JUNE").length,
+      ).toBeGreaterThan(0)
+    })
 
     chevron.focus()
     fireEvent.click(chevron)

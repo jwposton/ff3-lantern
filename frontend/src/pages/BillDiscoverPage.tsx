@@ -106,6 +106,13 @@ export function BillDiscoverPage() {
     }
   }, [rawLookback, lookbackMonths, setSearchParams])
 
+  useEffect(() => {
+    setExpandedIds(new Set())
+    queryClient.removeQueries({
+      queryKey: ["paymentRun", "billSuggestionTransactions"],
+    })
+  }, [lookbackMonths, queryClient])
+
   const {
     data,
     isPending,
@@ -178,6 +185,14 @@ export function BillDiscoverPage() {
       }
       return next
     })
+  }
+
+  function handleRefresh() {
+    setExpandedIds(new Set())
+    queryClient.removeQueries({
+      queryKey: ["paymentRun", "billSuggestionTransactions"],
+    })
+    void refetch()
   }
 
   return (
@@ -254,7 +269,7 @@ export function BillDiscoverPage() {
               variant="outline"
               size="sm"
               disabled={isFetching}
-              onClick={() => refetch()}
+              onClick={handleRefresh}
             >
               <RefreshCw
                 className={cn("mr-2 h-4 w-4", isFetching && "animate-spin")}
