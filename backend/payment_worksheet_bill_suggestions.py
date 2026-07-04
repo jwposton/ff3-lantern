@@ -7,7 +7,7 @@ import re
 import statistics
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, ROUND_UP, Decimal, InvalidOperation
-from typing import Any, Literal
+from typing import Any, Iterator, Literal, NamedTuple
 
 import sidecar_db
 from firefly_client import FireflyClient
@@ -1310,15 +1310,25 @@ def _resolve_opaque_subgroup_suggestion_id(
     return _make_opaque_subgroup_id(key, category, fp_amount, is_misc=False)
 
 
-def _find_matching_suggestion_transactions(
+class _EmittedSuggestionGroup(NamedTuple):
+    suggestion_id: str
+    key: str
+    txns: list[dict[str, Any]]
+    kind: Literal["opaque", "regular"]
+    metrics: dict[str, Any]
+    raw_payee: str = ""
+    category: str = ""
+    is_misc: bool = False
+
+
+def _iter_emitted_suggestion_groups(
     groups: dict[str, list[dict[str, Any]]],
     *,
-    accounts: dict[str, dict[str, Any]],
     firefly_bills: list[dict[str, Any]],
     registry_rows: list[dict[str, Any]],
     registered_bill_ids: set[str],
-    suggestion_id: str,
-) -> list[dict[str, Any]] | None:
+) -> Iterator[_EmittedSuggestionGroup]:
+    """Yield suggestion groups that would appear in the discover list."""
     for key, txns in groups.items():
         metrics = _analyze_group(key, txns)
         if metrics is None:
@@ -1366,8 +1376,16 @@ def _find_matching_suggestion_transactions(
                     is_misc=is_misc,
                     category=category,
                 )
-                if subgroup_id == suggestion_id:
-                    return _sort_drilldown_transactions(subgroup_txns)
+                yield _EmittedSuggestionGroup(
+                    subgroup_id,
+                    key,
+                    subgroup_txns,
+                    "opaque",
+                    sub_metrics,
+                    raw_payee=raw_payee,
+                    category=category,
+                    is_misc=is_misc,
+                )
             continue
         if not _is_recurring_candidate(metrics, txns):
             continue
@@ -1380,8 +1398,31 @@ def _find_matching_suggestion_transactions(
             txns=txns,
         ):
             continue
-        if _make_suggestion_id(key) == suggestion_id:
-            return _sort_drilldown_transactions(txns)
+        yield _EmittedSuggestionGroup(
+            _make_suggestion_id(key),
+            key,
+            txns,
+            "regular",
+            metrics,
+        )
+
+
+def _find_matching_suggestion_transactions(
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    firefly_bills: list[dict[str, Any]],
+    registry_rows: list[dict[str, Any]],
+    registered_bill_ids: set[str],
+    suggestion_id: str,
+) -> list[dict[str, Any]] | None:
+    for emitted in _iter_emitted_suggestion_groups(
+        groups,
+        firefly_bills=firefly_bills,
+        registry_rows=registry_rows,
+        registered_bill_ids=registered_bill_ids,
+    ):
+        if emitted.suggestion_id == suggestion_id:
+            return _sort_drilldown_transactions(emitted.txns)
     return None
 
 
@@ -1407,7 +1448,6 @@ def find_suggestion_transactions(
     )
     return _find_matching_suggestion_transactions(
         groups,
-        accounts=accounts,
         firefly_bills=firefly_bills,
         registry_rows=registry_rows,
         registered_bill_ids=registered_bill_ids,
@@ -1504,71 +1544,28 @@ def build_bill_suggestions(
     )
 
     suggestions: list[dict[str, Any]] = []
-    for key, txns in groups.items():
-        metrics = _analyze_group(key, txns)
-        if metrics is None:
-            continue
-        if _should_subsplit_opaque_payee(txns):
-            raw_payee = _resolve_opaque_raw_payee(
-                txns,
-                str(metrics["merchant"] or key).strip() or key,
-            )
-            for subgroup_txns, subgroup_kind in _subgroups_for_opaque_payee(txns):
-                is_misc = subgroup_kind == "misc"
-                sub_metrics = _analyze_group(key, subgroup_txns)
-                if sub_metrics is None and is_misc:
-                    sub_metrics = _analyze_misc_metrics(key, subgroup_txns)
-                if sub_metrics is None:
-                    continue
-                if not _should_emit_opaque_subgroup(
-                    sub_metrics,
-                    is_misc=is_misc,
-                    txns=subgroup_txns,
-                ):
-                    continue
-                if is_misc:
-                    category = sub_metrics["category"]
-                    merchant_label = f"{raw_payee.strip()} (misc)"
-                else:
-                    category, _ = _fingerprint(subgroup_txns[0])
-                    merchant_label = _merchant_from_category(
-                        category,
-                        sub_metrics["occurrences"],
-                    )
-                reg_metrics = {**sub_metrics, "merchant": merchant_label}
-                if _is_already_registered(
-                    key,
-                    reg_metrics,
-                    registry_rows=registry_rows,
-                    firefly_bills=firefly_bills,
-                    registered_bill_ids=registered_bill_ids,
-                    txns=subgroup_txns,
-                ):
-                    continue
-                suggestions.append(
-                    _enrich_opaque_subgroup(
-                        key,
-                        subgroup_txns,
-                        sub_metrics,
-                        accounts,
-                        raw_payee=raw_payee,
-                        category=category,
-                        is_misc=is_misc,
-                    )
+    for emitted in _iter_emitted_suggestion_groups(
+        groups,
+        firefly_bills=firefly_bills,
+        registry_rows=registry_rows,
+        registered_bill_ids=registered_bill_ids,
+    ):
+        if emitted.kind == "opaque":
+            suggestions.append(
+                _enrich_opaque_subgroup(
+                    emitted.key,
+                    emitted.txns,
+                    emitted.metrics,
+                    accounts,
+                    raw_payee=emitted.raw_payee,
+                    category=emitted.category,
+                    is_misc=emitted.is_misc,
                 )
-            continue
-        if not _is_recurring_candidate(metrics, txns):
-            continue
-        if _is_already_registered(
-            key,
-            metrics,
-            registry_rows=registry_rows,
-            firefly_bills=firefly_bills,
-            registered_bill_ids=registered_bill_ids,
-            txns=txns,
-        ):
-            continue
-        suggestions.append(_enrich_suggestion(key, txns, metrics, accounts))
+            )
+        else:
+            suggestions.append(
+                _enrich_suggestion(emitted.key, emitted.txns, emitted.metrics, accounts)
+            )
 
     sorted_suggestions = _sort_suggestions(suggestions)
 
