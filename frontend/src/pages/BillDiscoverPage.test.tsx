@@ -9,8 +9,8 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { BillDiscoverPage } from "./BillDiscoverPage"
 import { registeredBillsQueryKey } from "@/hooks/useBillHistory"
 import {
-  groupByBucket,
-  orderedBucketKeys,
+  groupByPayee,
+  orderedPayeeKeys,
 } from "@/lib/billDiscoverUtils"
 import type { BillSuggestionsEnvelope, BillSuggestion } from "@/lib/paymentRunApi"
 import type { PaymentWorksheetEnvelope } from "@/lib/paymentRunApi"
@@ -59,6 +59,7 @@ const EMPTY_WORKSHEET: PaymentWorksheetEnvelope = {
 function makeSuggestion(
   overrides: Partial<BillSuggestion> & Pick<BillSuggestion, "id" | "merchant" | "bucket">,
 ): BillSuggestion {
+  const payee = overrides.payee ?? overrides.bucket
   return {
     confidence: "high",
     status: "ready",
@@ -77,36 +78,47 @@ function makeSuggestion(
     register_prefill: {
       mode: "create_new",
       name: overrides.merchant,
+      destination_account: payee,
     },
     reasons: [],
     ...overrides,
+    payee,
+    bucket: overrides.bucket ?? payee,
   }
 }
 
-const MULTI_BUCKET_SUGGESTIONS: BillSuggestionsEnvelope = {
+const MULTI_PAYEE_SUGGESTIONS: BillSuggestionsEnvelope = {
   data: [
     makeSuggestion({
       id: "spotify",
       merchant: "Spotify",
-      bucket: "Streaming & Media",
-      register_prefill: { mode: "create_new", name: "Spotify" },
+      payee: "Spotify USA Inc",
+      bucket: "Spotify USA Inc",
+      category: "Music Streaming",
+      register_prefill: { mode: "create_new", name: "Spotify", destination_account: "Spotify USA Inc" },
     }),
     makeSuggestion({
       id: "netflix",
       merchant: "Netflix",
-      bucket: "Streaming & Media",
+      payee: "Netflix Inc",
+      bucket: "Netflix Inc",
+      category: "Streaming",
     }),
     makeSuggestion({
       id: "electric",
       merchant: "City Electric",
-      bucket: "Utilities & Telecom",
+      payee: "City Electric Co",
+      bucket: "City Electric Co",
+      category: "Utilities",
     }),
     makeSuggestion({
       id: "review-row",
       merchant: "Mystery Charge",
-      bucket: "Other Recurring",
+      payee: "Mystery Vendor",
+      bucket: "Mystery Vendor",
       status: "review",
       confidence: "low",
+      category: "Subscriptions",
     }),
   ],
   meta: {
@@ -363,7 +375,7 @@ describe("BillDiscoverPage", () => {
   })
 
   it("hide review toggle updates visible suggestion count in meta bar", async () => {
-    mockDiscoverFetch({ suggestions: MULTI_BUCKET_SUGGESTIONS })
+    mockDiscoverFetch({ suggestions: MULTI_PAYEE_SUGGESTIONS })
 
     render(
       <TestProviders>
@@ -450,14 +462,15 @@ describe("BillDiscoverPage", () => {
     })
   })
 
-  it("dynamic_opaque_bucket_renders at opaque slot before later fixed buckets", async () => {
+  it("opaque payee section renders alphabetically with other payees", async () => {
     const suggestions: BillSuggestionsEnvelope = {
-      ...MULTI_BUCKET_SUGGESTIONS,
+      ...MULTI_PAYEE_SUGGESTIONS,
       data: [
-        ...MULTI_BUCKET_SUGGESTIONS.data,
+        ...MULTI_PAYEE_SUGGESTIONS.data,
         makeSuggestion({
           id: "icloud",
           merchant: "Icloud+",
+          payee: "APPLE.COM/BILL",
           bucket: "APPLE.COM/BILL",
           cluster: "apple-com-bill",
           register_prefill: {
@@ -468,7 +481,7 @@ describe("BillDiscoverPage", () => {
         }),
       ],
       meta: {
-        ...MULTI_BUCKET_SUGGESTIONS.meta,
+        ...MULTI_PAYEE_SUGGESTIONS.meta,
         suggestions_count: 5,
       },
     }
@@ -490,57 +503,57 @@ describe("BillDiscoverPage", () => {
     const headings = screen
       .getAllByRole("heading", { level: 2 })
       .map((node) => node.textContent)
-    const streamingIdx = headings.findIndex((text) =>
-      text?.startsWith("Streaming & Media"),
-    )
-    const opaqueIdx = headings.findIndex((text) =>
+    const appleIdx = headings.findIndex((text) =>
       text?.startsWith("APPLE.COM/BILL"),
     )
-    const otherIdx = headings.findIndex((text) =>
-      text?.startsWith("Other Recurring"),
+    const spotifyIdx = headings.findIndex((text) =>
+      text?.startsWith("Spotify USA Inc"),
     )
-    expect(streamingIdx).toBeGreaterThanOrEqual(0)
-    expect(opaqueIdx).toBeGreaterThan(streamingIdx)
-    expect(otherIdx).toBeGreaterThan(opaqueIdx)
+    expect(appleIdx).toBeGreaterThanOrEqual(0)
+    expect(spotifyIdx).toBeGreaterThan(appleIdx)
   })
 
-  it("orderedBucketKeys inserts dynamic buckets alphabetically at opaque slot", () => {
-    const grouped = groupByBucket(
+  it("orderedPayeeKeys sorts payee sections alphabetically", () => {
+    const grouped = groupByPayee(
       [
         makeSuggestion({
           id: "paypal",
           merchant: "Hosting",
+          payee: "PAYPAL *SERVICES",
           bucket: "PAYPAL *SERVICES",
         }),
         makeSuggestion({
           id: "apple",
           merchant: "Icloud+",
+          payee: "APPLE.COM/BILL",
           bucket: "APPLE.COM/BILL",
         }),
         makeSuggestion({
           id: "tickets",
           merchant: "Season Pass",
-          bucket: "Tickets & Events",
+          payee: "Ticketmaster",
+          bucket: "Ticketmaster",
         }),
         makeSuggestion({
           id: "streaming",
           merchant: "Spotify",
-          bucket: "Streaming & Media",
+          payee: "Spotify USA Inc",
+          bucket: "Spotify USA Inc",
         }),
       ],
       false,
     )
 
-    expect(orderedBucketKeys(grouped)).toEqual([
-      "Streaming & Media",
+    expect(orderedPayeeKeys(grouped)).toEqual([
       "APPLE.COM/BILL",
       "PAYPAL *SERVICES",
-      "Tickets & Events",
+      "Spotify USA Inc",
+      "Ticketmaster",
     ])
   })
 
-  it("bucket sections render in BUCKET_ORDER and omit empty buckets", async () => {
-    mockDiscoverFetch({ suggestions: MULTI_BUCKET_SUGGESTIONS })
+  it("payee sections render and omit empty groups", async () => {
+    mockDiscoverFetch({ suggestions: MULTI_PAYEE_SUGGESTIONS })
 
     render(
       <TestProviders>
@@ -549,15 +562,15 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Streaming & Media (2)" })).toBeTruthy()
+      expect(screen.getByRole("heading", { name: "Spotify USA Inc (1)" })).toBeTruthy()
     })
-    expect(screen.getByRole("heading", { name: "Utilities & Telecom (1)" })).toBeTruthy()
-    expect(screen.getByRole("heading", { name: "Other Recurring (1)" })).toBeTruthy()
-    expect(screen.queryByRole("heading", { name: /AI & Dev Tools/ })).toBeNull()
+    expect(screen.getByRole("heading", { name: "Netflix Inc (1)" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "City Electric Co (1)" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Mystery Vendor (1)" })).toBeTruthy()
   })
 
   it("hide review toggle filters review status rows", async () => {
-    mockDiscoverFetch({ suggestions: MULTI_BUCKET_SUGGESTIONS })
+    mockDiscoverFetch({ suggestions: MULTI_PAYEE_SUGGESTIONS })
 
     render(
       <TestProviders>
@@ -578,7 +591,7 @@ describe("BillDiscoverPage", () => {
   })
 
   it("Adopt opens registration sheet with prefilled merchant name", async () => {
-    mockDiscoverFetch({ suggestions: MULTI_BUCKET_SUGGESTIONS })
+    mockDiscoverFetch({ suggestions: MULTI_PAYEE_SUGGESTIONS })
 
     render(
       <TestProviders>
@@ -610,7 +623,7 @@ describe("BillDiscoverPage", () => {
       getSuggestionsCalls,
       getWorksheetCalls,
       getRegisterCalls,
-    } = mockDiscoverFetch({ suggestions: MULTI_BUCKET_SUGGESTIONS })
+    } = mockDiscoverFetch({ suggestions: MULTI_PAYEE_SUGGESTIONS })
 
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -686,14 +699,16 @@ describe("BillDiscoverPage", () => {
     })
   })
 
-  it("shows via subtitle when cluster is set", async () => {
+  it("shows payee detail when cluster is set", async () => {
     mockDiscoverFetch({
       suggestions: {
         data: [
           makeSuggestion({
             id: "icloud",
             merchant: "Cloud Storage",
+            payee: "APPLE.COM/BILL",
             bucket: "APPLE.COM/BILL",
+            category: "Cloud Storage",
             cluster: "apple-com-bill",
             register_prefill: {
               mode: "create_new",
@@ -718,17 +733,18 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getAllByText("via APPLE.COM/BILL").length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/Payee: APPLE\.COM\/BILL/).length).toBeGreaterThan(0)
     })
   })
 
-  it("cluster subtitle suppresses notes when both are set", async () => {
+  it("cluster detail shows payee instead of legacy notes", async () => {
     mockDiscoverFetch({
       suggestions: {
         data: [
           makeSuggestion({
             id: "icloud",
             merchant: "Cloud Storage",
+            payee: "APPLE.COM/BILL",
             bucket: "APPLE.COM/BILL",
             cluster: "apple-com-bill",
             notes: "Opaque payee warning should not show",
@@ -755,7 +771,7 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getAllByText("via APPLE.COM/BILL").length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/Payee: APPLE\.COM\/BILL/).length).toBeGreaterThan(0)
     })
     expect(
       screen.queryByText("Opaque payee warning should not show"),

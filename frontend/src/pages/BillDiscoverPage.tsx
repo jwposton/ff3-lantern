@@ -18,8 +18,8 @@ import {
 } from "@/hooks/usePaymentWorksheet"
 import {
   LOOKBACK_CHOICES,
-  groupByBucket,
-  orderedBucketKeys,
+  groupByPayee,
+  orderedPayeeKeys,
   parseLookback,
 } from "@/lib/billDiscoverUtils"
 import {
@@ -114,7 +114,7 @@ export function BillDiscoverPage() {
   const { data: worksheetData } = usePaymentWorksheet(month)
 
   const grouped =
-    data && !isError ? groupByBucket(data.data, hideReview) : new Map()
+    data && !isError ? groupByPayee(data.data, hideReview) : new Map()
   const visibleSuggestionCount =
     data && !isError
       ? data.data.filter((s) => !hideReview || s.status !== "review").length
@@ -309,13 +309,13 @@ export function BillDiscoverPage() {
 
         {!loading && !isError && data && data.data.length > 0 ? (
           <div className="space-y-8">
-            {orderedBucketKeys(grouped).map((bucketName) => {
-              const rows = grouped.get(bucketName)
+            {orderedPayeeKeys(grouped).map((payeeName) => {
+              const rows = grouped.get(payeeName)
               if (!rows?.length) return null
               return (
                 <BillSuggestionBucketSection
-                  key={bucketName}
-                  bucketName={bucketName}
+                  key={payeeName}
+                  payeeName={payeeName}
                   rows={rows}
                   onAdopt={(row) => void openAdopt(row)}
                 />

@@ -17,21 +17,6 @@ from transaction_normalization import description_fingerprint
 
 LOOKBACK_CHOICES: tuple[int, ...] = (6, 12, 24)
 
-BUCKET_ORDER: tuple[str, ...] = (
-    "Streaming & Media",
-    "AI & Dev Tools",
-    "Hosting & Domains",
-    "Utilities & Telecom",
-    "Utilities — Trash",
-    "Insurance",
-    "Housing — Rent",
-    "Apple Services",
-    "Tickets & Events",
-    "Other Recurring",
-)
-
-OPAQUE_BUCKET_SLOT = BUCKET_ORDER.index("Apple Services")
-
 CONFIDENCE_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
 
 CATEGORY_BLOCKLIST: frozenset[str] = frozenset({
@@ -489,35 +474,6 @@ def _pad_amounts(
     return f"{lo}", f"{hi}"
 
 
-def _assign_bucket(
-    merchant: str,
-    category: str,
-    description: str,
-) -> str:
-    merchant_lower = merchant.casefold()
-    category_lower = category.casefold()
-    description_lower = description.casefold()
-    if "spotify" in merchant_lower or "music streaming" in category_lower:
-        return "Streaming & Media"
-    if "all american waste" in merchant_lower or "trash" in category_lower:
-        return "Utilities — Trash"
-    if any(token in category_lower for token in ("streaming", "media")):
-        return "Streaming & Media"
-    if "utility" in category_lower or "telecom" in category_lower:
-        return "Utilities & Telecom"
-    if "insurance" in category_lower or "insurance" in merchant_lower:
-        return "Insurance"
-    if "rent" in category_lower or "rent" in merchant_lower:
-        return "Housing — Rent"
-    if "hosting" in merchant_lower or "domain" in merchant_lower:
-        return "Hosting & Domains"
-    if "ticket" in merchant_lower or "event" in description_lower:
-        return "Tickets & Events"
-    if any(token in merchant_lower for token in ("openai", "anthropic", "github", "cursor")):
-        return "AI & Dev Tools"
-    return "Other Recurring"
-
-
 def _recommend_amount_mode(metrics: dict[str, Any]) -> Literal["recurring", "intermittent"]:
     if metrics["amt_variance_pct"] <= 10 and metrics["regularity"] >= 0.5:
         return "recurring"
@@ -645,14 +601,52 @@ def _subgroups_for_opaque_payee(
     return result
 
 
-def _opaque_parent_bucket(raw_payee: str) -> str:
-    return raw_payee.strip()
+_OPAQUE_DESCRIPTION_TOKEN_RE = re.compile(
+    r"[A-Z][A-Z0-9./_*-]+(?:\s*\*[A-Z0-9]+)?",
+)
+_OPAQUE_TOKEN_STOPWORDS = frozenset(
+    {"PREAPPROVED", "PAYMENT", "BILL", "USER", "VIA", "MOBILE"},
+)
 
 
-def _bucket_sort_rank(bucket: str) -> int:
-    if bucket in BUCKET_ORDER:
-        return BUCKET_ORDER.index(bucket)
-    return OPAQUE_BUCKET_SLOT
+def _is_canonical_payee_token(token: str) -> bool:
+    """Domain- or processor-style tokens suitable for bill rule triggers."""
+    return "." in token or "/" in token or "*" in token
+
+
+def _resolve_opaque_raw_payee(txns: list[dict[str, Any]], fallback: str) -> str:
+    """Prefer canonical payee token from withdrawal descriptions over friendly destination_name."""
+    counts: dict[str, int] = {}
+    for txn in txns:
+        description = str(txn.get("description") or "").upper()
+        for match in _OPAQUE_DESCRIPTION_TOKEN_RE.finditer(description):
+            token = match.group(0).strip()
+            if token in _OPAQUE_TOKEN_STOPWORDS or len(token) < 4:
+                continue
+            if not _is_canonical_payee_token(token):
+                continue
+            counts[token] = counts.get(token, 0) + 1
+    if not counts:
+        return fallback.strip()
+    max_count = max(counts.values())
+    candidates = [token for token, count in counts.items() if count == max_count]
+    return sorted(candidates)[0]
+
+
+def _opaque_subgroup_amount_exactly(
+    sub_metrics: dict[str, Any],
+    *,
+    is_misc: bool,
+) -> str | None:
+    if is_misc:
+        return None
+    if (
+        sub_metrics["amt_variance_pct"] < 5
+        and sub_metrics["occurrences"] >= 3
+        and sub_metrics["freq"] == "monthly"
+    ):
+        return _format_decimal(sub_metrics["amount_avg"])
+    return None
 
 
 def _make_opaque_subgroup_id(
@@ -700,10 +694,10 @@ def _enrich_opaque_subgroup(
         register_prefill["amount_exactly"] = None
     else:
         register_prefill["category_name"] = category
-        if sub_metrics["amt_variance_pct"] < 3:
-            register_prefill["amount_exactly"] = _format_decimal(sub_metrics["amount_avg"])
-        else:
-            register_prefill["amount_exactly"] = None
+        register_prefill["amount_exactly"] = _opaque_subgroup_amount_exactly(
+            sub_metrics,
+            is_misc=False,
+        )
 
     confidence = _score_confidence(sub_metrics)
     status: Literal["ready", "review"] = "review" if is_misc else _assign_status(confidence)
@@ -728,7 +722,8 @@ def _enrich_opaque_subgroup(
         "category": category if not is_misc else sub_metrics["category"],
         "payment_source": sub_metrics["payment_source"],
         "sample_descriptions": sub_metrics["sample_descriptions"],
-        "bucket": _opaque_parent_bucket(raw_payee),
+        "payee": raw_payee,
+        "bucket": raw_payee,
         "cluster": _slugify_cluster(raw_payee),
         "register_prefill": register_prefill,
         "reasons": _build_reasons(sub_metrics, is_opaque=True),
@@ -848,14 +843,14 @@ def _is_already_registered(
 
 
 def _sort_suggestions(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    def sort_key(item: dict[str, Any]) -> tuple[int, int, int, str, int]:
-        bucket = item.get("bucket") or "Other Recurring"
+    def sort_key(item: dict[str, Any]) -> tuple[str, int, int, str, int]:
+        payee = str(item.get("payee") or item.get("bucket") or "").casefold()
         confidence = str(item.get("confidence") or "low")
         merchant = str(item.get("merchant") or "")
         last_date = str(item.get("last_date") or "")
         date_key = -int(last_date.replace("-", "") or 0)
         return (
-            _bucket_sort_rank(bucket),
+            payee,
             CONFIDENCE_RANK.get(confidence, 99),
             -int(item.get("occurrences") or 0),
             merchant.casefold(),
@@ -877,15 +872,6 @@ def _enrich_suggestion(
     confidence = _score_confidence(metrics)
     status = _assign_status(confidence, is_opaque_combined=is_opaque)
     latest_category = metrics["category"]
-    bucket = (
-        _opaque_parent_bucket(raw_payee)
-        if is_opaque
-        else _assign_bucket(
-            raw_payee,
-            latest_category,
-            " ".join(metrics.get("sample_descriptions") or []),
-        )
-    )
     register_prefill = _build_register_prefill(
         metrics,
         txns,
@@ -909,7 +895,8 @@ def _enrich_suggestion(
         "category": latest_category,
         "payment_source": metrics["payment_source"],
         "sample_descriptions": metrics["sample_descriptions"],
-        "bucket": bucket,
+        "payee": raw_payee,
+        "bucket": raw_payee,
         "cluster": None,
         "register_prefill": register_prefill,
         "reasons": _build_reasons(metrics, is_opaque=is_opaque),
@@ -972,7 +959,10 @@ def build_bill_suggestions(
         if metrics is None:
             continue
         if _should_subsplit_opaque_payee(txns):
-            raw_payee = str(metrics["merchant"] or key).strip() or key
+            raw_payee = _resolve_opaque_raw_payee(
+                txns,
+                str(metrics["merchant"] or key).strip() or key,
+            )
             for subgroup_txns, subgroup_kind in _subgroups_for_opaque_payee(txns):
                 is_misc = subgroup_kind == "misc"
                 sub_metrics = _analyze_group(key, subgroup_txns)

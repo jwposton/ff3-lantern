@@ -279,6 +279,7 @@ export type BillSuggestion = {
   category: string
   payment_source: string
   sample_descriptions: string[]
+  payee: string
   bucket: string
   cluster: string | null
   register_prefill: BillRegistrationPrefill

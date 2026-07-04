@@ -11,7 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Bill discover page** — Find recurring bill suggestions at `/manage/payment-run/discover` when payment worksheet is enabled; adopt suggestions into registration wizard
 - **Bill suggestions API** — GET /payment-run/bill-suggestions analyzes withdrawal history and returns ranked bill candidates with wizard prefill (requires payment worksheet enabled)
-- **Opaque payee splitter** — PreApproved clusters split into separate bill suggestions per category+amount sub-group; discover shows `via {payee}` subtitle for cluster rows and raw payee bucket headers
+- **Opaque payee splitter** — PreApproved clusters split into separate bill suggestions per category+amount sub-group; discover groups rows by payee and shows category + payee detail on each bill row
+
+### Changed
+
+- **Bill discover grouping** — suggestions group by Firefly payee instead of hardcoded audit buckets (Streaming & Media, etc.)
 
 ### Fixed
 
@@ -24,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bills page refresh** — Bills list updates after registering from discover or worksheet; Bills page header adds Refresh control
 - **Bills page Refresh layout** — header Refresh control no longer shifts layout when refetching
 - **Bill registration rule trigger** — registering a bill or subscription now automatically runs the Firefly link rule over the last 12 months so historical withdrawals link without manual rule execution
-- **Bill discover dedup** — withdrawals already linked to a Firefly subscription no longer appear as bill suggestions, even when the payee name differs from the registered bill label
+- **Bill discover adopt prefill** — opaque sub-group rows now prefill exact amount in the registration wizard when the charge is a stable monthly subscription (within 5% amount variance)
+- **Opaque payee discover labels** — payee headers prefer canonical tokens from withdrawal descriptions (e.g. `APPLE.COM/BILL`); junk description tokens like `DEAD` no longer override the Firefly payee name
 
 ## [2.0.0] - 2026-07-03
 

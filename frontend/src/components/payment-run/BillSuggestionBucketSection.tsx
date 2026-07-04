@@ -31,12 +31,34 @@ function capitalizeLabel(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-export function billColumnSubtitle(row: BillSuggestion): string | null {
-  if (row.cluster) {
-    const raw = row.register_prefill.destination_account?.trim()
-    return raw ? `via ${raw}` : null
+export function billColumnDetail(row: BillSuggestion): string | null {
+  const payee = (
+    row.payee?.trim() ||
+    row.register_prefill.destination_account?.trim() ||
+    row.bucket?.trim() ||
+    ""
+  )
+  const category = typeof row.category === "string" ? row.category.trim() : ""
+  const parts: string[] = []
+
+  if (category) {
+    const merchantBase = row.merchant
+      .replace(/ \(likely\)$/, "")
+      .replace(/ \(misc\)$/, "")
+    if (category.toLowerCase() !== merchantBase.toLowerCase()) {
+      parts.push(category)
+    }
   }
-  return row.notes?.trim() || null
+  if (payee) {
+    parts.push(`Payee: ${payee}`)
+  }
+
+  return parts.length ? parts.join(" · ") : null
+}
+
+/** @deprecated Use billColumnDetail */
+export function billColumnSubtitle(row: BillSuggestion): string | null {
+  return billColumnDetail(row)
 }
 
 function reviewHighlightClass(row: BillSuggestion): string {
@@ -47,13 +69,13 @@ function reviewHighlightClass(row: BillSuggestion): string {
 }
 
 type BillSuggestionBucketSectionProps = {
-  bucketName: string
+  payeeName: string
   rows: BillSuggestion[]
   onAdopt: (row: BillSuggestion) => void
 }
 
 export function BillSuggestionBucketSection({
-  bucketName,
+  payeeName,
   rows,
   onAdopt,
 }: BillSuggestionBucketSectionProps) {
@@ -61,7 +83,7 @@ export function BillSuggestionBucketSection({
     <Card>
       <CardHeader className="pb-2">
         <h2 className="text-xl font-semibold">
-          {bucketName} ({rows.length})
+          {payeeName} ({rows.length})
         </h2>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -83,7 +105,7 @@ export function BillSuggestionBucketSection({
             </TableHeader>
             <TableBody>
               {rows.map((row) => {
-                const subtitle = billColumnSubtitle(row)
+                const detail = billColumnDetail(row)
                 return (
                 <TableRow
                   key={row.id}
@@ -91,8 +113,8 @@ export function BillSuggestionBucketSection({
                 >
                   <TableCell>
                     <div className="font-medium">{row.merchant}</div>
-                    {subtitle ? (
-                      <p className="text-xs text-muted-foreground">{subtitle}</p>
+                    {detail ? (
+                      <p className="text-xs text-muted-foreground">{detail}</p>
                     ) : null}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
@@ -147,7 +169,7 @@ export function BillSuggestionBucketSection({
 
         <div className="space-y-3 sm:hidden">
           {rows.map((row) => {
-            const subtitle = billColumnSubtitle(row)
+            const detail = billColumnDetail(row)
             return (
             <div
               key={row.id}
@@ -158,8 +180,8 @@ export function BillSuggestionBucketSection({
             >
               <div>
                 <p className="font-medium">{row.merchant}</p>
-                {subtitle ? (
-                  <p className="text-xs text-muted-foreground">{subtitle}</p>
+                {detail ? (
+                  <p className="text-xs text-muted-foreground">{detail}</p>
                 ) : null}
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums">

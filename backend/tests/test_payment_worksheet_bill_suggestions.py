@@ -9,11 +9,10 @@ import pytest
 
 from payment_worksheet_bills import RegisterBillBody
 from payment_worksheet_bill_suggestions import (
-    BUCKET_ORDER,
     OPAQUE_NOTES,
-    _bucket_sort_rank,
     _merchant_from_category,
     _pad_amounts,
+    _resolve_opaque_raw_payee,
     _should_subsplit_opaque_payee,
     _slugify_cluster,
     _subgroups_for_opaque_payee,
@@ -334,6 +333,24 @@ def apple_services_operator_fixture() -> list[dict[str, Any]]:
     return rows
 
 
+def apple_services_friendly_payee_fixture() -> list[dict[str, Any]]:
+    """Apple fixture with friendly Firefly payee but canonical token in description."""
+    rows = apple_services_operator_fixture()
+    for row in rows:
+        row["destination_name"] = "Apple Services"
+        row["description"] = "APPLE.COM/BILL PreApproved Payment Bill User Payment"
+    return rows
+
+
+def apple_services_slight_variance_fixture() -> list[dict[str, Any]]:
+    """iCloud sub-group with one month ~4% above base — within stable_amount band."""
+    rows = apple_services_operator_fixture()
+    for row in rows:
+        if row["category_name"] == "Cloud Storage" and row["date"] == "2026-06-10":
+            row["amount"] = "10.49"
+    return rows
+
+
 def paypal_preapproved_multi_category() -> list[dict[str, Any]]:
     """Generic opaque payee — Software Subscription + Cloud Storage, no Apple string."""
     rows: list[dict[str, Any]] = []
@@ -469,11 +486,12 @@ def test_noise_does_not_block_spotify():
     assert result["data"][0]["merchant"] == "Spotify"
 
 
-def test_spotify_bucket_streaming_media():
+def test_spotify_payee_grouping():
     result = build_bill_suggestions(spotify_monthly_withdrawals(12), **_engine_kwargs())
     assert len(result["data"]) == 1
     suggestion = result["data"][0]
-    assert suggestion["bucket"] == "Streaming & Media"
+    assert suggestion["payee"] == "Spotify USA Inc"
+    assert suggestion["bucket"] == suggestion["payee"]
     assert suggestion["merchant"] == "Spotify"
 
 
@@ -481,17 +499,18 @@ def test_spotify_varying_amounts_not_opaque():
     result = build_bill_suggestions(spotify_varying_amounts(12), **_engine_kwargs())
     assert len(result["data"]) == 1
     suggestion = result["data"][0]
-    assert suggestion["bucket"] == "Streaming & Media"
+    assert suggestion["bucket"] == suggestion["payee"]
     assert suggestion["merchant"] == "Spotify"
     assert suggestion["status"] != "review" or "opaque_payee" not in suggestion.get("reasons", [])
     assert suggestion.get("notes") != OPAQUE_NOTES
     assert suggestion["register_prefill"]["category_name"] == "Music Streaming"
 
 
-def test_all_american_waste_bucket_trash():
+def test_all_american_waste_payee():
     result = build_bill_suggestions(all_american_waste_monthly(12), **_engine_kwargs())
     assert len(result["data"]) == 1
-    assert result["data"][0]["bucket"] == "Utilities — Trash"
+    assert result["data"][0]["payee"] == "All American Waste"
+    assert result["data"][0]["bucket"] == "All American Waste"
 
 
 def test_pad_amounts_five_percent():
@@ -718,6 +737,43 @@ def test_apple_services_split_opaque():
             assert_valid_register_prefill(prefill)
 
 
+def test_opaque_subgroup_amount_exactly_with_slight_variance():
+    result = build_bill_suggestions(apple_services_slight_variance_fixture(), **_engine_kwargs())
+    cloud = next(row for row in result["data"] if row["merchant"] == "Cloud Storage")
+    assert cloud["register_prefill"]["amount_exactly"] is not None
+    assert_valid_register_prefill(cloud["register_prefill"])
+
+
+def test_opaque_friendly_payee_resolves_canonical_payee():
+    result = build_bill_suggestions(apple_services_friendly_payee_fixture(), **_engine_kwargs())
+    assert result["data"]
+    assert all(row["payee"] == "APPLE.COM/BILL" for row in result["data"])
+    assert all(row["bucket"] == row["payee"] for row in result["data"])
+    assert all(row["cluster"] == "apple-com-bill" for row in result["data"])
+    for row in result["data"]:
+        if row["merchant"].endswith("(misc)"):
+            continue
+        assert row["register_prefill"]["destination_account"] == "APPLE.COM/BILL"
+
+
+def test_opaque_generic_description_uses_firefly_payee():
+    rows = apple_services_operator_fixture()
+    for row in rows:
+        row["destination_name"] = "Apple Services"
+    resolved = _resolve_opaque_raw_payee(rows, "Apple Services")
+    assert resolved == "Apple Services"
+
+
+def test_opaque_resolver_ignores_junk_description_tokens():
+    txns = [
+        {
+            "description": "DEAD PreApproved Payment Bill User Payment",
+            "destination_name": "Apple Services",
+        }
+    ] * 12
+    assert _resolve_opaque_raw_payee(txns, "Apple Services") == "Apple Services"
+
+
 def test_apple_no_monolithic_parent():
     result = build_bill_suggestions(apple_services_operator_fixture(), **_engine_kwargs())
     for row in result["data"]:
@@ -820,7 +876,7 @@ def test_sub_group_prefill_fields():
         assert_valid_register_prefill(prefill)
 
 
-def test_sort_bucket_confidence_occurrences():
+def test_sort_payee_confidence_occurrences():
     splits = (
         spotify_monthly_withdrawals(12)
         + all_american_waste_monthly(12)
@@ -828,39 +884,28 @@ def test_sort_bucket_confidence_occurrences():
     )
     result = build_bill_suggestions(splits, **_engine_kwargs())
     assert len(result["data"]) == 3
-    buckets = [row["bucket"] for row in result["data"]]
-    assert buckets[0] == "Streaming & Media"
-    assert buckets[1] == "Utilities — Trash"
-    assert buckets[2] == "Other Recurring"
+    payees = [row["payee"] for row in result["data"]]
+    assert payees == sorted(payees, key=str.casefold)
     assert result["data"][0]["confidence"] == "high"
-    assert result["data"][1]["confidence"] in ("high", "medium")
-    assert result["data"][2]["confidence"] in ("low", "medium")
-    assert result["data"][0]["occurrences"] >= result["data"][1]["occurrences"]
+    high_conf = [row for row in result["data"] if row["confidence"] == "high"]
+    assert high_conf
+    assert high_conf[0]["occurrences"] >= 3
 
 
-def test_bucket_sort_rank_dynamic_opaque_at_apple_slot():
-    apple_slot = BUCKET_ORDER.index("Apple Services")
-    assert _bucket_sort_rank("APPLE.COM/BILL") == apple_slot
-    assert _bucket_sort_rank("PAYPAL *DIGITALGOODS") == apple_slot
-    assert _bucket_sort_rank("Streaming & Media") == 0
-    assert _bucket_sort_rank("Unknown Payee XYZ") == apple_slot
-
-
-def test_opaque_bucket_sort_rank():
+def test_opaque_payee_sort_alphabetically():
     splits = spotify_monthly_withdrawals(12) + apple_services_operator_fixture()
     result = build_bill_suggestions(splits, **_engine_kwargs())
-    buckets = [row["bucket"] for row in result["data"]]
-    apple_slot = BUCKET_ORDER.index("Apple Services")
-    streaming_idx = buckets.index("Streaming & Media")
-    apple_bucket_indices = [index for index, bucket in enumerate(buckets) if bucket == "APPLE.COM/BILL"]
-    assert apple_bucket_indices
-    assert streaming_idx < min(apple_bucket_indices)
-    after_apple_fixed = [bucket for bucket in BUCKET_ORDER[apple_slot + 1:] if bucket in buckets]
-    if after_apple_fixed:
-        first_after_idx = buckets.index(after_apple_fixed[0])
-        assert max(apple_bucket_indices) < first_after_idx
-    apple_rows = [row for row in result["data"] if row["bucket"] == "APPLE.COM/BILL"]
+    payees = [row["payee"] for row in result["data"]]
+    apple_indices = [index for index, payee in enumerate(payees) if payee == "APPLE.COM/BILL"]
+    spotify_indices = [
+        index for index, payee in enumerate(payees) if "spotify" in payee.casefold()
+    ]
+    assert apple_indices and spotify_indices
+    assert max(apple_indices) < min(spotify_indices)
+    apple_rows = [row for row in result["data"] if row["payee"] == "APPLE.COM/BILL"]
     from itertools import groupby
+    merchants = [row["merchant"] for row in apple_rows]
+    assert len(merchants) == len(set(merchants))
     for (_confidence, _occurrences), group in groupby(
         apple_rows,
         key=lambda row: (row["confidence"], row["occurrences"]),
@@ -891,12 +936,14 @@ def test_register_prefill_validates():
         assert_valid_register_prefill(suggestion["register_prefill"])
 
 
-def test_named_bucket_assertions():
+def test_payee_field_matches_destination():
     splits = spotify_monthly_withdrawals(12) + all_american_waste_monthly(12)
     result = build_bill_suggestions(splits, **_engine_kwargs())
-    buckets = {row["merchant"]: row["bucket"] for row in result["data"]}
-    assert buckets["Spotify"] == "Streaming & Media"
-    assert buckets["All American Waste"] == "Utilities — Trash"
+    payees = {row["merchant"]: row["payee"] for row in result["data"]}
+    assert payees["Spotify"] == "Spotify USA Inc"
+    assert payees["All American Waste"] == "All American Waste"
+    for row in result["data"]:
+        assert row["bucket"] == row["payee"]
 
 
 def rent_monthly_withdrawals_linked(count: int = 12) -> list[dict[str, Any]]:
