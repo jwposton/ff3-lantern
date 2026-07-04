@@ -35,6 +35,7 @@ from payment_worksheet_bill_suggestions import (
 from payment_worksheet_bills import (
     BillRegistrationError,
     RegisterBillBody,
+    _normalize_bill_group_id,
     _validate_bill_group_fields,
     register_bill,
     serialize_bill_registry_for_edit,
@@ -736,6 +737,9 @@ async def update_bill_registry(
     amount_mode = merged.get("amount_mode") or existing.get("amount_mode")
     if amount_mode:
         merged["planned_sync"] = _planned_sync_for_amount_mode(str(amount_mode))
+
+    if "bill_group_id" in merged:
+        merged["bill_group_id"] = _normalize_bill_group_id(merged.get("bill_group_id"))
 
     try:
         await _validate_bill_group_fields(

@@ -211,6 +211,13 @@ async def _validate_bucket_exists(bucket_key: str) -> None:
 _BILL_GROUP_SECTIONS = frozenset({"bills", "liabilities"})
 
 
+def _normalize_bill_group_id(bill_group_id: str | None) -> str | None:
+    if bill_group_id is None:
+        return None
+    bill_group_id = bill_group_id.strip()
+    return bill_group_id or None
+
+
 async def _validate_bill_group_exists(group_id: str) -> None:
     group = await sidecar_db.get_bill_group(group_id)
     if group is None:
@@ -222,6 +229,7 @@ async def _validate_bill_group_fields(
     show_in_group: bool,
     worksheet_section: str,
 ) -> None:
+    bill_group_id = _normalize_bill_group_id(bill_group_id)
     if show_in_group and not bill_group_id:
         raise BillRegistrationError(
             "show_in_group requires bill_group_id when set to true."
@@ -617,7 +625,7 @@ async def insert_worksheet_registry(
             "rule_id": rule_id,
             "row_label": body.name,
             "credit_card_account_id": body.credit_card_account_id,
-            "bill_group_id": body.bill_group_id,
+            "bill_group_id": _normalize_bill_group_id(body.bill_group_id),
             "show_in_group": body.show_in_group,
         }
     )

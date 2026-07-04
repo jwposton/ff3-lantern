@@ -1944,6 +1944,46 @@ def test_bill_group_patch_member_ids_null_422(monkeypatch, client, data_dir):
     assert response.json()["detail"] == "member_ids must be an array when provided."
 
 
+def test_registry_group_empty_bill_group_id_normalized(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-grp-empty",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-grp-empty",
+                "row_label": "Gas",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"bill_group_id": ""},
+    )
+    assert response.status_code == 200
+    assert response.json()["bill_group_id"] is None
+
+    row = asyncio.run(sidecar_db.get_worksheet_registry(reg_id))
+    assert row is not None
+    assert row["bill_group_id"] is None
+
+
 def test_registry_group_show_in_group_requires_group(
     monkeypatch, client, data_dir, payment_worksheet_env
 ):
