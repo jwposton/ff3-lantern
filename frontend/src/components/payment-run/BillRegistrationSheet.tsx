@@ -42,6 +42,7 @@ type BillRegistrationSheetProps = {
   initialFireflyBillId?: string | null
   editTarget?: BillRegistrationEditTarget | null
   initialPrefill?: BillRegistrationPrefill | null
+  paymentSourceHint?: string | null
   creditCards: CreditCardRow[]
   buckets: FundingBucketRollup[]
   availableBills: AvailableFireflyBill[]
@@ -57,6 +58,21 @@ function buildSuggestedFields(prefill: BillRegistrationPrefill): Set<string> {
     }
   }
   return keys
+}
+
+function defaultCreditCardAccountId(
+  creditCards: CreditCardRow[],
+  paymentSourceHint?: string | null,
+): string {
+  if (paymentSourceHint?.trim()) {
+    const hint = paymentSourceHint.trim().toLowerCase()
+    const matched = creditCards.find((card) => {
+      const name = card.name?.trim().toLowerCase() ?? ""
+      return name === hint || name.includes(hint) || hint.includes(name)
+    })
+    if (matched) return matched.account_id
+  }
+  return creditCards[0]?.account_id ?? ""
 }
 
 function FieldLabelWithSuggested({
@@ -97,6 +113,7 @@ export function BillRegistrationSheet({
   initialFireflyBillId = null,
   editTarget = null,
   initialPrefill = null,
+  paymentSourceHint = null,
   creditCards,
   buckets,
   availableBills,
@@ -179,9 +196,14 @@ export function BillRegistrationSheet({
       setAmountMode(initialPrefill.amount_mode ?? "recurring")
       setRepeatFreq(initialPrefill.repeat_freq ?? "monthly")
       setWorksheetSection(initialPrefill.worksheet_section ?? defaultSection)
-      setPaymentRail(initialPrefill.payment_rail ?? "bank")
-      setFundingBucketKey(buckets[0]?.id ?? "")
-      setCreditCardAccountId(creditCards[0]?.account_id ?? "")
+      const rail = initialPrefill.payment_rail ?? "bank"
+      setPaymentRail(rail)
+      setFundingBucketKey(rail === "bank" ? (buckets[0]?.id ?? "") : "")
+      setCreditCardAccountId(
+        rail === "credit_card"
+          ? defaultCreditCardAccountId(creditCards, paymentSourceHint)
+          : "",
+      )
       setPayeeContains(initialPrefill.destination_account ?? "")
       setCategoryName(initialPrefill.category_name ?? "")
       setDescriptionContains(initialPrefill.description_contains ?? "")
@@ -223,6 +245,7 @@ export function BillRegistrationSheet({
     editTarget,
     buckets,
     creditCards,
+    paymentSourceHint,
   ])
 
   useEffect(() => {
@@ -413,8 +436,23 @@ export function BillRegistrationSheet({
       : "Link to worksheet"
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-lg">
+    <Sheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && saving) return
+        onOpenChange(nextOpen)
+      }}
+    >
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-lg"
+        onInteractOutside={(event) => {
+          if (saving) event.preventDefault()
+        }}
+        onEscapeKeyDown={(event) => {
+          if (saving) event.preventDefault()
+        }}
+      >
         <SheetHeader>
           <SheetTitle>
             {isEditMode ? "Edit bill registration" : "Register a bill"}
@@ -890,7 +928,9 @@ export function BillRegistrationSheet({
             variant="outline"
             size="sm"
             disabled={saving}
-            onClick={() => onOpenChange(false)}
+            onClick={() => {
+              if (!saving) onOpenChange(false)
+            }}
           >
             Close without saving
           </Button>

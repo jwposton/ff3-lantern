@@ -331,6 +331,7 @@ export function BillDiscoverPage() {
           }
         }}
         initialPrefill={selectedSuggestion?.register_prefill ?? null}
+        paymentSourceHint={selectedSuggestion?.payment_source ?? null}
         creditCards={worksheetData?.credit_cards ?? []}
         buckets={worksheetData?.buckets ?? []}
         availableBills={availableBills}
