@@ -9,7 +9,9 @@ import pytest
 
 from payment_worksheet_bills import RegisterBillBody
 from payment_worksheet_bill_suggestions import (
+    BUCKET_ORDER,
     OPAQUE_NOTES,
+    _bucket_sort_rank,
     _merchant_from_category,
     _pad_amounts,
     _should_subsplit_opaque_payee,
@@ -695,6 +697,32 @@ def test_sort_bucket_confidence_occurrences():
     assert result["data"][1]["confidence"] in ("high", "medium")
     assert result["data"][2]["confidence"] in ("low", "medium")
     assert result["data"][0]["occurrences"] >= result["data"][1]["occurrences"]
+
+
+def test_bucket_sort_rank_dynamic_opaque_at_apple_slot():
+    apple_slot = BUCKET_ORDER.index("Apple Services")
+    assert _bucket_sort_rank("APPLE.COM/BILL") == apple_slot
+    assert _bucket_sort_rank("PAYPAL *DIGITALGOODS") == apple_slot
+    assert _bucket_sort_rank("Streaming & Media") == 0
+    assert _bucket_sort_rank("Unknown Payee XYZ") == apple_slot
+
+
+def test_opaque_bucket_sort_rank():
+    splits = spotify_monthly_withdrawals(12) + apple_services_operator_fixture()
+    result = build_bill_suggestions(splits, **_engine_kwargs())
+    buckets = [row["bucket"] for row in result["data"]]
+    apple_slot = BUCKET_ORDER.index("Apple Services")
+    streaming_idx = buckets.index("Streaming & Media")
+    apple_bucket_indices = [index for index, bucket in enumerate(buckets) if bucket == "APPLE.COM/BILL"]
+    assert apple_bucket_indices
+    assert streaming_idx < min(apple_bucket_indices)
+    after_apple_fixed = [bucket for bucket in BUCKET_ORDER[apple_slot + 1:] if bucket in buckets]
+    if after_apple_fixed:
+        first_after_idx = buckets.index(after_apple_fixed[0])
+        assert max(apple_bucket_indices) < first_after_idx
+    apple_rows = [row for row in result["data"] if row["bucket"] == "APPLE.COM/BILL"]
+    merchants = [row["merchant"] for row in apple_rows]
+    assert merchants == sorted(merchants, key=str.casefold)
 
 
 def test_registered_spotify_excluded():
