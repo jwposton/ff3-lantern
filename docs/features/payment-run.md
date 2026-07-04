@@ -377,9 +377,24 @@ Route module: `backend/routes/payment_run.py`
 | `DELETE /payment-run/bills/{registry_id}` | Unregister |
 | `GET/POST/PUT /payment-run/buckets` | Funding bucket CRUD |
 | `GET /payment-run/available` | Unregistered FF accounts/bills |
+| `GET /payment-run/bill-suggestions` | Analyze withdrawal history; ranked bill candidates with register wizard prefill |
 | `POST /payment-run/link-transaction` | Phase 3: attach bill to withdrawal |
 
 Helper: `backend/payment_worksheet_profiles.py` (parse/write notes, mirror `loan_profiles.py`).
+
+### Bill suggestions (`GET /payment-run/bill-suggestions`)
+
+Compute-on-demand analysis of Firefly **withdrawal** history to surface recurring bill candidates for the register wizard. Requires `FF3LANTERN_PAYMENT_WORKSHEET_ENABLED` (same gate as other payment-run routes — returns **404** when disabled).
+
+| Query param | Values | Default |
+|-------------|--------|---------|
+| `lookback_months` | `6`, `12`, or `24` only | `12` |
+
+Invalid lookback values return **422** with `lookback_months must be 6, 12, or 24.` Firefly failures return **502** with a short error message (no token leakage).
+
+**Response:** `{ "data": [ …suggestion objects… ], "meta": { "withdrawals_analyzed", "suggestions_count", "period_start", "period_end" } }`
+
+Each suggestion includes `register_prefill` shaped for `POST /payment-run/bills/register` (wizard prefill). Results are **not persisted** — re-fetch on each GET. Implementation: `backend/payment_worksheet_bill_suggestions.py` (`fetch_bill_suggestions` → `build_bill_suggestions`).
 
 ### Sidecar tables
 
