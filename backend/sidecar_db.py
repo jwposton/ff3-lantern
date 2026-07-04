@@ -109,12 +109,23 @@ CREATE TABLE IF NOT EXISTS worksheet_bucket_balance (
 """
 
 
+_LEGACY_DB_FILENAME = "ff3analytics.db"
+_DB_FILENAME = "ff3lantern.db"
+
+
 def get_data_dir() -> Path:
-    return Path(os.environ.get("FF3ANALYTICS_DATA_DIR", "./data"))
+    return Path(os.environ.get("FF3LANTERN_DATA_DIR", "./data"))
 
 
 def get_db_path() -> Path:
-    return get_data_dir() / "ff3analytics.db"
+    return get_data_dir() / _DB_FILENAME
+
+
+def _migrate_legacy_db_if_needed(data_dir: Path) -> None:
+    legacy = data_dir / _LEGACY_DB_FILENAME
+    current = data_dir / _DB_FILENAME
+    if legacy.exists() and not current.exists():
+        legacy.rename(current)
 
 
 def _utc_now() -> str:
@@ -127,9 +138,9 @@ def _ensure_data_dir(data_dir: Path) -> None:
     except PermissionError as exc:
         hint = (
             f"Cannot create or write data directory at {data_dir.resolve()!s}. "
-            "Docker images use /data (bind-mount FF3ANALYTICS_DATA_PATH on the host). "
+            "Docker images use /data (bind-mount FF3LANTERN_DATA_PATH on the host). "
             "Pre-create the host directory with chown matching PUID/PGID (default 1000:1000). "
-            "For local uvicorn outside Docker, set FF3ANALYTICS_DATA_DIR=./data."
+            "For local uvicorn outside Docker, set FF3LANTERN_DATA_DIR=./data."
         )
         raise PermissionError(hint) from exc
 
@@ -137,6 +148,7 @@ def _ensure_data_dir(data_dir: Path) -> None:
 async def init_db() -> None:
     data_dir = get_data_dir()
     _ensure_data_dir(data_dir)
+    _migrate_legacy_db_if_needed(data_dir)
     async with aiosqlite.connect(get_db_path()) as db:
         await db.executescript(_SCHEMA)
         try:

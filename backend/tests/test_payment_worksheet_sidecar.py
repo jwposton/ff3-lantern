@@ -21,7 +21,7 @@ PAYMENT_WORKSHEET_TABLES = (
 
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     return tmp_path
 
 

@@ -1,6 +1,6 @@
-# FF3Analytics
+# FF3 Lantern
 
-Self-hosted analytics UI for a personal [Firefly III](https://www.firefly-iii.org/) instance. Pick a date range and explore spending trends, Sankey flows, month-over-month variance, and transaction drilldowns.
+Self-hosted companion for [Firefly III](https://www.firefly-iii.org/) — reports, categorization, and bill planning. Pick a date range and explore spending trends, Sankey flows, month-over-month variance, and transaction drilldowns.
 
 Release notes: [CHANGELOG.md](CHANGELOG.md)
 
@@ -27,18 +27,18 @@ Copy `.env.example` to `.env` and fill in values. **Never commit `.env`** — th
 | `FIREFLY_API_TOKEN` | Yes | — | Personal access token from Firefly III (see below) |
 | `CORS_ALLOWED_ORIGINS` | No | localhost dev fallback | Comma-separated browser origins allowed to call the API directly on `:18001` |
 | `GITHUB_OWNER` | No | `jwposton` | GitHub org/user for ghcr.io image pulls |
-| `FF3ANALYTICS_TAG` | No | `latest` | Image tag when pulling pre-built images from ghcr.io |
-| `FF3ANALYTICS_DATA_PATH` | No | `./data` | Host directory bind-mounted for the SQLite sidecar (`ff3analytics.db` at `{path}/ff3analytics.db`) |
+| `FF3LANTERN_TAG` | No | `latest` | Image tag when pulling pre-built images from ghcr.io |
+| `FF3LANTERN_DATA_PATH` | No | `./data` | Host directory bind-mounted for the SQLite sidecar (`ff3lantern.db` at `{path}/ff3lantern.db`) |
 | `PUID` / `PGID` | No | `1000` / `1000` | UID/GID the backend container runs as; sidecar files are created with this ownership |
 | `FIREFLY_REFERENCE_CACHE_TTL_SECONDS` | No | `7200` (2h) | In-process cache TTL for Firefly accounts, categories, and budgets |
 
-The backend image sets `FF3ANALYTICS_DATA_DIR=/data` internally; compose only configures the host bind mount via `FF3ANALYTICS_DATA_PATH`.
+The backend image sets `FF3LANTERN_DATA_DIR=/data` internally; compose only configures the host bind mount via `FF3LANTERN_DATA_PATH`.
 
 ### Firefly personal access token
 
 1. Sign in to Firefly III as a user with access to the data you want to analyze.
 2. Open **Profile** (top-right) → **OAuth** → **Personal access tokens**.
-3. Create a token with a descriptive name (e.g. `ff3analytics`).
+3. Create a token with a descriptive name (e.g. `ff3-lantern`).
 4. Copy the token immediately — Firefly shows it only once.
 5. Paste into `.env` as `FIREFLY_API_TOKEN`.
 
@@ -54,15 +54,15 @@ Used by AI categorization and loan split features (v1.1+). See [Automations](#au
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | No | — | OpenRouter API key for AI suggest; when empty, queue is read-only |
 | `OPENROUTER_MODEL` | No | `openai/gpt-4o-mini` | Model id sent to OpenRouter for categorization |
-| `FF3ANALYTICS_RULE_GROUP` | No | `FF3Analytics AI` | Firefly rule group for user-approved AI rules (created automatically if missing) |
-| `FF3ANALYTICS_AI_TAG` | No | `ai-categorized` | Tag applied on direct apply and AI-created rules |
-| `FF3ANALYTICS_CATEGORIZE_IGNORE_TAG` | No | `categorize-ignore` | Tag applied when you **Ignore** a transaction on the Categorize page (excludes it from the queue) |
-| `FF3ANALYTICS_LOAN_SPLITS_SINCE` | No | — | Forward-only start date for loan split queue (`YYYY-MM-DD`) |
-| `FF3ANALYTICS_LOAN_TAG` | No | `loan-split` | Tag applied after loan split apply |
+| `FF3LANTERN_RULE_GROUP` | No | `FF3 Lantern AI` | Firefly rule group for user-approved AI rules (created automatically if missing) |
+| `FF3LANTERN_AI_TAG` | No | `ai-categorized` | Tag applied on direct apply and AI-created rules |
+| `FF3LANTERN_CATEGORIZE_IGNORE_TAG` | No | `categorize-ignore` | Tag applied when you **Ignore** a transaction on the Categorize page (excludes it from the queue) |
+| `FF3LANTERN_LOAN_SPLITS_SINCE` | No | — | Forward-only start date for loan split queue (`YYYY-MM-DD`) |
+| `FF3LANTERN_LOAN_TAG` | No | `loan-split` | Tag applied after loan split apply |
 
 ## Automations
 
-FF3Analytics **proposes** categorizations and loan splits; **you approve** every write. Firefly III remains the system of record — nothing is written without an explicit click in the Manage UI.
+FF3 Lantern **proposes** categorizations and loan splits; **you approve** every write. Firefly III remains the system of record — nothing is written without an explicit click in the Manage UI.
 
 ### Manage routes
 
@@ -75,11 +75,11 @@ FF3Analytics **proposes** categorizations and loan splits; **you approve** every
 
 - **No autonomous writes** — OpenRouter and rule engines only suggest; apply/create endpoints run after user action.
 - When `OPENROUTER_API_KEY` is missing, the categorize queue still loads but **Suggest** is hidden (read-only).
-- Direct apply updates one transaction (`PUT` via Firefly API) and tags it with `FF3ANALYTICS_AI_TAG`.
-- **Ignore** tags a transaction with `FF3ANALYTICS_CATEGORIZE_IGNORE_TAG` so it leaves the pending queue without category/budget (e.g. reconciliation or opening-balance rows).
-- **Rule graduation:** edit title and `description_contains`, run **Preview matches** to see test-hit counts, then **Create rule**. Rules are created in `FF3ANALYTICS_RULE_GROUP` with category, optional budget, and the AI tag action.
+- Direct apply updates one transaction (`PUT` via Firefly API) and tags it with `FF3LANTERN_AI_TAG`.
+- **Ignore** tags a transaction with `FF3LANTERN_CATEGORIZE_IGNORE_TAG` so it leaves the pending queue without category/budget (e.g. reconciliation or opening-balance rows).
+- **Rule graduation:** edit title and `description_contains`, run **Preview matches** to see test-hit counts, then **Create rule**. Rules are created in `FF3LANTERN_RULE_GROUP` with category, optional budget, and the AI tag action.
 - **Backfill is opt-in, default off** — a checkbox applies the rule to existing transactions in the selected date range via a separate trigger call only after you check it.
-- Loan splits apply forward from `FF3ANALYTICS_LOAN_SPLITS_SINCE`; loan profiles live in Firefly account notes (no sidecar profile DB).
+- Loan splits apply forward from `FF3LANTERN_LOAN_SPLITS_SINCE`; loan profiles live in Firefly account notes (no sidecar profile DB).
 
 ### Health
 
@@ -123,8 +123,8 @@ This overlay swaps the production nginx image for the Vite dev server on port 51
 Multi-arch images (`linux/amd64`, `linux/arm64`) publish to GitHub Container Registry when a `v*` tag is pushed (see `.github/workflows/publish.yml`):
 
 ```text
-ghcr.io/<your-github-user>/ff3analytics-backend:1.0.0
-ghcr.io/<your-github-user>/ff3analytics-frontend:1.0.0
+ghcr.io/<your-github-user>/ff3-lantern-backend:1.0.0
+ghcr.io/<your-github-user>/ff3-lantern-frontend:1.0.0
 ```
 
 Pull and run without a local build:
@@ -134,7 +134,7 @@ cp .env.example .env
 # edit .env
 
 export GITHUB_OWNER=your-github-user
-export FF3ANALYTICS_TAG=1.0.0   # or latest
+export FF3LANTERN_TAG=1.0.0   # or latest
 
 docker compose pull
 docker compose up -d
@@ -143,6 +143,56 @@ docker compose up -d
 After the first publish, set each package to **Public** under GitHub → Packages if anonymous pulls fail.
 
 Ensure the repository has **Actions → Workflow permissions → Read and write packages** enabled for `GITHUB_TOKEN`.
+
+## Upgrading from v1.x (FF3Analytics)
+
+v2.0.0 is a **breaking** rename to **FF3 Lantern**. Your Firefly ledger data is unchanged; update deployment config and images as follows.
+
+### Environment variables
+
+Rename every `FF3ANALYTICS_*` variable in `.env` to `FF3LANTERN_*` with the same value. There are no compatibility aliases — old names are ignored.
+
+| v1.x | v2.x |
+|------|------|
+| `FF3ANALYTICS_TAG` | `FF3LANTERN_TAG` |
+| `FF3ANALYTICS_DATA_PATH` | `FF3LANTERN_DATA_PATH` |
+| `FF3ANALYTICS_DATA_DIR` | *(set in image only — do not configure)* |
+| `FF3ANALYTICS_RULE_GROUP` | `FF3LANTERN_RULE_GROUP` |
+| `FF3ANALYTICS_AI_TAG` | `FF3LANTERN_AI_TAG` |
+| `FF3ANALYTICS_CATEGORIZE_IGNORE_TAG` | `FF3LANTERN_CATEGORIZE_IGNORE_TAG` |
+| `FF3ANALYTICS_LOAN_SPLITS_SINCE` | `FF3LANTERN_LOAN_SPLITS_SINCE` |
+| `FF3ANALYTICS_LOAN_TAG` | `FF3LANTERN_LOAN_TAG` |
+| `FF3ANALYTICS_PAYMENT_WORKSHEET_*` | `FF3LANTERN_PAYMENT_WORKSHEET_*` |
+
+Default rule group for **new** installs is `FF3 Lantern AI` (was `FF3Analytics AI`). Existing Firefly rule groups are not renamed.
+
+### Docker images
+
+```bash
+export GITHUB_OWNER=your-github-user
+export FF3LANTERN_TAG=2.0.0
+
+docker compose pull
+docker compose up -d
+```
+
+Images are now `ghcr.io/<owner>/ff3-lantern-backend` and `ghcr.io/<owner>/ff3-lantern-frontend`. v1 `ff3analytics-*` images remain on ghcr for rollback.
+
+### Sidecar database
+
+The SQLite file defaults to `ff3lantern.db`. On first startup, if `ff3analytics.db` exists in your data directory and `ff3lantern.db` does not, the backend renames it automatically.
+
+### Firefly account note markers
+
+Loan and payment-worksheet profiles embedded in account notes use `ff3lantern:` markers on write. v2 still reads legacy `ff3analytics:` markers; they are upgraded to the new marker the next time you save a profile.
+
+### GitHub repository
+
+The repo is renamed to [`jwposton/ff3-lantern`](https://github.com/jwposton/ff3-lantern). GitHub redirects old URLs; update your clone remote:
+
+```bash
+git remote set-url origin git@github.com:jwposton/ff3-lantern.git
+```
 
 ## Behind a reverse proxy (nginx, SWAG, Caddy)
 
@@ -172,10 +222,10 @@ In both cases:
 ```bash
 cd backend
 pip install -r requirements.txt -r requirements-dev.txt
-FF3ANALYTICS_DATA_DIR=./data pytest tests/ -q
+FF3LANTERN_DATA_DIR=./data pytest tests/ -q
 ```
 
-Local `uvicorn` (outside Docker) also uses `./data` unless you set `FF3ANALYTICS_DATA_DIR`.
+Local `uvicorn` (outside Docker) also uses `./data` unless you set `FF3LANTERN_DATA_DIR`.
 
 ## Verification
 

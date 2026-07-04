@@ -17,7 +17,7 @@ RUN groupadd --gid ${PGID} app \
 
 USER app
 
-ENV FF3ANALYTICS_DATA_DIR=/data
+ENV FF3LANTERN_DATA_DIR=/data
 
 EXPOSE 8000
 

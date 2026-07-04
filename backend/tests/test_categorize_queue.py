@@ -103,7 +103,7 @@ def test_deposit_excluded_from_categorize_queue():
 
 
 def test_ignore_tag_excluded_from_categorize_queue(monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_CATEGORIZE_IGNORE_TAG", "categorize-ignore")
+    monkeypatch.setenv("FF3LANTERN_CATEGORIZE_IGNORE_TAG", "categorize-ignore")
     assert not _is_categorize_queue_row(
         {
             "type": "withdrawal",

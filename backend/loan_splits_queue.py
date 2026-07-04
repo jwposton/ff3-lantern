@@ -13,7 +13,7 @@ from loan_profiles import parse_loan_profile_from_notes
 
 
 def _forward_only_since() -> str:
-    return os.environ.get("FF3ANALYTICS_LOAN_SPLITS_SINCE", "2026-07-01").strip()
+    return os.environ.get("FF3LANTERN_LOAN_SPLITS_SINCE", "2026-07-01").strip()
 
 
 def _is_liability_row(acct: dict[str, Any]) -> bool:

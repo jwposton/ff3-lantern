@@ -12,12 +12,12 @@ from firefly_client import FireflyClient
 
 
 def _ai_tag_name() -> str:
-    return os.environ.get("FF3ANALYTICS_AI_TAG", "ai-categorized").strip() or "ai-categorized"
+    return os.environ.get("FF3LANTERN_AI_TAG", "ai-categorized").strip() or "ai-categorized"
 
 
 def categorize_ignore_tag() -> str:
     return (
-        os.environ.get("FF3ANALYTICS_CATEGORIZE_IGNORE_TAG", "categorize-ignore").strip()
+        os.environ.get("FF3LANTERN_CATEGORIZE_IGNORE_TAG", "categorize-ignore").strip()
         or "categorize-ignore"
     )
 
@@ -124,7 +124,7 @@ async def apply_category(
     *,
     model: str | None = None,
 ) -> dict[str, Any]:
-    """Write category/budget to one split and tag it with FF3ANALYTICS_AI_TAG."""
+    """Write category/budget to one split and tag it with FF3LANTERN_AI_TAG."""
     mutate = build_apply_mutate_fn(
         transaction_journal_id, category_id, budget_id, description
     )

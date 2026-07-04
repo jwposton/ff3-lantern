@@ -41,20 +41,20 @@ LOAN_PROFILE = {
 
 @pytest.fixture
 def payment_worksheet_env(monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED", "true")
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
     monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
     monkeypatch.setenv("FIREFLY_API_TOKEN", "test-token")
     monkeypatch.delenv(
-        "FF3ANALYTICS_PAYMENT_WORKSHEET_INTEREST_CATEGORIES", raising=False
+        "FF3LANTERN_PAYMENT_WORKSHEET_INTEREST_CATEGORIES", raising=False
     )
     monkeypatch.delenv(
-        "FF3ANALYTICS_PAYMENT_WORKSHEET_FEE_CATEGORIES", raising=False
+        "FF3LANTERN_PAYMENT_WORKSHEET_FEE_CATEGORIES", raising=False
     )
 
 
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     return tmp_path
 
 

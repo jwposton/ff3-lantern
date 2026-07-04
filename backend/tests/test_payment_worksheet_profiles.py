@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from firefly_client import FireflyClient
 from payment_worksheet_profiles import (
+    PAYMENT_WORKSHEET_LEGACY_MARKER,
     PAYMENT_WORKSHEET_MARKER,
     current_month_key,
     merge_payment_worksheet_profile,
@@ -31,7 +32,7 @@ SAMPLE_PROFILE = {
 
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     return tmp_path
 
 
@@ -40,6 +41,15 @@ def client(data_dir):
     from main import app
 
     return TestClient(app)
+
+
+def test_parse_reads_legacy_marker():
+    notes = f"Memo\n{PAYMENT_WORKSHEET_LEGACY_MARKER}\n{json.dumps(SAMPLE_PROFILE)}"
+    parsed = parse_payment_worksheet_from_notes(notes)
+    assert parsed == SAMPLE_PROFILE
+    serialized = serialize_payment_worksheet_to_notes(SAMPLE_PROFILE, "Memo")
+    assert PAYMENT_WORKSHEET_MARKER in serialized
+    assert PAYMENT_WORKSHEET_LEGACY_MARKER not in serialized
 
 
 def test_parse_roundtrip_marker():
@@ -103,7 +113,7 @@ def test_merge_included_false_not_treated_as_clear():
 
 
 def test_put_worksheet_writes_marker_to_firefly(monkeypatch, client, firefly_env):
-    monkeypatch.setenv("FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED", "true")
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
     put_bodies: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:

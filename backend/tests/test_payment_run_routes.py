@@ -15,7 +15,7 @@ from payment_worksheet_profiles import current_month_key
 
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     return tmp_path
 
 
@@ -27,7 +27,7 @@ def client(data_dir):
 
 
 def test_disabled_returns_404(monkeypatch, client):
-    monkeypatch.delenv("FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED", raising=False)
+    monkeypatch.delenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", raising=False)
     response = client.get("/api/payment-run")
     assert response.status_code == 404
     assert response.json()["detail"] == "Payment worksheet is not enabled."
@@ -35,7 +35,7 @@ def test_disabled_returns_404(monkeypatch, client):
 
 @pytest.fixture
 def payment_worksheet_env(monkeypatch):
-    monkeypatch.setenv("FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED", "true")
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
     monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
     monkeypatch.setenv("FIREFLY_API_TOKEN", "test-token")
 
@@ -520,7 +520,7 @@ def test_put_bucket_balance(monkeypatch, client, data_dir, payment_worksheet_env
 
 
 def test_bucket_crud(monkeypatch, client):
-    monkeypatch.setenv("FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED", "true")
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
     monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
     monkeypatch.setenv("FIREFLY_API_TOKEN", "test-token")
 
@@ -774,7 +774,7 @@ def test_register_bill(monkeypatch, client, data_dir, payment_worksheet_env):
         )
     )
     monkeypatch.setenv(
-        "FF3ANALYTICS_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+        "FF3LANTERN_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
     )
 
     try:
@@ -968,7 +968,7 @@ def test_delete_bill_registry(monkeypatch, client, data_dir, payment_worksheet_e
 
 
 def test_bills_disabled(monkeypatch, client):
-    monkeypatch.delenv("FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED", raising=False)
+    monkeypatch.delenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", raising=False)
     list_response = client.get("/api/payment-run/bills")
     assert list_response.status_code == 404
     assert list_response.json()["detail"] == "Payment worksheet is not enabled."

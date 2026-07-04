@@ -22,4 +22,4 @@ This document mirrors `.cursor/rules/release-and-changelog.mdc` for human reader
 
 6. Confirm the **Publish Docker images** workflow (`.github/workflows/publish.yml`) succeeds.
 
-Docker images publish to `ghcr.io/<owner>/ff3analytics-{backend,frontend}:X.Y.Z` on every `v*` tag push.
+Docker images publish to `ghcr.io/<owner>/ff3-lantern-{backend,frontend}:X.Y.Z` on every `v*` tag push.

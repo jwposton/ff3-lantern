@@ -23,13 +23,13 @@ class DuplicateRuleError(Exception):
 
 
 def _ai_tag_name() -> str:
-    return os.environ.get("FF3ANALYTICS_AI_TAG", "ai-categorized").strip() or "ai-categorized"
+    return os.environ.get("FF3LANTERN_AI_TAG", "ai-categorized").strip() or "ai-categorized"
 
 
 def _rule_group_title() -> str:
     return (
-        os.environ.get("FF3ANALYTICS_RULE_GROUP", "FF3Analytics AI").strip()
-        or "FF3Analytics AI"
+        os.environ.get("FF3LANTERN_RULE_GROUP", "FF3 Lantern AI").strip()
+        or "FF3 Lantern AI"
     )
 
 

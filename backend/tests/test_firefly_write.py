@@ -12,6 +12,7 @@ import pytest
 from conftest import load_fixture
 from firefly_client import FireflyClient
 from loan_profiles import (
+    LOAN_PROFILE_LEGACY_MARKER,
     LOAN_PROFILE_MARKER,
     parse_loan_profile_from_notes,
     read_loan_profile,
@@ -32,6 +33,18 @@ SAMPLE_PROFILE = {
         "components": [],
     },
 }
+
+
+def test_parse_loan_profile_reads_legacy_marker():
+    notes = f"Some notes\n{LOAN_PROFILE_LEGACY_MARKER}\n{json.dumps(SAMPLE_PROFILE)}"
+    parsed = parse_loan_profile_from_notes(notes)
+    assert parsed == SAMPLE_PROFILE
+
+
+def test_serialize_loan_profile_writes_new_marker_only():
+    serialized = serialize_loan_profile_to_notes(SAMPLE_PROFILE, "")
+    assert LOAN_PROFILE_MARKER in serialized
+    assert LOAN_PROFILE_LEGACY_MARKER not in serialized
 
 
 def test_parse_loan_profile_from_notes_extracts_json():

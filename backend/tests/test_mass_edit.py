@@ -59,7 +59,7 @@ def test_mass_edit_route_applies(client, firefly_env, monkeypatch, tmp_path):
     import routes.transactions as tx_mod
     from main import app
 
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     get_payload = load_fixture("transactions_put_roundtrip.json")
     put_count = 0
 

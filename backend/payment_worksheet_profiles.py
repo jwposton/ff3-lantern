@@ -9,7 +9,9 @@ from typing import Any
 import sidecar_db
 from firefly_client import FireflyClient, _normalize_account_role, _normalize_account_type
 
-PAYMENT_WORKSHEET_MARKER = "<!-- ff3analytics:payment_worksheet.v1 -->"
+PAYMENT_WORKSHEET_MARKER = "<!-- ff3lantern:payment_worksheet.v1 -->"
+PAYMENT_WORKSHEET_LEGACY_MARKER = "<!-- ff3analytics:payment_worksheet.v1 -->"
+_PAYMENT_WORKSHEET_MARKERS = (PAYMENT_WORKSHEET_MARKER, PAYMENT_WORKSHEET_LEGACY_MARKER)
 
 DEFAULT_PROFILE: dict[str, Any] = {
     "included": True,
@@ -46,11 +48,21 @@ def _due_day_from_monthly_payment_date(raw: Any) -> str | None:
     return None
 
 
+def _find_marker(notes: str) -> tuple[str, int] | None:
+    found: tuple[str, int] | None = None
+    for marker in _PAYMENT_WORKSHEET_MARKERS:
+        idx = notes.find(marker)
+        if idx != -1 and (found is None or idx < found[1]):
+            found = (marker, idx)
+    return found
+
+
 def _extract_json_after_marker(notes: str) -> str | None:
-    idx = notes.find(PAYMENT_WORKSHEET_MARKER)
-    if idx == -1:
+    found = _find_marker(notes)
+    if found is None:
         return None
-    rest = notes[idx + len(PAYMENT_WORKSHEET_MARKER) :].lstrip()
+    marker, idx = found
+    rest = notes[idx + len(marker) :].lstrip()
     if not rest.startswith("{"):
         return None
     depth = 0
@@ -64,8 +76,8 @@ def _extract_json_after_marker(notes: str) -> str | None:
     return None
 
 
-def _strip_profile_block(notes: str) -> str:
-    idx = notes.find(PAYMENT_WORKSHEET_MARKER)
+def _strip_marker_block(notes: str, marker: str) -> str:
+    idx = notes.find(marker)
     if idx == -1:
         return notes
     before = notes[:idx].rstrip()
@@ -73,11 +85,18 @@ def _strip_profile_block(notes: str) -> str:
     raw_json = _extract_json_after_marker(suffix)
     if raw_json is None:
         return before
-    after_marker = suffix[len(PAYMENT_WORKSHEET_MARKER) :].lstrip()
+    after_marker = suffix[len(marker) :].lstrip()
     json_pos = after_marker.find(raw_json)
     after_json = after_marker[json_pos + len(raw_json) :].strip()
     parts = [p for p in (before, after_json) if p]
     return "\n\n".join(parts)
+
+
+def _strip_profile_block(notes: str) -> str:
+    result = notes
+    for marker in _PAYMENT_WORKSHEET_MARKERS:
+        result = _strip_marker_block(result, marker)
+    return result
 
 
 def parse_payment_worksheet_from_notes(notes: str) -> dict | None:

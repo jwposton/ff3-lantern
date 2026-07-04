@@ -43,7 +43,7 @@ async def complete_json_schema(
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://ffanalytics.harvestwind.org",
-        "X-Title": "FF3Analytics",
+        "X-Title": "FF3 Lantern",
     }
     body = {
         "model": model,

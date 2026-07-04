@@ -13,10 +13,12 @@ import {
 import { useMemo } from "react"
 import { NavLink, useLocation, useMatch } from "react-router-dom"
 
+import { AppLogo } from "@/components/AppLogo"
 import { AppVersionBadge } from "@/components/AppVersionBadge"
 import { ReferenceCacheMenuItem } from "@/components/ReferenceCacheButton"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
 import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
+import { PRODUCT_NAME } from "@/lib/product"
 import { useHealth } from "@/hooks/useHealth"
 import { useManageQueueCounts } from "@/hooks/useManageQueueCounts"
 import {
@@ -38,6 +40,7 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 
@@ -219,11 +222,19 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex h-12 items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center">
-          <SidebarTrigger aria-label="Toggle sidebar" />
+      <SidebarRail />
+      <SidebarHeader className="border-b border-sidebar-border group-data-[collapsible=icon]:px-0">
+        <div className="flex h-12 w-full items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0">
+          <SidebarTrigger
+            aria-label="Toggle sidebar"
+            className="group-data-[collapsible=icon]:hidden"
+          />
+          <AppLogo
+            size={20}
+            className="group-data-[collapsible=icon]:size-6"
+          />
           <span className="truncate font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            FF3Analytics
+            {PRODUCT_NAME}
           </span>
         </div>
       </SidebarHeader>

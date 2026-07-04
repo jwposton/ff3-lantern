@@ -1,6 +1,6 @@
-# FF3Analytics frontend
+# FF3 Lantern frontend
 
-Vite + React smoke UI for Phase 1 foundation. See the [repo README](../README.md) for Docker Compose and verification.
+Vite + React UI for FF3 Lantern. See the [repo README](../README.md) for Docker Compose and verification.
 
 ```bash
 npm install

@@ -5,10 +5,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { AppLogo } from "@/components/AppLogo"
 import { AppVersionBadge } from "@/components/AppVersionBadge"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
 import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
 import { formatAppVersion } from "@/lib/appVersion"
+import {
+  CHANGELOG_URL,
+  PRODUCT_NAME,
+  PRODUCT_TAGLINE,
+} from "@/lib/product"
 
 const NOUN_PROJECT_ATTRIBUTIONS = [
   {
@@ -33,18 +39,19 @@ export function AboutPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-8">
       <div className="space-y-2">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">About</h1>
-          <AppVersionBadge className="text-sm" />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <AppLogo size={32} />
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">About</h1>
+            <AppVersionBadge className="text-sm" />
+          </div>
         </div>
-        <p className="text-muted-foreground">
-          FF3Analytics is a self-hosted analytics UI for a personal Firefly III
-          instance.
-        </p>
+        <p className="text-lg font-medium tracking-tight">{PRODUCT_NAME}</p>
+        <p className="text-muted-foreground">{PRODUCT_TAGLINE}</p>
         <p className="text-sm text-muted-foreground">
           Release notes:{" "}
           <a
-            href="https://github.com/jwposton/FF3Analytics/blob/main/CHANGELOG.md"
+            href={CHANGELOG_URL}
             className="text-primary underline-offset-4 hover:underline"
             target="_blank"
             rel="noopener noreferrer"
@@ -76,7 +83,7 @@ export function AboutPage() {
             >
               Lucide
             </a>
-            .
+            . The app mark is an original flame design.
           </CardDescription>
         </CardHeader>
         <CardContent>

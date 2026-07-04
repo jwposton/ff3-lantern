@@ -2,8 +2,8 @@
 
 **Status:** Phase A (MVP) shipped on `gsd/v1.2-payment-worksheet` — 2026-07-03  
 **Captured:** 2026-07-03  
-**App:** FF3Analytics (`selfhosted/FF3Analytics`)  
-**Epic:** [GitHub #17](https://github.com/jwposton/FF3Analytics/issues/17)
+**App:** FF3 Lantern (`selfhosted/ff3-lantern`)  
+**Epic:** [GitHub #17](https://github.com/jwposton/ff3-lantern/issues/17)
 
 ## Problem
 
@@ -11,7 +11,7 @@ A personal Google Sheet ("New Balance History") drives monthly bill payment toda
 
 ## Goal
 
-FF3Analytics adds an optional **Manage** feature (`/manage/payment-run`) that replicates the spreadsheet workflow:
+FF3 Lantern adds an optional **Manage** feature (`/manage/payment-run`) that replicates the spreadsheet workflow:
 
 - Read Firefly balances and month-to-date activity on demand (**refresh**)
 - Plan payments and mark items paid for the **current calendar month**
@@ -19,7 +19,7 @@ FF3Analytics adds an optional **Manage** feature (`/manage/payment-run`) that re
 - Register recurring bills in Firefly (bill + matching rule) via setup wizard
 - Never create fake transactions — optional user-approved metadata writes only (bills, rules, account notes, link withdrawal to bill)
 
-Firefly remains **system of record** for transactions, balances, bills, and rules. FF3Analytics owns worksheet layout, ephemeral month state, and the planning UX.
+Firefly remains **system of record** for transactions, balances, bills, and rules. FF3 Lantern owns worksheet layout, ephemeral month state, and the planning UX.
 
 ## Non-goals (initial version)
 
@@ -117,7 +117,7 @@ User pays externally; imports land in Firefly
 | Concern | Owner |
 |---------|--------|
 | Transactions, balances, bills, rules | Firefly III |
-| Funding bucket definitions (Checking, Savings, …) | FF3Analytics SQLite sidecar |
+| Funding bucket definitions (Checking, Savings, …) | FF3 Lantern SQLite sidecar |
 | Bill worksheet opt-in + bucket link | Sidecar `worksheet_registry` |
 | Account worksheet opt-in + bucket + section | Firefly account `notes` (`payment_worksheet.v1`) |
 | Loan split / amortization config | Existing `loan_profile.v1` in liability notes |
@@ -153,7 +153,7 @@ New Firefly accounts/bills do **not** appear until registered.
 
 ### `payment_worksheet.v1` notes block
 
-Marker: `<!-- ff3analytics:payment_worksheet.v1 -->` — same append/strip pattern as `loan_profiles.py`.
+Marker: `<!-- ff3lantern:payment_worksheet.v1 -->` (v2 writes; parsers also read legacy `ff3analytics:payment_worksheet.v1`) — same append/strip pattern as `loan_profiles.py`.
 
 ```json
 {
@@ -339,7 +339,7 @@ Mirrors categorize rule graduation:
 2. `POST /api/v1/bills` in Firefly
 3. Create matching rule (`link_to_bill` action; optional `amount_more`/`amount_less` for ranges)
 4. Insert `worksheet_registry` row
-5. Optional rule tag: `FF3ANALYTICS_PAYMENT_WORKSHEET_TAG`
+5. Optional rule tag: `FF3LANTERN_PAYMENT_WORKSHEET_TAG`
 
 ## Due dates vs rules
 
@@ -393,10 +393,10 @@ Helper: `backend/payment_worksheet_profiles.py` (parse/write notes, mirror `loan
 
 | Variable | Purpose |
 |----------|---------|
-| `FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED` | Feature gate |
-| `FF3ANALYTICS_PAYMENT_WORKSHEET_RULE_GROUP` | Firefly rule group for bill rules |
-| `FF3ANALYTICS_PAYMENT_WORKSHEET_BILL_GROUP` | Firefly object group for wizard-created subscriptions (defaults to rule group title) |
-| `FF3ANALYTICS_PAYMENT_WORKSHEET_TAG` | Optional tag on rule-matched txns |
+| `FF3LANTERN_PAYMENT_WORKSHEET_ENABLED` | Feature gate |
+| `FF3LANTERN_PAYMENT_WORKSHEET_RULE_GROUP` | Firefly rule group for bill rules |
+| `FF3LANTERN_PAYMENT_WORKSHEET_BILL_GROUP` | Firefly object group for wizard-created subscriptions (defaults to rule group title) |
+| `FF3LANTERN_PAYMENT_WORKSHEET_TAG` | Optional tag on rule-matched txns |
 
 ## UI
 
@@ -484,7 +484,7 @@ Subtotals and grand total are planning totals (what you intend to pay this run),
 
 ### Paid vs unpaid — visual treatment
 
-Mirrors the spreadsheet habit of **bolding a row when paid**, using FF3Analytics table patterns (`TableRow`, `Badge`, checkbox). Mark-paid is cosmetic only — amounts still count in outflow tallies.
+Mirrors the spreadsheet habit of **bolding a row when paid**, using FF3 Lantern table patterns (`TableRow`, `Badge`, checkbox). Mark-paid is cosmetic only — amounts still count in outflow tallies.
 
 **Control (last column):** checkbox labeled **Paid** — click row checkbox or toggle to flip `paid_at` in sidecar. Keyboard-accessible (`role="checkbox"`).
 
@@ -550,7 +550,7 @@ Map to GitHub issues for commit tracking — see **GitHub issues** below.
 
 ## GitHub issues
 
-Track implementation with [epic #17](https://github.com/jwposton/FF3Analytics/issues/17). **GSD commits must reference the issue** for the work being done:
+Track implementation with [epic #17](https://github.com/jwposton/ff3-lantern/issues/17). **GSD commits must reference the issue** for the work being done:
 
 ```
 feat(payment-run): sticky bucket bar with user balance override (#20)
@@ -560,13 +560,13 @@ Use `Refs #NN` in intermediate commits; `Closes #NN` in the final commit or PR f
 
 | Issue | GSD phase | Design phase | Scope |
 |-------|-----------|--------------|--------|
-| [#17](https://github.com/jwposton/FF3Analytics/issues/17) | — | — | Epic / parent tracker |
-| [#18](https://github.com/jwposton/FF3Analytics/issues/18) | 14 | A (1/3) | Sidecar tables, funding buckets API, feature flag |
-| [#19](https://github.com/jwposton/FF3Analytics/issues/19) | 14 | A (2/3) | `payment_worksheet.v1`, refresh, New/interest/fees, row state |
-| [#20](https://github.com/jwposton/FF3Analytics/issues/20) | 14 | A (3/3) | MVP UI — sticky buckets, CC section, mark paid, SHORTFALL |
-| [#21](https://github.com/jwposton/FF3Analytics/issues/21) | 15 | B (1/2) | Bills + liabilities sections, registry, payment rail |
-| [#22](https://github.com/jwposton/FF3Analytics/issues/22) | 15 | B (2/2) | Bill registration wizard + setup page |
-| [#23](https://github.com/jwposton/FF3Analytics/issues/23) | 16 | C | Reconciliation — CC match, bill link |
+| [#17](https://github.com/jwposton/ff3-lantern/issues/17) | — | — | Epic / parent tracker |
+| [#18](https://github.com/jwposton/ff3-lantern/issues/18) | 14 | A (1/3) | Sidecar tables, funding buckets API, feature flag |
+| [#19](https://github.com/jwposton/ff3-lantern/issues/19) | 14 | A (2/3) | `payment_worksheet.v1`, refresh, New/interest/fees, row state |
+| [#20](https://github.com/jwposton/ff3-lantern/issues/20) | 14 | A (3/3) | MVP UI — sticky buckets, CC section, mark paid, SHORTFALL |
+| [#21](https://github.com/jwposton/ff3-lantern/issues/21) | 15 | B (1/2) | Bills + liabilities sections, registry, payment rail |
+| [#22](https://github.com/jwposton/ff3-lantern/issues/22) | 15 | B (2/2) | Bill registration wizard + setup page |
+| [#23](https://github.com/jwposton/ff3-lantern/issues/23) | 16 | C | Reconciliation — CC match, bill link |
 
 When running `/gsd-new-milestone` or `/gsd-plan-phase`, paste issue URLs into phase CONTEXT.md and PLAN.md frontmatter (`github_issues: [18, 19, 20]`). Each plan task should name the target issue in its commit instruction.
 

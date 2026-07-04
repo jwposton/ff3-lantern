@@ -204,7 +204,7 @@ async def test_suggest_batch_uses_cache(monkeypatch, tmp_path):
     import categorization_suggest as suggest_mod
     import sidecar_db
 
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
     await sidecar_db.init_db()
 
@@ -269,7 +269,7 @@ async def test_allowlist_failure_not_cached(monkeypatch, tmp_path):
     import categorization_suggest as suggest_mod
     import sidecar_db
 
-    monkeypatch.setenv("FF3ANALYTICS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
     await sidecar_db.init_db()
 

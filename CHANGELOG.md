@@ -1,11 +1,30 @@
 # Changelog
 
-All notable changes to FF3Analytics are documented here.
+All notable changes to FF3 Lantern are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.0.0] - 2026-07-03
+
+### Changed
+
+- **Product rename** — FF3Analytics is now **FF3 Lantern** with tagline *Self-hosted companion for Firefly III — reports, categorization, and bill planning*; new flame favicon and sidebar mark
+- **Environment variables** — all `FF3ANALYTICS_*` renamed to `FF3LANTERN_*` (hard cutover; no aliases)
+- **Docker images** — publish as `ghcr.io/<owner>/ff3-lantern-{backend,frontend}`; compose service/container names updated
+- **Sidecar database** — default filename `ff3lantern.db`; auto-renames legacy `ff3analytics.db` on startup when the new file is absent
+- **Firefly note markers** — writers emit `ff3lantern:` markers; parsers still read legacy `ff3analytics:` markers
+- **GitHub repository** — `jwposton/ff3-lantern` (see README upgrade guide for remote URL)
+
+### Fixed
+
+- **Collapsed sidebar mark** — flame icon centers in the icon-only rail; expand via the sidebar edge rail or open-state toggle
+
+### Removed
+
+- **`FF3ANALYTICS_*` configuration** — deployers must migrate `.env` to `FF3LANTERN_*` (see README **Upgrading from v1.x**)
 
 ## [1.2.0] - 2026-07-03
 
@@ -261,7 +280,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/FF3Analytics/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/jwposton/ff3-lantern/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/jwposton/FF3Analytics/compare/v1.1.12...v1.2.0
 [1.1.12]: https://github.com/jwposton/FF3Analytics/compare/v1.1.11...v1.1.12
 [1.1.11]: https://github.com/jwposton/FF3Analytics/compare/v1.1.10...v1.1.11

@@ -52,12 +52,12 @@ class RegisterBillBody(BaseModel):
 
 
 def _rule_group_title() -> str:
-    raw = os.environ.get("FF3ANALYTICS_PAYMENT_WORKSHEET_RULE_GROUP", "").strip()
+    raw = os.environ.get("FF3LANTERN_PAYMENT_WORKSHEET_RULE_GROUP", "").strip()
     return raw or "Payment worksheet"
 
 
 def _bill_object_group_title() -> str:
-    raw = os.environ.get("FF3ANALYTICS_PAYMENT_WORKSHEET_BILL_GROUP", "").strip()
+    raw = os.environ.get("FF3LANTERN_PAYMENT_WORKSHEET_BILL_GROUP", "").strip()
     return raw or _rule_group_title()
 
 

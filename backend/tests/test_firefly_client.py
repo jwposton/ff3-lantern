@@ -394,7 +394,7 @@ def test_create_rule_posts_active_body():
         api_token="tok",
     )
     body = {
-        "rule_group_title": "FF3Analytics AI",
+        "rule_group_title": "FF3 Lantern AI",
         "title": "Amazon",
         "trigger": "store-journal",
         "active": True,
@@ -434,7 +434,7 @@ def test_trigger_rule_posts_date_range():
 def test_fetch_rule_groups_returns_id_and_title():
     payload = {
         "data": [
-            {"type": "rule_groups", "id": "3", "attributes": {"title": "FF3Analytics AI"}},
+            {"type": "rule_groups", "id": "3", "attributes": {"title": "FF3 Lantern AI"}},
         ],
         "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
     }
@@ -450,7 +450,7 @@ def test_fetch_rule_groups_returns_id_and_title():
         api_token="tok",
     )
     groups = asyncio.run(client.fetch_rule_groups())
-    assert groups == [{"id": "3", "title": "FF3Analytics AI"}]
+    assert groups == [{"id": "3", "title": "FF3 Lantern AI"}]
 
 
 def test_create_rule_group_posts_title():
@@ -476,9 +476,9 @@ def test_create_rule_group_posts_title():
         base_url="https://firefly.example",
         api_token="tok",
     )
-    result = asyncio.run(client.create_rule_group("FF3Analytics AI"))
-    assert result == {"id": "9", "title": "FF3Analytics AI"}
-    assert seen[0] == {"title": "FF3Analytics AI", "active": True}
+    result = asyncio.run(client.create_rule_group("FF3 Lantern AI"))
+    assert result == {"id": "9", "title": "FF3 Lantern AI"}
+    assert seen[0] == {"title": "FF3 Lantern AI", "active": True}
 
 
 def test_ensure_rule_group_returns_existing():
@@ -491,7 +491,7 @@ def test_ensure_rule_group_returns_existing():
                         {
                             "type": "rule_groups",
                             "id": "3",
-                            "attributes": {"title": "FF3Analytics AI"},
+                            "attributes": {"title": "FF3 Lantern AI"},
                         }
                     ],
                     "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
@@ -504,7 +504,7 @@ def test_ensure_rule_group_returns_existing():
         base_url="https://firefly.example",
         api_token="tok",
     )
-    group_id = asyncio.run(client.ensure_rule_group("FF3Analytics AI"))
+    group_id = asyncio.run(client.ensure_rule_group("FF3 Lantern AI"))
     assert group_id == "3"
 
 
@@ -539,9 +539,9 @@ def test_ensure_rule_group_creates_when_missing():
         base_url="https://firefly.example",
         api_token="tok",
     )
-    group_id = asyncio.run(client.ensure_rule_group("FF3Analytics AI"))
+    group_id = asyncio.run(client.ensure_rule_group("FF3 Lantern AI"))
     assert group_id == "11"
-    assert created == [{"title": "FF3Analytics AI", "active": True}]
+    assert created == [{"title": "FF3 Lantern AI", "active": True}]
 
 
 def test_fetch_account_returns_notes():

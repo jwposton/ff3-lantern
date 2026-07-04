@@ -135,7 +135,7 @@ export function LoanSplitsQueuePage() {
                 Widen the global date range to include the payment date
               </li>
               <li>
-                Confirm <code className="text-xs">FF3ANALYTICS_LOAN_SPLITS_SINCE</code>{" "}
+                Confirm <code className="text-xs">FF3LANTERN_LOAN_SPLITS_SINCE</code>{" "}
                 in <code className="text-xs">.env</code> is on or before the payment
               </li>
               <li>

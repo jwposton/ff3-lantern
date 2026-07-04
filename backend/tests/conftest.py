@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for FF3Analytics backend."""
+"""Shared pytest fixtures for FF3 Lantern backend."""
 
 from __future__ import annotations
 
