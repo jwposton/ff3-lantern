@@ -379,6 +379,7 @@ Route module: `backend/routes/payment_run.py`
 | `GET /payment-run/available` | Unregistered FF accounts/bills |
 | `GET /payment-run/bill-suggestions` | Analyze withdrawal history; ranked bill candidates with register wizard prefill |
 | `GET /payment-run/bill-suggestions/{suggestion_id}/transactions` | Drill-down: contributing withdrawal transactions for one suggestion row |
+| `POST /payment-run/bill-suggestions/{suggestion_id}/explain` | Optional AI rationale for one review-row suggestion (display-only; requires OpenRouter) |
 | `GET /payment-run/discover-settings` | Ignored categories + available Firefly categories for discover UI |
 | `PUT /payment-run/discover-settings` | Replace ignored categories (`{ "ignored_categories": ["Gas", …] }`) |
 | `POST /payment-run/link-transaction` | Phase 3: attach bill to withdrawal |
@@ -430,6 +431,35 @@ Each item in `data` includes:
 | `budget` | Firefly budget name, or `null` |
 
 `data` is sorted **date descending** (newest first). Results are **compute-on-demand** — the engine re-runs the same grouping pipeline as the list route and returns only the matching group's withdrawals; nothing is persisted to the sidecar. **Opaque sub-groups** return only their fingerprint's transactions (not sibling sub-groups under the same payee). Implementation: `fetch_bill_suggestion_transactions` → `find_suggestion_transactions` in `backend/payment_worksheet_bill_suggestions.py`.
+
+### Bill suggestion explain (`POST /payment-run/bill-suggestions/{suggestion_id}/explain`)
+
+Optional OpenRouter enrichment for one suggestion row on the Bill discover page. Returns structured AI rationale for operator review — **display-only**; does not mutate the suggestion list, change `register_prefill`, or auto-register bills. Requires `FF3LANTERN_PAYMENT_WORKSHEET_ENABLED` (same gate as other payment-run routes — returns **404** when disabled).
+
+| Param | Location | Values | Default |
+|-------|----------|--------|---------|
+| `suggestion_id` | path | Stable `sug-{hash}` from the list response `id` field | — |
+| `lookback_months` | JSON body | `6`, `12`, or `24` only | `12` |
+
+**Request body:** `{ "lookback_months": 12 }` (optional; defaults to `12` when omitted).
+
+Invalid lookback values return **422** with `lookback_months must be 6, 12, or 24.` Returns **404** with `Suggestion not found.` when `suggestion_id` is absent from the recomputed suggestion set. Returns **503** with a clear message when `OPENROUTER_API_KEY` is unset (frontend hides the Explain button when `health.openrouter_configured` is false). Firefly or OpenRouter failures return **502** with a short error message (no token leakage).
+
+**Response fields:**
+
+| Field | Description |
+|-------|-------------|
+| `suggestion_id` | Echo of the requested suggestion id |
+| `display_name` | AI guess for bill display name |
+| `service_guess` | Likely service or vendor description |
+| `amount_mode_rationale` | Why the amount pattern looks recurring vs intermittent |
+| `rule_hints` | Suggested rule triggers: `destination_account`, `category_name`, `amount_exactly` |
+| `rationale` | Multi-sentence prose grounded on metrics and samples |
+| `confidence_note` | Caveats (e.g. stale/cancelled service warnings) |
+
+OpenRouter configuration uses the same server-side env vars as AI categorization — see `docs/features/ai-categorization.md` (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, optional `OPENROUTER_BASE_URL`). The API key is never exposed to the frontend.
+
+Implementation: `fetch_bill_suggestion_explain` → `explain_suggestion` in `backend/payment_worksheet_bill_suggestions.py`.
 
 ### Sidecar tables
 

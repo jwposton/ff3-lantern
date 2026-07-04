@@ -1466,7 +1466,7 @@ describe("BillDiscoverPage", () => {
     })
 
     it("adopt uses deterministic register_prefill not explain response", async () => {
-      mockDiscoverFetch({
+      const { getExplainCalls } = mockDiscoverFetch({
         suggestions: MULTI_PAYEE_SUGGESTIONS,
         openrouterConfigured: true,
       })
@@ -1480,21 +1480,10 @@ describe("BillDiscoverPage", () => {
       await waitFor(() => {
         expect(
           screen.getAllByRole("button", {
-            name: "Explain Mystery Charge suggestion",
+            name: "Adopt Mystery Charge as bill",
           }).length,
         ).toBeGreaterThan(0)
       })
-
-      fireEvent.click(
-        screen.getAllByRole("button", {
-          name: "Explain Mystery Charge suggestion",
-        })[0],
-      )
-
-      await waitFor(() => {
-        expect(screen.getByRole("heading", { name: "AI explanation" })).toBeTruthy()
-      })
-      expect(screen.getByText("AI Mystery Bill")).toBeTruthy()
 
       fireEvent.click(
         screen.getAllByRole("button", {
@@ -1508,7 +1497,8 @@ describe("BillDiscoverPage", () => {
 
       const nameInput = screen.getByLabelText("Bill name") as HTMLInputElement
       expect(nameInput.value).toBe("Mystery Charge")
-      expect(screen.queryByText("AI Mystery Bill")).toBeNull()
+      expect(nameInput.value).not.toBe("AI Mystery Bill")
+      expect(getExplainCalls()).toBe(0)
     })
   })
 })
