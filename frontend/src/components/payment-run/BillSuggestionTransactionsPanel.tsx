@@ -8,7 +8,6 @@ type BillSuggestionTransactionsPanelProps = {
   merchant: string
   lookbackMonths: number
   isExpanded: boolean
-  occurrences: number
 }
 
 function displayOrDash(value: string | null | undefined): string {
@@ -21,7 +20,6 @@ export function BillSuggestionTransactionsPanel({
   merchant,
   lookbackMonths,
   isExpanded,
-  occurrences,
 }: BillSuggestionTransactionsPanelProps) {
   const panelId = `discover-txn-panel-${suggestionId}`
   const { data, isPending, isFetching, isError, refetch } =
@@ -76,7 +74,7 @@ export function BillSuggestionTransactionsPanel({
       {!loading && !isError && transactions.length > 0 ? (
         <>
           <p className="text-muted-foreground mb-2 text-xs tabular-nums">
-            {occurrences} withdrawals in lookback
+            {transactions.length} withdrawals in lookback
           </p>
           <div className="max-w-full overflow-x-auto">
             <table className="w-max max-w-full table-fixed text-xs [&_td]:py-1 [&_th]:py-1 [&_th]:font-medium [&_th]:text-muted-foreground">
@@ -100,7 +98,10 @@ export function BillSuggestionTransactionsPanel({
               </thead>
               <tbody>
                 {transactions.map((txn, index) => (
-                  <tr key={`${txn.date}-${txn.amount}-${index}`}>
+                  <tr
+                    key={`${txn.date}-${txn.amount}-${index}`}
+                    className="border-t border-border/40"
+                  >
                     <td className="whitespace-nowrap tabular-nums">
                       {formatDisplayDate(txn.date)}
                     </td>
@@ -137,12 +138,4 @@ export function BillSuggestionTransactionsPanel({
       ) : null}
     </div>
   )
-}
-
-export function useBillSuggestionRowDrilldown(
-  suggestionId: string,
-  lookbackMonths: number,
-  isExpanded: boolean,
-) {
-  return useBillSuggestionTransactions(suggestionId, lookbackMonths, isExpanded)
 }

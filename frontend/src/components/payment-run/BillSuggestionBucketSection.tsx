@@ -267,7 +267,6 @@ export function BillSuggestionBucketSection({
                             merchant={row.merchant}
                             lookbackMonths={lookbackMonths}
                             isExpanded={isExpanded}
-                            occurrences={row.occurrences}
                           />
                         </TableCell>
                       </TableRow>
@@ -333,7 +332,6 @@ export function BillSuggestionBucketSection({
                     merchant={row.merchant}
                     lookbackMonths={lookbackMonths}
                     isExpanded={isExpanded}
-                    occurrences={row.occurrences}
                   />
                 ) : null}
                 <Button

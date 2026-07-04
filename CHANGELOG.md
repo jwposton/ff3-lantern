@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Bill discover drill-down polish** — withdrawal count subtitle matches loaded table rows (not unique charge dates); mini-table rows use separators for easier scanning
 - **Bill discover drill-down cache** — changing ignored categories now collapses expanded rows and clears cached withdrawal lists so drill-down matches the refreshed suggestion set
 - **Bill discover expand chevron** — rows can be collapsed while withdrawal transactions are still loading — semi-monthly billing on stable calendar anchor days (e.g. Backblaze on ~12 and ~19) is recognized as cyclical, not restaurant-style visits; no longer bypassed by category name guesses
 - **Bill discover SaaS and hosting gaps** — usage-metered charges with a few line items per month (Cursor) and annual hosting with two renewals in lookback (Ionos) use timing stats, not extra category markers
