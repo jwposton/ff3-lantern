@@ -53,9 +53,14 @@ function MetricBlock({
   )
 }
 
+function parseLocalDate(isoDateOnly: string): Date {
+  const [year, month, day] = isoDateOnly.split("-").map(Number)
+  return new Date(year, month - 1, day)
+}
+
 function formatWindowCaption(start: string, end: string): string {
-  const startDate = new Date(start)
-  const endDate = new Date(end)
+  const startDate = parseLocalDate(start)
+  const endDate = parseLocalDate(end)
   const startPart = startDate.toLocaleDateString("en-US", {
     month: "short",
     year: "numeric",
@@ -94,6 +99,10 @@ export function BillDiscoverPage() {
 
   const grouped =
     data && !isError ? groupByBucket(data.data, hideReview) : new Map()
+  const visibleSuggestionCount =
+    data && !isError
+      ? data.data.filter((s) => !hideReview || s.status !== "review").length
+      : 0
 
   async function handleAdoptSubmit(payload: RegisterBillPayload) {
     if (!selectedSuggestion) return
@@ -176,7 +185,7 @@ export function BillDiscoverPage() {
               />
               <MetricBlock
                 label="Suggestions"
-                value={`${data.meta.suggestions_count} suggestions`}
+                value={`${visibleSuggestionCount} suggestions`}
               />
             </div>
           ) : null}
