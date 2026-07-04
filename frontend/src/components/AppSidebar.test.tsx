@@ -238,6 +238,35 @@ describe("AppSidebar Manage section", () => {
     })
   })
 
+  it("hides Bills nav when payment_worksheet_enabled is false", async () => {
+    mockPendingFetch(0, 0, false)
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Manage")).toBeTruthy()
+    })
+    expect(document.querySelector('a[href="/manage/bills"]')).toBeNull()
+  })
+
+  it("shows Bills nav when payment_worksheet_enabled is true", async () => {
+    mockPendingFetch(0, 0, true)
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(document.querySelector('a[href="/manage/bills"]')).toBeTruthy()
+    })
+  })
+
   it("renders Clear cache control in the footer", async () => {
     render(
       <TestProviders>
