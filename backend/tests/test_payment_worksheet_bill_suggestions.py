@@ -12,6 +12,7 @@ from payment_worksheet_bill_suggestions import (
     OPAQUE_NOTES,
     _pad_amounts,
     build_bill_suggestions,
+    fetch_bill_suggestions,
 )
 
 
@@ -529,3 +530,19 @@ def test_named_bucket_assertions():
     buckets = {row["merchant"]: row["bucket"] for row in result["data"]}
     assert buckets["Spotify"] == "Streaming & Media"
     assert buckets["All American Waste"] == "Utilities — Trash"
+
+
+@pytest.mark.asyncio
+async def test_fetch_bill_suggestions_rejects_invalid_lookback():
+    class StubClient:
+        async def fetch_splits(self, *_args, **_kwargs):
+            return []
+
+        async def fetch_accounts(self):
+            return {}
+
+        async def fetch_bills(self):
+            return []
+
+    with pytest.raises(ValueError, match="lookback_months must be 6, 12, or 24"):
+        await fetch_bill_suggestions(StubClient(), lookback_months=18)

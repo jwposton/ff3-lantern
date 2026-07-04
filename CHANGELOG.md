@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bill suggestions opaque payee detection** — subscriptions with varying amounts (e.g. Spotify price changes) are no longer misclassified as combined Apple Services rows
 - **Bill suggestions irregular cadence prefill** — irregular-frequency candidates use intermittent amount mode without a misleading monthly repeat frequency
 - **Bill suggestions category noise filter** — blocklist matching now catches common category variants (e.g. Restaurant, Gasoline) not just exact Firefly names
+- **Bill suggestions lookback validation** — direct callers of the suggestion engine reject lookback values other than 6, 12, or 24 months
 
 ## [2.0.0] - 2026-07-03
 

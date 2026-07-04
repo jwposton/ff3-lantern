@@ -658,6 +658,8 @@ async def fetch_bill_suggestions(
     lookback_months: int = 12,
 ) -> dict[str, Any]:
     """Fetch Firefly data and build bill suggestions (compute-on-demand, read-only sidecar)."""
+    if lookback_months not in LOOKBACK_CHOICES:
+        raise ValueError("lookback_months must be 6, 12, or 24.")
     period_end = date.today()
     period_start = _subtract_months(period_end, lookback_months)
     start_iso = period_start.isoformat()
