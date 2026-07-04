@@ -10,7 +10,11 @@ import pytest
 from payment_worksheet_bills import RegisterBillBody
 from payment_worksheet_bill_suggestions import (
     OPAQUE_NOTES,
+    _merchant_from_category,
     _pad_amounts,
+    _should_subsplit_opaque_payee,
+    _slugify_cluster,
+    _subgroups_for_opaque_payee,
     build_bill_suggestions,
     fetch_bill_suggestions,
 )
@@ -472,6 +476,85 @@ def test_spotify_prefill_rail_and_amount_mode():
 def test_spotify_category_field():
     result = build_bill_suggestions(spotify_monthly_withdrawals(12), **_engine_kwargs())
     assert result["data"][0]["category"] == "Music Streaming"
+
+
+def _opaque_txn(
+    *,
+    category: str,
+    amount: str,
+    date: str,
+    destination: str = "APPLE.COM/BILL",
+) -> dict[str, Any]:
+    return {
+        "type": "withdrawal",
+        "amount": Decimal(amount),
+        "date": date,
+        "destination_name": destination,
+        "description": "PreApproved Payment Bill User Payment",
+        "category_name": category,
+        "source_name": "PayPal Credit",
+        "source_id": "cc-paypal",
+        "source_type": "Asset account",
+        "source_role": "Credit card",
+    }
+
+
+def test_subsplit_trigger_false_for_single_fingerprint():
+    txns = [
+        _opaque_txn(category="Music Streaming", amount="22.15", date=f"2025-0{m}-15")
+        for m in (7, 8)
+    ]
+    assert _should_subsplit_opaque_payee(txns) is False
+
+
+def test_subsplit_trigger_true_for_two_fingerprints_with_two_dates_each():
+    txns = [
+        _opaque_txn(category="Cloud Storage", amount="10.09", date="2025-07-10"),
+        _opaque_txn(category="Cloud Storage", amount="10.09", date="2025-08-10"),
+        _opaque_txn(category="Ulysses App", amount="6.37", date="2025-07-15"),
+        _opaque_txn(category="Ulysses App", amount="6.37", date="2025-08-15"),
+    ]
+    assert _should_subsplit_opaque_payee(txns) is True
+
+
+def test_subsplit_trigger_true_for_one_fingerprint_with_three_dates():
+    txns = [
+        _opaque_txn(category="App Subscriptions", amount="7.43", date="2025-09-10"),
+        _opaque_txn(category="App Subscriptions", amount="7.43", date="2025-10-10"),
+        _opaque_txn(category="App Subscriptions", amount="7.43", date="2025-11-10"),
+        _opaque_txn(category="Cloud Storage", amount="10.09", date="2025-07-10"),
+    ]
+    assert _should_subsplit_opaque_payee(txns) is True
+
+
+def test_slugify_cluster_apple_com_bill():
+    assert _slugify_cluster("APPLE.COM/BILL") == "apple-com-bill"
+
+
+def test_merchant_from_category_no_suffix_at_twelve_hits():
+    assert _merchant_from_category("Cloud Storage", 12) == "Cloud Storage"
+
+
+def test_merchant_from_category_likely_suffix_at_four_hits():
+    assert _merchant_from_category("App Subscriptions", 4) == "App Subscriptions (likely)"
+
+
+def test_subgroups_for_opaque_payee_returns_misc_only_when_non_empty():
+    txns = [
+        _opaque_txn(category="Cloud Storage", amount="10.09", date=f"2025-{m:02d}-10")
+        for m in range(7, 13)
+    ] + [
+        _opaque_txn(category="Ulysses App", amount="6.37", date=f"2025-{m:02d}-15")
+        for m in range(7, 13)
+    ] + [
+        _opaque_txn(category="App Subscriptions", amount="1.05", date="2025-08-15"),
+    ]
+    groups = _subgroups_for_opaque_payee(txns)
+    kinds = [kind for _, kind in groups]
+    assert "stable" in kinds
+    if "misc" in kinds:
+        misc_txns = [txns for txns, kind in groups if kind == "misc"][0]
+        assert len(misc_txns) > 0
 
 
 def test_apple_services_combined_opaque():

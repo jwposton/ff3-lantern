@@ -91,6 +91,7 @@ _CATEGORY_BLOCK_ALIASES: frozenset[str] = frozenset({
 OPAQUE_NOTES = "Multiple subscriptions detected; sub-split rules in a future update"
 
 PREAPPROVED_RE = re.compile(r"preapproved payment", re.IGNORECASE)
+BILL_USER_PAYMENT_RE = re.compile(r"bill user payment", re.IGNORECASE)
 
 
 def _should_exclude_category(category: str) -> bool:
@@ -478,26 +479,115 @@ def _infer_payment_rail(
     return "bank"
 
 
+def _has_generic_payment_description(txns: list[dict[str, Any]]) -> bool:
+    for txn in txns:
+        desc = str(txn.get("description") or "").strip()
+        if PREAPPROVED_RE.search(desc) or BILL_USER_PAYMENT_RE.search(desc):
+            return True
+    return False
+
+
+def _fingerprint(txn: dict[str, Any]) -> tuple[str, Decimal]:
+    cat = str(txn.get("category_name") or "").strip()
+    amount = txn.get("amount")
+    if not isinstance(amount, Decimal):
+        amount = Decimal(str(amount)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    else:
+        amount = amount.quantize(Decimal("0.01"), ROUND_HALF_UP)
+    return (cat, amount)
+
+
+def _fingerprint_date_counts(txns: list[dict[str, Any]]) -> dict[tuple[str, Decimal], int]:
+    counts: dict[tuple[str, Decimal], set[str]] = {}
+    for txn in txns:
+        cat = str(txn.get("category_name") or "").strip()
+        if not cat:
+            continue
+        amount = txn.get("amount")
+        if not isinstance(amount, Decimal):
+            try:
+                amount = Decimal(str(amount))
+            except (InvalidOperation, TypeError):
+                continue
+        fp = _fingerprint({**txn, "amount": amount})
+        date_str = str(txn.get("date") or "")[:10]
+        if not date_str:
+            continue
+        counts.setdefault(fp, set()).add(date_str)
+    return {fp: len(dates) for fp, dates in counts.items()}
+
+
+def _should_subsplit_opaque_payee(txns: list[dict[str, Any]]) -> bool:
+    if not txns:
+        return False
+    if not _has_generic_payment_description(txns):
+        return False
+    date_counts = _fingerprint_date_counts(txns)
+    if len(date_counts) < 2:
+        return False
+    qualifying_two_plus = [count for count in date_counts.values() if count >= 2]
+    if len(qualifying_two_plus) >= 2:
+        return True
+    return any(count >= 3 for count in date_counts.values())
+
+
+def _slugify_cluster(raw_payee: str) -> str:
+    text = raw_payee.strip().lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    return text.strip("-")
+
+
+def _merchant_from_category(category: str, occurrences: int) -> str:
+    label = _friendly_merchant_name(category)
+    if 3 <= occurrences <= 5:
+        label = f"{label} (likely)"
+    return label
+
+
+def _subgroups_for_opaque_payee(
+    txns: list[dict[str, Any]],
+) -> list[tuple[list[dict[str, Any]], Literal["stable", "misc"]]]:
+    by_fp: dict[tuple[str, Decimal], list[dict[str, Any]]] = {}
+    for txn in txns:
+        cat = str(txn.get("category_name") or "").strip()
+        if not cat:
+            continue
+        amount = txn.get("amount")
+        if not isinstance(amount, Decimal):
+            try:
+                amount = Decimal(str(amount))
+            except (InvalidOperation, TypeError):
+                continue
+        by_fp.setdefault(_fingerprint({**txn, "amount": amount}), []).append(txn)
+
+    stable: list[tuple[list[dict[str, Any]], Literal["stable", "misc"]]] = []
+    misc_txns: list[dict[str, Any]] = []
+    trigger_active = _should_subsplit_opaque_payee(txns)
+
+    for group_txns in by_fp.values():
+        unique_dates = {str(t.get("date") or "")[:10] for t in group_txns}
+        date_count = len(unique_dates)
+        if date_count >= 3:
+            stable.append((group_txns, "stable"))
+        elif date_count >= 2 and trigger_active:
+            stable.append((group_txns, "stable"))
+        else:
+            misc_txns.extend(group_txns)
+
+    result = stable
+    if misc_txns:
+        result.append((misc_txns, "misc"))
+    return result
+
+
 def _is_opaque_payee_cluster(txns: list[dict[str, Any]]) -> bool:
-    descriptions = {str(txn.get("description") or "").strip() for txn in txns}
-    if not any(PREAPPROVED_RE.search(desc) for desc in descriptions):
+    if not _has_generic_payment_description(txns):
         return False
     categories = {
         str(txn.get("category_name") or "").strip()
         for txn in txns
         if str(txn.get("category_name") or "").strip()
     }
-    payees = {
-        str(txn.get("destination_name") or "").casefold()
-        for txn in txns
-    }
-    if any("apple.com/bill" in p for p in payees):
-        amounts = {
-            txn.get("amount")
-            for txn in txns
-            if isinstance(txn.get("amount"), Decimal)
-        }
-        return len(categories) >= 2 or len(amounts) >= 2
     return len(categories) >= 2
 
 
