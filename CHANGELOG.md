@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bill suggestions category noise filter** — blocklist matching now catches common category variants (e.g. Restaurant, Gasoline) not just exact Firefly names
 - **Bill suggestions lookback validation** — direct callers of the suggestion engine reject lookback values other than 6, 12, or 24 months
 - **Bills page refresh** — Bills list updates after registering from discover or worksheet; Bills page header adds Refresh control
+- **Bills page Refresh layout** — header Refresh control no longer shifts layout when refetching
 - **Bill registration rule trigger** — registering a bill or subscription now automatically runs the Firefly link rule over the last 12 months so historical withdrawals link without manual rule execution
 - **Bill discover dedup** — withdrawals already linked to a Firefly subscription no longer appear as bill suggestions, even when the payee name differs from the registered bill label
 

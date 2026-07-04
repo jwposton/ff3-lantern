@@ -236,9 +236,12 @@ describe("BillsDetailPage stats and table", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
 
+    expect(screen.queryByRole("button", { name: "Refreshing…" })).toBeNull()
+
     await waitFor(() => {
       expect(getBillsFetchCalls()).toBe(2)
     })
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy()
   })
 
   it("empty history renders empty table copy not error card", async () => {

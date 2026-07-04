@@ -384,6 +384,7 @@ export function BillsDetailPage() {
     isError: billsError,
     refetch: refetchBills,
   } = useRegisteredBills()
+  const refreshing = billsFetching && !billsPending
 
   const bills = useMemo(() => {
     const rows = billsData?.data ?? []
@@ -415,20 +416,23 @@ export function BillsDetailPage() {
             <BillWindowCaption registryId={registryId} />
           ) : null}
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => refetchBills()}
-          disabled={billsFetching || billsPending}
-        >
-          <RefreshCw
-            className={
-              billsFetching ? "mr-2 size-4 animate-spin" : "mr-2 size-4"
-            }
-          />
-          {billsFetching ? "Refreshing…" : "Refresh"}
-        </Button>
+        {!billsPending ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-w-[7.5rem]"
+            onClick={() => void refetchBills()}
+            disabled={refreshing}
+          >
+            <RefreshCw
+              className={
+                refreshing ? "mr-2 size-4 animate-spin" : "mr-2 size-4"
+              }
+            />
+            Refresh
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(240px,280px)_1fr] lg:gap-6">
