@@ -273,6 +273,21 @@ describe("BillDiscoverPage", () => {
     expect(screen.queryByRole("heading", { name: "Bill discover" })).toBeNull()
   })
 
+  it("shows back link to payment worksheet", async () => {
+    mockDiscoverFetch({})
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const link = screen.getByRole("link", { name: "← Payment Worksheet" })
+      expect(link.getAttribute("href")).toBe("/manage/payment-run")
+    })
+  })
+
   it("lookback URL drives fetch lookback_months param", async () => {
     const { getSuggestionUrls } = mockDiscoverFetch({})
 

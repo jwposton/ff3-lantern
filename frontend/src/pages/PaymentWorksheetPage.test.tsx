@@ -528,4 +528,33 @@ describe("PaymentWorksheetPage", () => {
       ).toBeTruthy()
     })
   })
+
+  it("shows Find bills cross-link when payment worksheet is enabled", async () => {
+    mockPaymentFetch({ envelope: EMPTY_ENVELOPE, paymentEnabled: true })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const link = screen.getByRole("link", { name: "Find bills →" })
+      expect(link.getAttribute("href")).toBe("/manage/payment-run/discover")
+    })
+  })
+
+  it("hides Find bills cross-link when payment worksheet is disabled", async () => {
+    mockPaymentFetch({ envelope: EMPTY_ENVELOPE, paymentEnabled: false })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByRole("link", { name: "Find bills →" })).toBeNull()
+    })
+  })
 })

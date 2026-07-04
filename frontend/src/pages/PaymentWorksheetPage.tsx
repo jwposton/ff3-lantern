@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Navigate, useSearchParams } from "react-router-dom"
+import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { CircleHelp, RefreshCw, Settings2 } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
@@ -546,6 +546,12 @@ export function PaymentWorksheetPage() {
             >
               {formatRefreshedAt(data?.refreshed_at)}
             </span>
+            <Link
+              to="/manage/payment-run/discover"
+              className="text-sm font-medium text-primary"
+            >
+              Find bills →
+            </Link>
             <Button
               type="button"
               variant="outline"

@@ -418,6 +418,7 @@ Each suggestion includes `register_prefill` shaped for `POST /payment-run/bills/
 | Route | Purpose |
 |-------|---------|
 | `/manage/payment-run` | Single-page worksheet (sticky bucket bar + scrollable sections) |
+| `/manage/payment-run/discover` | Bill discover — recurring charge suggestions from withdrawal history; adopt into registration wizard (requires payment worksheet enabled) |
 | `/manage/payment-run/setup` | Buckets, register accounts/bills, wizard |
 
 Sidebar: new item under **Manage** in `AppSidebar.tsx`.

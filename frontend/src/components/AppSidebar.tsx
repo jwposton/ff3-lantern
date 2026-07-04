@@ -4,6 +4,7 @@ import {
   Landmark,
   LayoutDashboard,
   Receipt,
+  ScanSearch,
   Table,
   Tags,
   TrendingUp,
@@ -83,6 +84,13 @@ const paymentWorksheetNavItem = {
   to: "/manage/payment-run",
   label: "Payment Worksheet",
   icon: Wallet,
+  end: true,
+} as const
+
+const billDiscoverNavItem = {
+  to: "/manage/payment-run/discover",
+  label: "Bill discover",
+  icon: ScanSearch,
   end: true,
 } as const
 
@@ -194,7 +202,7 @@ function ManageNavItems({
   paymentWorksheetEnabled: boolean
 }) {
   const manageNavItems = paymentWorksheetEnabled
-    ? [...baseManageNavItems, paymentWorksheetNavItem, billsNavItem]
+    ? [...baseManageNavItems, paymentWorksheetNavItem, billDiscoverNavItem, billsNavItem]
     : baseManageNavItems
 
   const badgeCounts: Record<string, number> = {
