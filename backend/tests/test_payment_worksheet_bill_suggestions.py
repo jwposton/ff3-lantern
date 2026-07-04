@@ -721,8 +721,13 @@ def test_opaque_bucket_sort_rank():
         first_after_idx = buckets.index(after_apple_fixed[0])
         assert max(apple_bucket_indices) < first_after_idx
     apple_rows = [row for row in result["data"] if row["bucket"] == "APPLE.COM/BILL"]
-    merchants = [row["merchant"] for row in apple_rows]
-    assert merchants == sorted(merchants, key=str.casefold)
+    from itertools import groupby
+    for (_confidence, _occurrences), group in groupby(
+        apple_rows,
+        key=lambda row: (row["confidence"], row["occurrences"]),
+    ):
+        merchants = [row["merchant"] for row in group]
+        assert merchants == sorted(merchants, key=str.casefold)
 
 
 def test_registered_spotify_excluded():

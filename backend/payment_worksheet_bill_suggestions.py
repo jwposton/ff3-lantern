@@ -30,6 +30,8 @@ BUCKET_ORDER: tuple[str, ...] = (
     "Other Recurring",
 )
 
+OPAQUE_BUCKET_SLOT = BUCKET_ORDER.index("Apple Services")
+
 CONFIDENCE_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
 
 CATEGORY_BLOCKLIST: frozenset[str] = frozenset({
@@ -482,11 +484,7 @@ def _assign_bucket(
     merchant: str,
     category: str,
     description: str,
-    *,
-    is_opaque: bool = False,
 ) -> str:
-    if is_opaque:
-        return "Apple Services"
     merchant_lower = merchant.casefold()
     category_lower = category.casefold()
     description_lower = description.casefold()
@@ -639,6 +637,12 @@ def _subgroups_for_opaque_payee(
 
 def _opaque_parent_bucket(raw_payee: str) -> str:
     return raw_payee.strip()
+
+
+def _bucket_sort_rank(bucket: str) -> int:
+    if bucket in BUCKET_ORDER:
+        return BUCKET_ORDER.index(bucket)
+    return OPAQUE_BUCKET_SLOT
 
 
 def _make_opaque_subgroup_id(
@@ -834,16 +838,18 @@ def _is_already_registered(
 
 
 def _sort_suggestions(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    bucket_rank = {name: index for index, name in enumerate(BUCKET_ORDER)}
-
-    def sort_key(item: dict[str, Any]) -> tuple[int, int, int, str]:
+    def sort_key(item: dict[str, Any]) -> tuple[int, int, int, str, int]:
         bucket = item.get("bucket") or "Other Recurring"
         confidence = str(item.get("confidence") or "low")
+        merchant = str(item.get("merchant") or "")
+        last_date = str(item.get("last_date") or "")
+        date_key = -int(last_date.replace("-", "") or 0)
         return (
-            bucket_rank.get(bucket, len(BUCKET_ORDER)),
+            _bucket_sort_rank(bucket),
             CONFIDENCE_RANK.get(confidence, 99),
             -int(item.get("occurrences") or 0),
-            str(item.get("last_date") or ""),
+            merchant.casefold(),
+            date_key,
         )
 
     return sorted(items, key=sort_key)
@@ -861,11 +867,14 @@ def _enrich_suggestion(
     confidence = _score_confidence(metrics)
     status = _assign_status(confidence, is_opaque_combined=is_opaque)
     latest_category = metrics["category"]
-    bucket = _assign_bucket(
-        raw_payee,
-        latest_category,
-        " ".join(metrics.get("sample_descriptions") or []),
-        is_opaque=is_opaque,
+    bucket = (
+        _opaque_parent_bucket(raw_payee)
+        if is_opaque
+        else _assign_bucket(
+            raw_payee,
+            latest_category,
+            " ".join(metrics.get("sample_descriptions") or []),
+        )
     )
     register_prefill = _build_register_prefill(
         metrics,
