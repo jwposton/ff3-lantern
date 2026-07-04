@@ -107,6 +107,29 @@ def low_confidence_quarterly(count: int = 2) -> list[dict[str, Any]]:
     return rows
 
 
+def restaurant_variant_noise(count: int = 6) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "28.50",
+            "date": f"{year}-{month:02d}-12",
+            "destination_name": "Local Diner",
+            "description": "Dinner",
+            "category_name": "Restaurant",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
 def gas_station_noise(count: int = 6) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     stations = ("Sunoco", "Exxon")
@@ -123,6 +146,29 @@ def gas_station_noise(count: int = 6) -> list[dict[str, Any]]:
             "destination_name": stations[i % len(stations)],
             "description": "Fuel purchase",
             "category_name": "Gas",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
+def gasoline_variant_noise(count: int = 6) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "45.00",
+            "date": f"{year}-{month:02d}-05",
+            "destination_name": "Shell Station",
+            "description": "Fuel purchase",
+            "category_name": "Gasoline",
             "source_name": "Checking",
             "source_id": "checking",
             "source_type": "Asset account",
@@ -361,7 +407,9 @@ def test_empty_splits():
     ("fixture_fn", "label"),
     [
         (gas_station_noise, "gas_station"),
+        (gasoline_variant_noise, "gasoline_variant"),
         (restaurant_noise, "restaurant"),
+        (restaurant_variant_noise, "restaurant_variant"),
         (apple_cash_p2p, "apple_cash_p2p"),
         (cc_interest_noise, "cc_interest"),
         (loan_payment_noise, "loan_payment"),

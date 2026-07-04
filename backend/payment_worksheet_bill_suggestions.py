@@ -77,17 +77,40 @@ CC_INTEREST_DESC_RE = re.compile(r"interest charge", re.IGNORECASE)
 
 _BLOCKLIST_FOLDED: frozenset[str] = frozenset(c.casefold() for c in CATEGORY_BLOCKLIST)
 
+_CATEGORY_BLOCK_ALIASES: frozenset[str] = frozenset({
+    "restaurant",
+    "restraunt",
+    "gasoline",
+    "fuel",
+    "food & dining",
+    "dining out",
+    "grocery",
+    "mortgage interest",
+})
+
 OPAQUE_NOTES = "Multiple subscriptions detected; sub-split rules in a future update"
 
 PREAPPROVED_RE = re.compile(r"preapproved payment", re.IGNORECASE)
 
 
 def _should_exclude_category(category: str) -> bool:
-    """True when category matches D-06 blocklist (case-insensitive)."""
+    """True when category matches D-06 blocklist (case-insensitive, with aliases)."""
     text = (category or "").strip()
     if not text:
         return False
-    return text.casefold() in _BLOCKLIST_FOLDED
+    folded = text.casefold()
+    if folded in _BLOCKLIST_FOLDED or folded in _CATEGORY_BLOCK_ALIASES:
+        return True
+    for blocked in _BLOCKLIST_FOLDED:
+        if blocked in folded:
+            return True
+        stem = blocked.rstrip("s")
+        if len(stem) >= 3 and stem in folded:
+            return True
+    for alias in _CATEGORY_BLOCK_ALIASES:
+        if alias in folded:
+            return True
+    return False
 
 
 def _account_summary(
