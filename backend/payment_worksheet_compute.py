@@ -18,6 +18,24 @@ def bill_row_key(registry_id: int | str) -> str:
     return f"bill:{registry_id}"
 
 
+def bill_row_display_sort_key(row: dict[str, Any]) -> tuple[int, str, int]:
+    """Cash monthly → cash intermittent → credit monthly → credit intermittent."""
+    rail = (row.get("payment_rail") or "bank").strip()
+    mode = (row.get("amount_mode") or "recurring").strip()
+    is_credit = rail == "credit_card"
+    is_intermittent = mode == "intermittent"
+    if not is_credit and not is_intermittent:
+        group = 0
+    elif not is_credit and is_intermittent:
+        group = 1
+    elif is_credit and not is_intermittent:
+        group = 2
+    else:
+        group = 3
+    label = (row.get("row_label") or "").casefold()
+    return (group, label, int(row["registry_id"]))
+
+
 def _decimal_amount(value: Any) -> Decimal:
     if value is None or value == "":
         return Decimal("0")
@@ -356,7 +374,7 @@ def _assemble_bill_rows(
                 "worksheet_section": reg.get("worksheet_section"),
             }
         )
-    rows.sort(key=lambda row: (row.get("row_label") or "", row["registry_id"]))
+    rows.sort(key=bill_row_display_sort_key)
     return rows
 
 

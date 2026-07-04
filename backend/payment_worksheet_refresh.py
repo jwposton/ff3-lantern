@@ -12,6 +12,7 @@ from typing import Any
 import sidecar_db
 from firefly_client import FireflyClient
 from loan_profiles import parse_loan_profile_from_notes
+from payment_worksheet_bills import compute_bill_owed_from_firefly
 from payment_worksheet_cc import classify_cc_activity_category, is_credit_card_payment_flow
 from payment_worksheet_liabilities import (
     compute_liability_display_fields,
@@ -415,9 +416,14 @@ async def run_refresh(
                 "unavailable": True,
             }
             continue
-        owed_raw = ff_bill.get("amount_min") or ff_bill.get("amount_max") or "0"
+        if reg.get("amount_mode") == "intermittent":
+            owed = "0.00"
+        else:
+            owed = compute_bill_owed_from_firefly(
+                ff_bill, amount_mode=str(reg.get("amount_mode") or "recurring")
+            )
         balances["bills"][reg_id] = {
-            "owed": _format_decimal(_decimal_amount(owed_raw)),
+            "owed": owed,
             "firefly_bill_id": str(bill_id),
             "name": ff_bill.get("name") or reg.get("row_label"),
         }

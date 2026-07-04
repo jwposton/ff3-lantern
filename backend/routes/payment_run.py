@@ -542,4 +542,5 @@ async def available_bills(
         if row.get("firefly_bill_id")
     }
     available = [bill for bill in bills if str(bill.get("id")) not in registered]
+    available.sort(key=lambda bill: (bill.get("name") or "").casefold())
     return {"data": available}

@@ -610,13 +610,44 @@ async def test_refresh_bill_owed(data_dir, payment_worksheet_env):
 
     balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
     assert balances["bills"][str(reg_id)]["owed"] == "89.50"
-    assert balances["bills"][str(intermittent_id)]["owed"] == "89.50"
+    assert balances["bills"][str(intermittent_id)]["owed"] == "0.00"
 
     rows = await sidecar_db.get_worksheet_state_for_month(month)
     intermittent_rows = [
         r for r in rows if r["row_key"] == bill_row_key(intermittent_id)
     ]
     assert not intermittent_rows
+
+
+@pytest.mark.asyncio
+async def test_refresh_recurring_bill_owed_uses_min_max_average(data_dir, payment_worksheet_env):
+    fixture = _fixture()
+    bills = {
+        "bill-range": {
+            "name": "Electric",
+            "amount_min": "80.00",
+            "amount_max": "120.00",
+        }
+    }
+    client = _build_client_with_bills(fixture, bills)
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-range",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "recurring",
+            "planned_sync": "fixed",
+            "payment_rail": "bank",
+            "rule_id": "rule-1",
+            "row_label": "Electric",
+        }
+    )
+    month = "2026-07"
+
+    await run_refresh(client, month)
+
+    balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
+    assert balances["bills"][str(reg_id)]["owed"] == "100.00"
 
 
 @pytest.mark.asyncio

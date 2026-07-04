@@ -13,10 +13,13 @@ from payment_worksheet_bills import (
     BillRegistrationError,
     RegisterBillBody,
     build_bill_link_rule_body,
+    compute_bill_owed_from_firefly,
+    compute_recurring_bill_owed,
     find_link_rules_for_bill,
     list_link_rules_for_bill,
     register_bill,
     register_new_bill,
+    _resolve_firefly_bill_amounts,
 )
 
 
@@ -32,6 +35,7 @@ def test_build_bill_link_rule_body_includes_link_action():
         title="Water bill",
         description_contains="CITY WATER",
         destination_account="City Utilities",
+        category_name="",
         amount_exactly="55.00",
         rule_group_id="9",
     )
@@ -58,11 +62,67 @@ def test_build_bill_link_rule_body_payee_only():
         title="Power and Lights",
         description_contains="",
         destination_account="Duke Energy",
+        category_name="",
         amount_exactly=None,
         rule_group_id="9",
     )
     assert len(body["triggers"]) == 1
     assert body["triggers"][0]["type"] == "destination_account_contains"
+
+
+def test_build_bill_link_rule_body_category_only():
+    body = build_bill_link_rule_body(
+        bill_name="Streaming",
+        title="Streaming",
+        description_contains="",
+        destination_account="",
+        category_name="Subscriptions",
+        amount_exactly=None,
+        rule_group_id="9",
+    )
+    assert len(body["triggers"]) == 1
+    assert body["triggers"][0] == {
+        "type": "category_is",
+        "value": "Subscriptions",
+        "active": True,
+    }
+
+
+def test_resolve_firefly_bill_amounts_mirrors_single_value():
+    body = RegisterBillBody(
+        mode="create_new",
+        name="Oil",
+        amount_mode="intermittent",
+        worksheet_section="bills",
+        payment_rail="bank",
+        funding_bucket_key="checking",
+        amount_min="150.00",
+    )
+    assert _resolve_firefly_bill_amounts(body) == ("150.00", "150.00")
+
+    body_max = RegisterBillBody(
+        mode="create_new",
+        name="Oil",
+        amount_mode="intermittent",
+        worksheet_section="bills",
+        payment_rail="bank",
+        funding_bucket_key="checking",
+        amount_max="200.00",
+    )
+    assert _resolve_firefly_bill_amounts(body_max) == ("200.00", "200.00")
+
+
+def test_compute_recurring_bill_owed_uses_average():
+    assert compute_recurring_bill_owed("80.00", "100.00") == "90.00"
+    assert compute_recurring_bill_owed("50.00", "50.00") == "50.00"
+
+
+def test_compute_bill_owed_from_firefly_intermittent_is_zero():
+    owed = compute_bill_owed_from_firefly(
+        {"amount_min": "400.00", "amount_max": "600.00"},
+        amount_mode="intermittent",
+    )
+    assert owed == "0.00"
 
 
 @pytest.mark.asyncio
@@ -134,7 +194,7 @@ async def test_register_wizard(data_dir, monkeypatch):
     body = RegisterBillBody(
         mode="create_new",
         name="Water",
-        amount="50.00",
+        amount_min="50.00",
         amount_mode="recurring",
         repeat_freq="monthly",
         worksheet_section="bills",
@@ -159,6 +219,93 @@ async def test_register_wizard(data_dir, monkeypatch):
     assert row is not None
     assert row["firefly_bill_id"] == "bill-new"
     assert row["planned_sync"] == "fixed"
+
+
+@pytest.mark.asyncio
+async def test_register_intermittent_without_amount(data_dir, monkeypatch):
+    monkeypatch.setenv(
+        "FF3ANALYTICS_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+    )
+    bill_posts: list[dict] = []
+    rule_posts: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/rule-groups" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "rule-groups",
+                            "id": "1",
+                            "attributes": {"title": "Payment worksheet"},
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "POST":
+            bill_posts.append(json.loads(request.content.decode()))
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "bill-oil",
+                        "attributes": {"name": bill_posts[-1]["name"]},
+                    }
+                },
+            )
+        if path == "/api/v1/rules" and request.method == "POST":
+            rule_posts.append(json.loads(request.content.decode()))
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "rule-oil",
+                        "attributes": {"title": rule_posts[-1]["title"]},
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    body = RegisterBillBody(
+        mode="create_new",
+        name="Heating oil",
+        amount_mode="intermittent",
+        repeat_freq="monthly",
+        worksheet_section="bills",
+        payment_rail="bank",
+        funding_bucket_key="checking",
+        description_contains="OIL DELIVERY",
+    )
+    result = await register_bill(client, body)
+    assert result["firefly_bill_id"] == "bill-oil"
+    assert len(bill_posts) == 1
+    assert bill_posts[0]["amount_min"] == "1.00"
+    assert bill_posts[0]["amount_max"] == "99999.99"
+    assert len(rule_posts) == 1
+    assert not any(
+        trigger.get("type") == "amount_exactly"
+        for trigger in rule_posts[0]["triggers"]
+    )
+    row = await sidecar_db.get_worksheet_registry(result["id"])
+    assert row is not None
+    assert row["amount_mode"] == "intermittent"
+    assert row["planned_sync"] == "manual"
 
 
 @pytest.mark.asyncio
@@ -255,6 +402,7 @@ def test_find_link_rules_for_bill_extracts_triggers():
             "title": "Cell rule",
             "description_contains": "VERIZON",
             "payee_contains": None,
+            "category_name": None,
             "amount_exactly": "80.00",
         }
     ]
@@ -317,6 +465,7 @@ async def test_list_link_rules_for_bill_uses_bill_rules_endpoint(data_dir):
             "title": "Power rule",
             "description_contains": "DUKE ENERGY",
             "payee_contains": None,
+            "category_name": None,
             "amount_exactly": None,
         }
     ]

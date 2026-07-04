@@ -319,3 +319,64 @@ async def test_build_worksheet_envelope_with_bills(data_dir):
     assert bill["row_label"] == "Electric"
     assert envelope["section_subtotals"]["bills"]["owed"] == "125.50"
     assert envelope["grand_totals"]["owed"] == "125.50"
+
+
+@pytest.mark.asyncio
+async def test_bill_rows_sorted_cash_then_credit_monthly_before_intermittent(data_dir):
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    specs = [
+        ("CC Intermittent", "credit_card", "intermittent"),
+        ("Cash Monthly", "bank", "recurring"),
+        ("Credit Monthly", "credit_card", "recurring"),
+        ("Cash Intermittent", "bank", "intermittent"),
+    ]
+    reg_ids: list[int] = []
+    bills_snapshot: dict[str, dict[str, str]] = {}
+    for index, (label, rail, mode) in enumerate(specs):
+        reg_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": f"bill-{index}",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": mode,
+                "planned_sync": "fixed" if mode == "recurring" else "manual",
+                "payment_rail": rail,
+                "rule_id": f"rule-{index}",
+                "row_label": label,
+                "credit_card_account_id": "card-1" if rail == "credit_card" else None,
+            }
+        )
+        reg_ids.append(reg_id)
+        bills_snapshot[str(reg_id)] = {
+            "owed": "10.00",
+            "firefly_bill_id": f"bill-{index}",
+            "name": label,
+        }
+
+    await sidecar_db.upsert_worksheet_refresh(
+        month="2026-07",
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(
+            {
+                "buckets": {"checking": {"reported_balance": "3000.00"}},
+                "credit_cards": {},
+                "liabilities": {},
+                "excluded_liabilities": {},
+                "bills": bills_snapshot,
+            }
+        ),
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    labels = [row["row_label"] for row in envelope["bills"]]
+    assert labels == [
+        "Cash Monthly",
+        "Cash Intermittent",
+        "Credit Monthly",
+        "CC Intermittent",
+    ]

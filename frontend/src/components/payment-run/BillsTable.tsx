@@ -117,7 +117,7 @@ export function BillsTable({
                   )}
                 >
                   <TableCell className="min-w-[8.75rem]">
-                    <div className="flex min-w-0 flex-col gap-0.5">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       <span
                         className={cn(
                           "truncate font-medium",
@@ -130,7 +130,7 @@ export function BillsTable({
                       {isCcRail && viaCard ? (
                         <Badge
                           variant="outline"
-                          className="text-muted-foreground w-fit text-[10px]"
+                          className="text-muted-foreground shrink-0 text-[10px]"
                         >
                           Via {viaCard}
                         </Badge>

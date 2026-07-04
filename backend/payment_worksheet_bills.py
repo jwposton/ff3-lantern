@@ -26,7 +26,9 @@ class BillRegistrationError(Exception):
 class RegisterBillBody(BaseModel):
     mode: Literal["create_new", "link_existing"]
     name: str
-    amount: str
+    amount: str = ""
+    amount_min: str | None = None
+    amount_max: str | None = None
     amount_mode: Literal["recurring", "intermittent"]
     repeat_freq: str | None = None
     worksheet_section: Literal["bills", "liabilities"]
@@ -35,6 +37,7 @@ class RegisterBillBody(BaseModel):
     credit_card_account_id: str | None = None
     description_contains: str = ""
     destination_account: str = ""
+    category_name: str = ""
     amount_exactly: str | None = None
     firefly_bill_id: str | None = None
     rule_id: str | None = None
@@ -77,28 +80,110 @@ def _sanitize_optional_trigger_text(value: str, *, field_name: str) -> str:
 
 
 def _validate_rule_triggers(
-    description_contains: str, destination_account: str
-) -> tuple[str, str]:
+    description_contains: str, destination_account: str, category_name: str
+) -> tuple[str, str, str]:
     desc = _sanitize_optional_trigger_text(
         description_contains, field_name="description_contains"
     )
     payee = _sanitize_optional_trigger_text(
         destination_account, field_name="destination_account"
     )
-    if not desc and not payee:
+    category = _sanitize_optional_trigger_text(
+        category_name, field_name="category_name"
+    )
+    if not desc and not payee and not category:
         raise BillRegistrationError(
-            "At least one rule trigger is required: description contains "
-            "and/or payee contains."
+            "At least one rule trigger is required: payee contains, "
+            "description contains, and/or category."
         )
-    return desc, payee
+    return desc, payee, category
+
+
+def _parse_amount(value: str) -> Decimal:
+    try:
+        return Decimal(str(value).replace(",", ""))
+    except (InvalidOperation, ValueError):
+        raise BillRegistrationError("invalid amount") from None
 
 
 def _format_amount(value: str) -> str:
-    try:
-        amount = Decimal(str(value).replace(",", ""))
-    except (InvalidOperation, ValueError):
-        raise BillRegistrationError("invalid amount") from None
-    return f"{amount.quantize(Decimal('0.01'))}"
+    return f"{_parse_amount(value).quantize(Decimal('0.01'))}"
+
+
+# Firefly BillStore requires amount_min/max > 0; intermittent worksheet rows start at $0.
+_INTERMITTENT_BILL_AMOUNT_MIN = "1.00"
+_INTERMITTENT_BILL_AMOUNT_MAX = "99999.99"
+
+
+def _optional_amount_text(value: str | None) -> str:
+    return (value or "").strip()
+
+
+def _resolve_firefly_bill_amounts(body: RegisterBillBody) -> tuple[str, str]:
+    min_raw = _optional_amount_text(body.amount_min)
+    max_raw = _optional_amount_text(body.amount_max)
+    legacy = _optional_amount_text(body.amount)
+    if not min_raw and not max_raw and legacy:
+        min_raw = max_raw = legacy
+    if min_raw and not max_raw:
+        max_raw = min_raw
+    elif max_raw and not min_raw:
+        min_raw = max_raw
+    if not min_raw and not max_raw:
+        if body.amount_mode == "intermittent":
+            return _INTERMITTENT_BILL_AMOUNT_MIN, _INTERMITTENT_BILL_AMOUNT_MAX
+        raise BillRegistrationError(
+            "Amount min or max is required for recurring bills."
+        )
+    parsed_min = _parse_amount(min_raw)
+    parsed_max = _parse_amount(max_raw)
+    if parsed_min <= 0 or parsed_max <= 0:
+        raise BillRegistrationError("Bill amounts must be greater than zero.")
+    if parsed_min > parsed_max:
+        raise BillRegistrationError("Amount min cannot exceed amount max.")
+    return _format_amount(min_raw), _format_amount(max_raw)
+
+
+def compute_recurring_bill_owed(amount_min: str, amount_max: str) -> str:
+    lo = _parse_amount(amount_min)
+    hi = _parse_amount(amount_max)
+    return f"{((lo + hi) / Decimal('2')).quantize(Decimal('0.01'))}"
+
+
+def compute_bill_owed_from_firefly(
+    ff_bill: dict[str, Any], *, amount_mode: str
+) -> str:
+    if amount_mode == "intermittent":
+        return "0.00"
+    amount_min = str(ff_bill.get("amount_min") or "").strip()
+    amount_max = str(ff_bill.get("amount_max") or "").strip()
+    if not amount_min and not amount_max:
+        return "0.00"
+    if not amount_min:
+        amount_min = amount_max
+    if not amount_max:
+        amount_max = amount_min
+    return compute_recurring_bill_owed(amount_min, amount_max)
+
+
+def _firefly_bill_amounts(body: RegisterBillBody) -> tuple[str, str]:
+    return _resolve_firefly_bill_amounts(body)
+
+
+def _rule_amount_trigger(
+    body: RegisterBillBody, *, amount_min: str, amount_max: str
+) -> str | None:
+    explicit = (body.amount_exactly or "").strip()
+    if explicit:
+        formatted = _format_amount(explicit)
+        if _parse_amount(formatted) <= 0:
+            return None
+        return formatted
+    if body.amount_mode != "recurring":
+        return None
+    if amount_min == amount_max and _parse_amount(amount_min) > 0:
+        return amount_min
+    return None
 
 
 def _validate_rail_fields(body: RegisterBillBody) -> None:
@@ -135,6 +220,7 @@ def build_bill_link_rule_body(
     title: str,
     description_contains: str,
     destination_account: str,
+    category_name: str,
     amount_exactly: str | None,
     rule_group_id: str,
 ) -> dict[str, Any]:
@@ -155,6 +241,14 @@ def build_bill_link_rule_body(
             {
                 "type": "destination_account_contains",
                 "value": destination_account,
+                "active": True,
+            }
+        )
+    if category_name:
+        triggers.append(
+            {
+                "type": "category_is",
+                "value": category_name,
                 "active": True,
             }
         )
@@ -207,12 +301,21 @@ def _summarize_link_rules(rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
             ),
             "",
         )
+        category_name = next(
+            (
+                str(trigger.get("value") or "").strip()
+                for trigger in triggers
+                if trigger.get("type") == "category_is"
+            ),
+            "",
+        )
         summarized.append(
             {
                 "id": str(rule.get("id")),
                 "title": rule.get("title"),
                 "description_contains": description_contains or None,
                 "payee_contains": payee_contains or None,
+                "category_name": category_name or None,
                 "amount_exactly": amount_exactly or None,
             }
         )
@@ -285,10 +388,11 @@ async def _create_link_rule(
     title: str,
     description_contains: str,
     destination_account: str,
+    category_name: str,
     amount_exactly: str | None,
 ) -> str:
-    trigger_desc, trigger_payee = _validate_rule_triggers(
-        description_contains, destination_account
+    trigger_desc, trigger_payee, trigger_category = _validate_rule_triggers(
+        description_contains, destination_account, category_name
     )
     amount_trigger = None
     if amount_exactly and str(amount_exactly).strip():
@@ -299,6 +403,7 @@ async def _create_link_rule(
         title=title,
         description_contains=trigger_desc,
         destination_account=trigger_payee,
+        category_name=trigger_category,
         amount_exactly=amount_trigger,
         rule_group_id=group_id,
     )
@@ -312,14 +417,14 @@ async def register_new_bill(
     _validate_rail_fields(body)
     if body.payment_rail == "bank":
         await _validate_bucket_exists(str(body.funding_bucket_key))
-    trigger_desc, trigger_payee = _validate_rule_triggers(
-        body.description_contains, body.destination_account
+    trigger_desc, trigger_payee, trigger_category = _validate_rule_triggers(
+        body.description_contains, body.destination_account, body.category_name
     )
-    amount = _format_amount(body.amount)
+    amount_min, amount_max = _firefly_bill_amounts(body)
     bill_body: dict[str, Any] = {
         "name": body.name,
-        "amount_min": amount,
-        "amount_max": amount,
+        "amount_min": amount_min,
+        "amount_max": amount_max,
         "date": _default_bill_date(),
         "repeat_freq": (body.repeat_freq or "monthly").strip() or "monthly",
         "active": True,
@@ -332,11 +437,9 @@ async def register_new_bill(
     except RuntimeError as exc:
         raise BillRegistrationError(str(exc), status_code=502) from exc
     bill_id = str(created_bill["id"])
-    amount_trigger = body.amount_exactly
-    if amount_trigger and str(amount_trigger).strip():
-        amount_trigger = _format_amount(str(amount_trigger))
-    else:
-        amount_trigger = amount
+    amount_trigger = _rule_amount_trigger(
+        body, amount_min=amount_min, amount_max=amount_max
+    )
     try:
         rule_id = await _create_link_rule(
             client,
@@ -345,6 +448,7 @@ async def register_new_bill(
             title=body.name,
             description_contains=trigger_desc,
             destination_account=trigger_payee,
+            category_name=trigger_category,
             amount_exactly=amount_trigger,
         )
     except Exception as exc:
@@ -402,7 +506,7 @@ async def register_linked_bill(
         )
     elif (body.description_contains or "").strip() or (
         body.destination_account or ""
-    ).strip():
+    ).strip() or (body.category_name or "").strip():
         rule_id = await _create_link_rule(
             client,
             bill_id=bill_id,
@@ -410,6 +514,7 @@ async def register_linked_bill(
             title=body.name,
             description_contains=body.description_contains,
             destination_account=body.destination_account,
+            category_name=body.category_name,
             amount_exactly=body.amount_exactly,
         )
         created_rule = True

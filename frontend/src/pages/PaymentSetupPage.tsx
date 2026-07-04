@@ -116,7 +116,7 @@ export function PaymentSetupPage() {
     queryKey: ["paymentRun", "availableBills"],
     queryFn: fetchAvailableBills,
     select: (result) => result.data,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 0,
   })
 
   const bucketAssetAccounts = useMemo(
@@ -215,6 +215,7 @@ export function PaymentSetupPage() {
     setBillInitialMode(mode)
     setLinkBillId(fireflyBillId ?? null)
     setBillRegistrationOpen(true)
+    void queryClient.refetchQueries({ queryKey: ["paymentRun", "availableBills"] })
   }
 
   function openEditBill(row: RegisteredBillRow) {

@@ -110,13 +110,16 @@ export type BillLinkRule = {
   title: string | null
   description_contains: string | null
   payee_contains: string | null
+  category_name: string | null
   amount_exactly: string | null
 }
 
 export type RegisterBillPayload = {
   mode: "create_new" | "link_existing"
   name: string
-  amount: string
+  amount?: string
+  amount_min?: string
+  amount_max?: string
   amount_mode: "recurring" | "intermittent"
   repeat_freq?: string | null
   worksheet_section: "bills" | "liabilities"
@@ -125,6 +128,7 @@ export type RegisterBillPayload = {
   credit_card_account_id?: string | null
   description_contains: string
   destination_account?: string
+  category_name?: string
   amount_exactly?: string | null
   firefly_bill_id?: string | null
   rule_id?: string | null

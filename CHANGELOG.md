@@ -13,8 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bill registration** — failed rule or registry steps roll back newly created Firefly bills and rules when possible
 - **Payment setup link bill** — Link bill on the setup page pre-selects the clicked Firefly bill in the registration wizard
 - **Worksheet bill edit** — the edit pencil on bill rows opens the registration sheet with that row’s settings instead of a blank create wizard
-- **Bill registration rules** — new rules can match on payee contains and/or description contains (at least one required); Firefly bill create includes required due date and sets the subscription **active**
+- **Bill registration rules** — new rules can match on payee contains, description contains, and/or category is (at least one required); Firefly bill create includes required due date and sets the subscription **active**
 - **Link existing bill** — selecting a Firefly bill with an existing link rule reuses that rule instead of creating a duplicate (fixes Firefly 422 on Link to worksheet); discovers rules via Firefly's bill rules API (matches by bill name, not id)
+- **Intermittent bill registration** — create-new with no amount no longer fails Firefly validation; uses a wide bill range in Firefly while worksheet owed and planned stay at $0 until you enter an amount
+- **Bill amount min/max** — registration wizard accepts explicit Firefly amount min and max (one field mirrors the other when only one is set); recurring worksheet **Owed** uses the average of min and max on refresh
+- **Link existing bill list** — refreshes from Firefly when opening the registration sheet (not affected by reference cache clear); sorted alphabetically
 
 ### Added
 
@@ -30,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Bills section sort order** — worksheet bill rows group as cash monthly, cash intermittent, credit monthly, then credit intermittent (alphabetical within each group)
+- **Worksheet bill and liability badges** — Auto-draft, Manual, and Via card badges sit inline beside the row name instead of on a second line
 - **Payment worksheet credit card activity** — activity sub-table is right-aligned under the dollar columns with fixed column widths
 - **Payment worksheet credit cards** — card name links to Firefly; pencil opens **Details** (bucket, limit, due day, APR, default pay, exclude); table shows read-only balances with only **Planned** and **Paid** editable inline; paid rows use a light green background; table help is a header tooltip; excluded cards live in **Manage cards**; subtotal row sums dollar columns with balance-weighted APR and portfolio utilization; bucket, limit, due, APR, and util columns hide below xl width to reduce horizontal scrolling; due dates turn red when due today or earlier, the row is not marked paid, and no bank payment posted this month
 - **Payment worksheet bucket sheet** — compact footer buttons (Delete, Cancel, Save) aligned on one row, matching credit card Details

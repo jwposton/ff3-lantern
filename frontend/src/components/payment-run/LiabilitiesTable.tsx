@@ -132,7 +132,7 @@ export function LiabilitiesTable({
                   )}
                 >
                   <TableCell className="min-w-[8.75rem]">
-                    <div className="flex min-w-0 flex-col gap-0.5">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       <span
                         className={cn(
                           "truncate font-medium",
@@ -142,26 +142,24 @@ export function LiabilitiesTable({
                       >
                         {name}
                       </span>
-                      <div className="flex flex-wrap gap-1">
-                        {showAutoDraft ? (
-                          <Badge variant="secondary" className="text-[10px]">
-                            Auto-draft
-                          </Badge>
-                        ) : null}
-                        {showManual ? (
-                          <Badge variant="outline" className="text-[10px]">
-                            Manual
-                          </Badge>
-                        ) : null}
-                        {isCcRail && viaCard ? (
-                          <Badge
-                            variant="outline"
-                            className="text-muted-foreground text-[10px]"
-                          >
-                            Via {viaCard}
-                          </Badge>
-                        ) : null}
-                      </div>
+                      {showAutoDraft ? (
+                        <Badge variant="secondary" className="shrink-0 text-[10px]">
+                          Auto-draft
+                        </Badge>
+                      ) : null}
+                      {showManual ? (
+                        <Badge variant="outline" className="shrink-0 text-[10px]">
+                          Manual
+                        </Badge>
+                      ) : null}
+                      {isCcRail && viaCard ? (
+                        <Badge
+                          variant="outline"
+                          className="text-muted-foreground shrink-0 text-[10px]"
+                        >
+                          Via {viaCard}
+                        </Badge>
+                      ) : null}
                     </div>
                   </TableCell>
                   <TableCell

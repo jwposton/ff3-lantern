@@ -10,6 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { useCategorizeMeta } from "@/hooks/useCategorizeMeta"
 import {
   fetchBillLinkRules,
   type AvailableFireflyBill,
@@ -63,7 +64,8 @@ export function BillRegistrationSheet({
 }: BillRegistrationSheetProps) {
   const [mode, setMode] = useState<RegistrationMode>("create_new")
   const [name, setName] = useState("")
-  const [amount, setAmount] = useState("")
+  const [amountMin, setAmountMin] = useState("")
+  const [amountMax, setAmountMax] = useState("")
   const [amountMode, setAmountMode] = useState<"recurring" | "intermittent">(
     "recurring",
   )
@@ -76,6 +78,7 @@ export function BillRegistrationSheet({
   const [creditCardAccountId, setCreditCardAccountId] = useState("")
   const [descriptionContains, setDescriptionContains] = useState("")
   const [payeeContains, setPayeeContains] = useState("")
+  const [categoryName, setCategoryName] = useState("")
   const [amountExactly, setAmountExactly] = useState("")
   const [selectedBillId, setSelectedBillId] = useState("")
   const [selectedRuleId, setSelectedRuleId] = useState("")
@@ -86,6 +89,9 @@ export function BillRegistrationSheet({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const { data: categorizeMeta } = useCategorizeMeta()
+  const categories = categorizeMeta?.categories ?? []
+
   const isEditMode = editTarget !== null
 
   useEffect(() => {
@@ -93,7 +99,8 @@ export function BillRegistrationSheet({
     if (editTarget) {
       setMode("create_new")
       setName(editTarget.row_label ?? "")
-      setAmount("")
+      setAmountMin("")
+      setAmountMax("")
       setAmountMode(
         editTarget.amount_mode === "intermittent" ? "intermittent" : "recurring",
       )
@@ -110,6 +117,7 @@ export function BillRegistrationSheet({
       )
       setDescriptionContains("existing-rule")
       setPayeeContains("")
+      setCategoryName("")
       setAmountExactly("")
       setSelectedBillId("")
       setSelectedRuleId("")
@@ -120,7 +128,8 @@ export function BillRegistrationSheet({
     }
     setMode(initialMode)
     setName("")
-    setAmount("")
+    setAmountMin("")
+    setAmountMax("")
     setAmountMode("recurring")
     setRepeatFreq("monthly")
     setWorksheetSection(defaultSection)
@@ -129,6 +138,7 @@ export function BillRegistrationSheet({
     setCreditCardAccountId(creditCards[0]?.account_id ?? "")
     setDescriptionContains("")
     setPayeeContains("")
+    setCategoryName("")
     setAmountExactly("")
     setSelectedBillId(initialFireflyBillId ?? "")
     setSelectedRuleId("")
@@ -150,7 +160,8 @@ export function BillRegistrationSheet({
     const bill = availableBills.find((row) => row.id === selectedBillId)
     if (!bill) return
     setName(bill.name ?? "")
-    setAmount(bill.amount_min ?? bill.amount_max ?? "")
+    setAmountMin(bill.amount_min ?? "")
+    setAmountMax(bill.amount_max ?? bill.amount_min ?? "")
     setRepeatFreq(bill.repeat_freq ?? "monthly")
   }, [selectedBillId, availableBills])
 
@@ -176,12 +187,14 @@ export function BillRegistrationSheet({
           setUseExistingRule(true)
           setDescriptionContains(first.description_contains ?? "")
           setPayeeContains(first.payee_contains ?? "")
+          setCategoryName(first.category_name ?? "")
           setAmountExactly(first.amount_exactly ?? "")
         } else {
           setSelectedRuleId("")
           setUseExistingRule(false)
           setDescriptionContains("")
           setPayeeContains("")
+          setCategoryName("")
           setAmountExactly("")
         }
       })
@@ -209,6 +222,7 @@ export function BillRegistrationSheet({
     setSelectedRuleId(rule.id)
     setDescriptionContains(rule.description_contains ?? "")
     setPayeeContains(rule.payee_contains ?? "")
+    setCategoryName(rule.category_name ?? "")
     setAmountExactly(rule.amount_exactly ?? "")
   }
 
@@ -217,7 +231,18 @@ export function BillRegistrationSheet({
     setSelectedRuleId("")
     setDescriptionContains("")
     setPayeeContains("")
+    setCategoryName("")
     setAmountExactly("")
+  }
+
+  function mirrorAmountOnBlur(field: "min" | "max") {
+    if (field === "min") {
+      const trimmed = amountMin.trim()
+      if (trimmed && !amountMax.trim()) setAmountMax(trimmed)
+      return
+    }
+    const trimmed = amountMax.trim()
+    if (trimmed && !amountMin.trim()) setAmountMin(trimmed)
   }
 
   async function handleSubmit() {
@@ -228,13 +253,20 @@ export function BillRegistrationSheet({
     }
     const trimmedRule = descriptionContains.trim()
     const trimmedPayee = payeeContains.trim()
+    const trimmedCategory = categoryName.trim()
     const ruleId =
       mode === "link_existing" && useExistingRule && selectedRuleId
         ? selectedRuleId
         : null
-    if (!isEditMode && !ruleId && !trimmedRule && !trimmedPayee) {
+    if (
+      !isEditMode &&
+      !ruleId &&
+      !trimmedRule &&
+      !trimmedPayee &&
+      !trimmedCategory
+    ) {
       setError(
-        "Select or create a matching rule — at least payee or description is required.",
+        "Select or create a matching rule — at least payee, description, or category is required.",
       )
       return
     }
@@ -250,15 +282,22 @@ export function BillRegistrationSheet({
       setError("Credit card is required when payment rail is credit card.")
       return
     }
-    if (amountMode === "recurring" && !amount.trim()) {
-      setError("Amount is required for recurring bills.")
+    const trimmedAmountMin = amountMin.trim()
+    const trimmedAmountMax = amountMax.trim()
+    if (
+      amountMode === "recurring" &&
+      !trimmedAmountMin &&
+      !trimmedAmountMax
+    ) {
+      setError("Amount min or max is required for recurring bills.")
       return
     }
 
     const payload: RegisterBillPayload = {
       mode,
       name: trimmedName,
-      amount: amount.trim() || "0.00",
+      amount_min: trimmedAmountMin || undefined,
+      amount_max: trimmedAmountMax || undefined,
       amount_mode: amountMode,
       repeat_freq: repeatFreq,
       worksheet_section: worksheetSection,
@@ -269,6 +308,7 @@ export function BillRegistrationSheet({
         paymentRail === "credit_card" ? creditCardAccountId || null : null,
       description_contains: trimmedRule,
       destination_account: trimmedPayee,
+      category_name: trimmedCategory,
       amount_exactly: amountExactly.trim() || null,
       firefly_bill_id: mode === "link_existing" ? selectedBillId : null,
       rule_id: ruleId,
@@ -337,6 +377,10 @@ export function BillRegistrationSheet({
               <label className="text-sm font-medium" htmlFor="ff-bill">
                 Firefly bill
               </label>
+              <p className="text-muted-foreground text-xs">
+                Only subscriptions not already on this worksheet. Cache clear does
+                not affect this list — it loads live from Firefly.
+              </p>
               {loadingAvailable ? (
                 <p className="text-muted-foreground text-sm">Loading bills…</p>
               ) : availableBills.length === 0 ? (
@@ -374,17 +418,39 @@ export function BillRegistrationSheet({
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium" htmlFor="bill-amount">
-              Amount
-            </label>
-            <Input
-              id="bill-amount"
-              inputMode="decimal"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="bill-amount-min">
+                Amount min
+                {amountMode === "intermittent" ? " (optional)" : ""}
+              </label>
+              <Input
+                id="bill-amount-min"
+                inputMode="decimal"
+                value={amountMin}
+                onChange={(event) => setAmountMin(event.target.value)}
+                onBlur={() => mirrorAmountOnBlur("min")}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="bill-amount-max">
+                Amount max
+                {amountMode === "intermittent" ? " (optional)" : ""}
+              </label>
+              <Input
+                id="bill-amount-max"
+                inputMode="decimal"
+                value={amountMax}
+                onChange={(event) => setAmountMax(event.target.value)}
+                onBlur={() => mirrorAmountOnBlur("max")}
+              />
+            </div>
           </div>
+          <p className="text-muted-foreground text-xs">
+            {amountMode === "recurring"
+              ? "Set one or both — a single value applies to min and max. Worksheet owed uses the average when they differ."
+              : "Optional Firefly bill range — leave both blank for fully variable bills; worksheet planned starts at $0."}
+          </p>
 
           <div className="space-y-1">
             <span className="text-sm font-medium">Amount mode</span>
@@ -616,8 +682,30 @@ export function BillRegistrationSheet({
                       }
                     />
                     <p className="text-muted-foreground text-xs">
-                      At least one of payee or description is required so imports
-                      link to this bill.
+                      At least one of payee, description, or category is required
+                      so imports link to this bill.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium" htmlFor="rule-category">
+                      Rule — category is
+                    </label>
+                    <select
+                      id="rule-category"
+                      className={selectClassName}
+                      value={categoryName}
+                      onChange={(event) => setCategoryName(event.target.value)}
+                    >
+                      <option value="">— None —</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.name}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-muted-foreground text-xs">
+                      Matches withdrawals already categorized with this name.
                     </p>
                   </div>
 
@@ -639,6 +727,12 @@ export function BillRegistrationSheet({
                     <p>
                       <span className="font-medium">Payee contains:</span>{" "}
                       {payeeContains}
+                    </p>
+                  ) : null}
+                  {categoryName ? (
+                    <p>
+                      <span className="font-medium">Category is:</span>{" "}
+                      {categoryName}
                     </p>
                   ) : null}
                   <p>
