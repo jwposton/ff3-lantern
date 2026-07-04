@@ -532,6 +532,44 @@ def test_named_bucket_assertions():
     assert buckets["All American Waste"] == "Utilities — Trash"
 
 
+def rent_monthly_withdrawals_linked(count: int = 12) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "1200.00",
+            "date": f"{year}-{month:02d}-01",
+            "destination_name": "Property Mgmt LLC",
+            "description": "Monthly rent payment",
+            "category_name": "Rent",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+            "subscription_id": "7",
+            "subscription_name": "Rent",
+        })
+    return rows
+
+
+def test_linked_subscription_split_excluded():
+    kwargs = _engine_kwargs()
+    kwargs["registry_rows"] = [{"row_label": "Rent", "firefly_bill_id": "7"}]
+    result = build_bill_suggestions(rent_monthly_withdrawals_linked(12), **kwargs)
+    assert result["data"] == []
+
+
+def test_unlinked_recurring_still_suggested():
+    result = build_bill_suggestions(spotify_monthly_withdrawals(12), **_engine_kwargs())
+    assert len(result["data"]) == 1
+    assert result["data"][0]["merchant"] == "Spotify"
+
+
 @pytest.mark.asyncio
 async def test_fetch_bill_suggestions_rejects_invalid_lookback():
     class StubClient:

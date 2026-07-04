@@ -111,6 +111,25 @@ def test_split_journal_produces_two_rows():
     assert journal_ids == {"2001", "2002"}
 
 
+def test_fetch_splits_maps_subscription_fields():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/accounts"):
+            return httpx.Response(200, json=load_fixture("accounts.json"))
+        payload = load_fixture("transactions_split.json")
+        payload["data"][0]["attributes"]["transactions"][0]["subscription_id"] = "42"
+        payload["data"][0]["attributes"]["transactions"][0]["subscription_name"] = "Rent"
+        return httpx.Response(200, json=payload)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    flat = asyncio.run(client.fetch_splits("2024-01-01", "2024-01-31"))
+    linked = next(row for row in flat if row.get("subscription_id") == "42")
+    assert linked["subscription_name"] == "Rent"
+
+
 def test_withdrawal_fixture_includes_description_and_transaction_journal_id():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/accounts"):

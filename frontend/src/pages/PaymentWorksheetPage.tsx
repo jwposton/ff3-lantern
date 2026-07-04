@@ -41,6 +41,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useHealth } from "@/hooks/useHealth"
+import { registeredBillsQueryKey } from "@/hooks/useBillHistory"
 import { useLoanMeta, useLoans } from "@/hooks/useLoans"
 import { isFundingBucketAsset } from "@/lib/accounts"
 import {
@@ -500,6 +501,7 @@ export function PaymentWorksheetPage() {
       })
     } else {
       await registerBill(payload)
+      await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
     }
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
   }

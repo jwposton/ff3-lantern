@@ -206,6 +206,15 @@ def _parse_withdrawal(split: dict[str, Any]) -> dict[str, Any] | None:
     return {**split, "amount": amount}
 
 
+def _split_subscription_id(row: dict[str, Any]) -> str | None:
+    """Return Firefly subscription or bill linkage id when split is already linked."""
+    for key in ("subscription_id", "bill_id"):
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
 def _normalize_key(destination: str, description: str) -> str:
     """Group key: payee when present, else normalized description fingerprint."""
     payee = (destination or "").strip()
@@ -559,8 +568,15 @@ def _is_already_registered(
     registry_rows: list[dict[str, Any]],
     firefly_bills: list[dict[str, Any]],
     registered_bill_ids: set[str],
+    txns: list[dict[str, Any]] | None = None,
 ) -> bool:
     """Skip suggestions already represented in worksheet registry or Firefly bills."""
+    if txns:
+        for txn in txns:
+            linked_id = _split_subscription_id(txn)
+            if linked_id and linked_id in registered_bill_ids:
+                return True
+
     friendly = _friendly_merchant_name(str(metrics.get("merchant") or key))
     raw_payee = str(metrics.get("merchant") or key).strip() or key
     labels = {friendly.casefold(), raw_payee.casefold(), key.casefold()}
@@ -696,6 +712,7 @@ def build_bill_suggestions(
 
     parsed = [row for row in (_parse_withdrawal(split) for split in splits) if row is not None]
     filtered = [row for row in parsed if not _is_noise_transaction(row, accounts)]
+    filtered = [row for row in filtered if _split_subscription_id(row) is None]
     groups = _group_withdrawals(filtered)
 
     suggestions: list[dict[str, Any]] = []
@@ -711,6 +728,7 @@ def build_bill_suggestions(
             registry_rows=registry_rows,
             firefly_bills=firefly_bills,
             registered_bill_ids=registered_bill_ids,
+            txns=txns,
         ):
             continue
         suggestions.append(_enrich_suggestion(key, txns, metrics, accounts))

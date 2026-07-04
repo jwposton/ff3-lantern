@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 import sidecar_db
 from firefly_client import FireflyClient
+from payment_worksheet_bill_history import bill_history_date_window
 from pydantic import BaseModel, field_validator
 
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
@@ -411,6 +412,22 @@ async def _create_link_rule(
     return str(created["id"])
 
 
+async def _trigger_bill_link_rule(client: FireflyClient, rule_id: str) -> None:
+    start, end = bill_history_date_window()
+    details = {"rule_id": rule_id, "start": start, "end": end}
+    try:
+        await client.trigger_rule(rule_id, start, end)
+        await sidecar_db.log_audit(
+            "bill_link_rule_trigger",
+            details_json=json.dumps(details),
+        )
+    except RuntimeError as exc:
+        await sidecar_db.log_audit(
+            "bill_link_rule_trigger_failed",
+            details_json=json.dumps({**details, "error": str(exc)}),
+        )
+
+
 async def register_new_bill(
     client: FireflyClient, body: RegisterBillBody
 ) -> dict[str, Any]:
@@ -479,6 +496,7 @@ async def register_new_bill(
             f"and rule {rule_id}.",
             status_code=500,
         ) from exc
+    await _trigger_bill_link_rule(client, rule_id)
     return await _registry_response(registry_id)
 
 
@@ -538,6 +556,8 @@ async def register_linked_bill(
             f"Registry insert failed for Firefly bill {bill_id} and rule {rule_id}.",
             status_code=500,
         ) from exc
+    if created_rule:
+        await _trigger_bill_link_rule(client, rule_id)
     return await _registry_response(registry_id)
 
 

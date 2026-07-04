@@ -660,3 +660,189 @@ async def test_register_new_bill_compensates_on_rule_failure(data_dir, monkeypat
     assert deleted_bills == ["bill-orphan"]
     rows = await sidecar_db.list_worksheet_registry()
     assert not [r for r in rows if r.get("firefly_bill_id") == "bill-orphan"]
+
+
+@pytest.mark.asyncio
+async def test_register_new_bill_triggers_link_rule(data_dir, monkeypatch):
+    from payment_worksheet_bill_history import bill_history_date_window
+
+    monkeypatch.setenv(
+        "FF3LANTERN_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+    )
+    trigger_calls: list[tuple[str, str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/rule-groups" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "rule-groups",
+                            "id": "1",
+                            "attributes": {"title": "Payment worksheet"},
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "POST":
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "bill-new",
+                        "attributes": {"name": "Water"},
+                    }
+                },
+            )
+        if path == "/api/v1/rules" and request.method == "POST":
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "rule-new",
+                        "attributes": {"title": "Water"},
+                    }
+                },
+            )
+        if path.startswith("/api/v1/rules/") and path.endswith("/trigger"):
+            rule_id = path.split("/")[-2]
+            trigger_calls.append(
+                (rule_id, request.url.params["start"], request.url.params["end"])
+            )
+            return httpx.Response(204)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    body = RegisterBillBody(
+        mode="create_new",
+        name="Water",
+        amount="50.00",
+        amount_mode="recurring",
+        repeat_freq="monthly",
+        worksheet_section="bills",
+        payment_rail="bank",
+        funding_bucket_key="checking",
+        description_contains="CITY WATER",
+    )
+    await register_new_bill(client, body)
+    start, end = bill_history_date_window()
+    assert trigger_calls == [("rule-new", start, end)]
+
+    async def read_audit():
+        import aiosqlite
+
+        async with aiosqlite.connect(sidecar_db.get_db_path()) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT action, details_json FROM audit_log WHERE action = ?",
+                ("bill_link_rule_trigger",),
+            )
+            return await cursor.fetchone()
+
+    row = await read_audit()
+    assert row is not None
+    details = json.loads(row["details_json"])
+    assert details["rule_id"] == "rule-new"
+    assert details["start"] == start
+    assert details["end"] == end
+
+
+@pytest.mark.asyncio
+async def test_register_linked_bill_skips_trigger_when_existing_rule(data_dir):
+    trigger_calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/bills/existing" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "existing",
+                        "attributes": {"name": "Rent"},
+                    }
+                },
+            )
+        if path == "/api/v1/rules/rule-rent" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "rule-rent",
+                        "attributes": {
+                            "title": "Rent rule",
+                            "triggers": [],
+                            "actions": [
+                                {"type": "link_to_bill", "value": "Rent"},
+                            ],
+                        },
+                    }
+                },
+            )
+        if path == "/api/v1/rules" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "rules",
+                            "id": "rule-rent",
+                            "attributes": {
+                                "title": "Rent rule",
+                                "triggers": [],
+                                "actions": [
+                                    {"type": "link_to_bill", "value": "Rent"},
+                                ],
+                            },
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path.startswith("/api/v1/rules/") and path.endswith("/trigger"):
+            trigger_calls.append(path)
+            return httpx.Response(204)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    body = RegisterBillBody(
+        mode="link_existing",
+        name="Rent",
+        amount="1200.00",
+        amount_mode="recurring",
+        worksheet_section="liabilities",
+        payment_rail="bank",
+        funding_bucket_key="checking",
+        description_contains="",
+        firefly_bill_id="existing",
+        rule_id="rule-rent",
+    )
+    await register_bill(client, body)
+    assert trigger_calls == []

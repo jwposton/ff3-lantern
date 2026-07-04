@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { DateRangeProvider } from "@/context/DateRangeContext"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { BillDiscoverPage } from "./BillDiscoverPage"
+import { registeredBillsQueryKey } from "@/hooks/useBillHistory"
 import type { BillSuggestionsEnvelope, BillSuggestion } from "@/lib/paymentRunApi"
 import type { PaymentWorksheetEnvelope } from "@/lib/paymentRunApi"
 
@@ -518,10 +519,27 @@ describe("BillDiscoverPage", () => {
       getRegisterCalls,
     } = mockDiscoverFetch({ suggestions: MULTI_BUCKET_SUGGESTIONS })
 
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
+
     render(
-      <TestProviders>
-        <BillDiscoverPage />
-      </TestProviders>,
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/manage/payment-run/discover"]}>
+          <DateRangeProvider>
+            <TooltipProvider>
+              <Routes>
+                <Route path="/" element={<div>Home page</div>} />
+                <Route
+                  path="/manage/payment-run/discover"
+                  element={<BillDiscoverPage />}
+                />
+              </Routes>
+            </TooltipProvider>
+          </DateRangeProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
     )
 
     await waitFor(() => {
@@ -560,6 +578,15 @@ describe("BillDiscoverPage", () => {
       expect(toastSuccess).toHaveBeenCalledWith("Spotify registered", {
         duration: 4000,
       })
+    })
+    await waitFor(() => {
+      expect(
+        invalidateSpy.mock.calls.some(
+          ([args]) =>
+            JSON.stringify(args?.queryKey) ===
+            JSON.stringify(registeredBillsQueryKey()),
+        ),
+      ).toBe(true)
     })
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "Register a bill" })).toBeNull()

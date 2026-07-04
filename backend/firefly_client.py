@@ -612,6 +612,10 @@ class FireflyClient:
                         source_acct = accounts.get(source_id, {})
                         dest_acct = accounts.get(dest_id, {})
                         tjid = split.get("transaction_journal_id")
+                        subscription_id = split.get("subscription_id")
+                        subscription_name = split.get("subscription_name")
+                        bill_id = split.get("bill_id")
+                        bill_name = split.get("bill_name")
                         flat.append(
                             {
                                 "journal_id": journal_id,
@@ -634,6 +638,20 @@ class FireflyClient:
                                 "transaction_journal_id": str(tjid) if tjid is not None else None,
                                 "notes": split.get("notes") or parent_notes,
                                 "tags": split.get("tags"),
+                                "subscription_id": str(subscription_id)
+                                if subscription_id is not None
+                                and str(subscription_id).strip()
+                                else None,
+                                "subscription_name": str(subscription_name)
+                                if subscription_name is not None
+                                and str(subscription_name).strip()
+                                else None,
+                                "bill_id": str(bill_id)
+                                if bill_id is not None and str(bill_id).strip()
+                                else None,
+                                "bill_name": str(bill_name)
+                                if bill_name is not None and str(bill_name).strip()
+                                else None,
                             }
                         )
                 pagination = payload.get("meta", {}).get("pagination", {})

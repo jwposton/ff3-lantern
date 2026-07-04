@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
@@ -103,7 +103,8 @@ function mockFetch(options: {
   historyStatus?: number
 }) {
   const bills = options.bills ?? [BILL_ALPHA, BILL_BETA]
-  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+  let billsFetchCalls = 0
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input)
     if (url.includes("/health")) {
       return new Response(JSON.stringify(HEALTH_ENABLED), { status: 200 })
@@ -117,10 +118,12 @@ function mockFetch(options: {
       })
     }
     if (url.includes("/api/payment-run/bills") && !url.includes("/history")) {
+      billsFetchCalls += 1
       return new Response(JSON.stringify({ data: bills }), { status: 200 })
     }
     return new Response("not found", { status: 404 })
   })
+  return { fetchSpy, getBillsFetchCalls: () => billsFetchCalls }
 }
 
 describe("BillsDetailPage picker", () => {
@@ -216,6 +219,26 @@ describe("BillsDetailPage stats and table", () => {
 
     const txnLinks = screen.getAllByRole("link", { name: "Monthly internet" })
     expect(txnLinks[0]?.getAttribute("href")).toContain("/transactions/show/501")
+  })
+
+  it("header Refresh button refetches registered bills list", async () => {
+    const { getBillsFetchCalls } = mockFetch({ bills: [BILL_ALPHA, BILL_BETA] })
+    render(
+      <TestProviders initialEntry="/manage/bills/1">
+        <BillsDetailPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy()
+    })
+    expect(getBillsFetchCalls()).toBe(1)
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
+
+    await waitFor(() => {
+      expect(getBillsFetchCalls()).toBe(2)
+    })
   })
 
   it("empty history renders empty table copy not error card", async () => {

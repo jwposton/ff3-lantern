@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { ExternalLink } from "lucide-react"
+import { ExternalLink, RefreshCw } from "lucide-react"
 import {
   Link,
   Navigate,
@@ -380,6 +380,7 @@ export function BillsDetailPage() {
   const {
     data: billsData,
     isPending: billsPending,
+    isFetching: billsFetching,
     isError: billsError,
     refetch: refetchBills,
   } = useRegisteredBills()
@@ -414,6 +415,20 @@ export function BillsDetailPage() {
             <BillWindowCaption registryId={registryId} />
           ) : null}
         </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => refetchBills()}
+          disabled={billsFetching || billsPending}
+        >
+          <RefreshCw
+            className={
+              billsFetching ? "mr-2 size-4 animate-spin" : "mr-2 size-4"
+            }
+          />
+          {billsFetching ? "Refreshing…" : "Refresh"}
+        </Button>
       </div>
 
       <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(240px,280px)_1fr] lg:gap-6">

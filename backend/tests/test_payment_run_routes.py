@@ -716,6 +716,7 @@ def test_register_bill(monkeypatch, client, data_dir, payment_worksheet_env):
 
     bill_posts: list[dict] = []
     rule_posts: list[dict] = []
+    trigger_calls: list[tuple[str, str, str]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -757,6 +758,12 @@ def test_register_bill(monkeypatch, client, data_dir, payment_worksheet_env):
                     }
                 },
             )
+        if path.startswith("/api/v1/rules/") and path.endswith("/trigger"):
+            rule_id = path.split("/")[-2]
+            trigger_calls.append(
+                (rule_id, request.url.params["start"], request.url.params["end"])
+            )
+            return httpx.Response(204)
         return httpx.Response(404)
 
     mock_client = FireflyClient(
@@ -799,6 +806,8 @@ def test_register_bill(monkeypatch, client, data_dir, payment_worksheet_env):
         assert body["counts_toward_cash_plan"] is True
         assert len(bill_posts) == 1
         assert len(rule_posts) == 1
+        assert len(trigger_calls) == 1
+        assert trigger_calls[0][0] == "rule-api"
 
         duplicate = client.post(
             "/api/payment-run/bills/register",

@@ -9,6 +9,7 @@ import { BillSuggestionBucketSection } from "@/components/payment-run/BillSugges
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { registeredBillsQueryKey } from "@/hooks/useBillHistory"
 import { useBillSuggestions } from "@/hooks/useBillSuggestions"
 import { useHealth } from "@/hooks/useHealth"
 import {
@@ -125,10 +126,12 @@ export function BillDiscoverPage() {
     await registerBill(payload)
     try {
       await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+      await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
       await refetch()
     } catch {
       // Registration succeeded; refresh failure should not block success UX
       void queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+      void queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
       void refetch()
     }
     setSheetOpen(false)
