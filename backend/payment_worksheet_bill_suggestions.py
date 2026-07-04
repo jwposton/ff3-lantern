@@ -469,12 +469,13 @@ def _is_opaque_payee_cluster(txns: list[dict[str, Any]]) -> bool:
     return len(categories) >= 2
 
 
-def _freq_to_repeat_freq(freq: str) -> str:
-    mapping = {
+def _freq_to_repeat_freq(freq: str) -> str | None:
+    mapping: dict[str, str | None] = {
         "monthly": "monthly",
         "biweekly": "every 2 weeks",
         "quarterly": "every 3 months",
         "annual": "yearly",
+        "irregular": None,
     }
     return mapping.get(freq, "monthly")
 
@@ -489,13 +490,20 @@ def _build_register_prefill(
 ) -> dict[str, Any]:
     friendly = _friendly_merchant_name(raw_payee)
     amount_min, amount_max = _pad_amounts(metrics["amount_min"], metrics["amount_max"])
+    freq = metrics["freq"]
+    if freq == "irregular":
+        amount_mode: Literal["recurring", "intermittent"] = "intermittent"
+        repeat_freq = None
+    else:
+        amount_mode = _recommend_amount_mode(metrics)
+        repeat_freq = _freq_to_repeat_freq(freq)
     return {
         "mode": "create_new",
         "name": friendly,
-        "amount_mode": _recommend_amount_mode(metrics),
+        "amount_mode": amount_mode,
         "amount_min": amount_min,
         "amount_max": amount_max,
-        "repeat_freq": _freq_to_repeat_freq(metrics["freq"]),
+        "repeat_freq": repeat_freq,
         "worksheet_section": "bills",
         "payment_rail": _infer_payment_rail(txns, accounts),
         "destination_account": raw_payee,
