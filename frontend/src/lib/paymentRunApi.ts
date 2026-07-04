@@ -297,6 +297,25 @@ export type BillSuggestionsEnvelope = {
   }
 }
 
+export type BillSuggestionTransaction = {
+  date: string
+  amount: string
+  description: string
+  category: string | null
+  payee: string | null
+  budget: string | null
+}
+
+export type BillSuggestionTransactionsEnvelope = {
+  data: BillSuggestionTransaction[]
+  meta: {
+    suggestion_id: string
+    transaction_count: number
+    period_start: string
+    period_end: string
+  }
+}
+
 export type DiscoverCategoryOption = {
   id: string
   name: string
@@ -525,6 +544,25 @@ export async function fetchBillSuggestions(
     await parseError(res, `Failed to load bill suggestions (${res.status})`)
   }
   return (await res.json()) as BillSuggestionsEnvelope
+}
+
+export async function fetchBillSuggestionTransactions(
+  suggestionId: string,
+  lookbackMonths: number,
+): Promise<BillSuggestionTransactionsEnvelope> {
+  const params = new URLSearchParams({
+    lookback_months: String(lookbackMonths),
+  })
+  const res = await fetch(
+    `/api/payment-run/bill-suggestions/${encodeURIComponent(suggestionId)}/transactions?${params}`,
+  )
+  if (!res.ok) {
+    await parseError(
+      res,
+      `Failed to load suggestion transactions (${res.status})`,
+    )
+  }
+  return (await res.json()) as BillSuggestionTransactionsEnvelope
 }
 
 export async function fetchDiscoverSettings(): Promise<DiscoverSettingsEnvelope> {
