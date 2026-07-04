@@ -1,10 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { Fragment } from "react"
 
-import {
-  BillSuggestionTransactionsPanel,
-  useBillSuggestionRowDrilldown,
-} from "@/components/payment-run/BillSuggestionTransactionsPanel"
+import { BillSuggestionTransactionsPanel } from "@/components/payment-run/BillSuggestionTransactionsPanel"
 import { COMPACT_TABLE } from "@/components/payment-run/worksheetTableUtils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -90,20 +87,12 @@ function DesktopExpandChevron({
   row,
   isExpanded,
   onToggleExpanded,
-  lookbackMonths,
 }: {
   row: BillSuggestion
   isExpanded: boolean
   onToggleExpanded: (id: string) => void
-  lookbackMonths: number
 }) {
-  const { isFetching } = useBillSuggestionRowDrilldown(
-    row.id,
-    lookbackMonths,
-    isExpanded,
-  )
   const panelId = `discover-txn-panel-${row.id}`
-  const disabled = isExpanded && isFetching
 
   if (row.occurrences === 0) {
     return null
@@ -112,19 +101,14 @@ function DesktopExpandChevron({
   return (
     <button
       type="button"
-      className={cn(
-        "text-muted-foreground hover:text-foreground rounded p-0.5",
-        disabled && "cursor-not-allowed opacity-50",
-      )}
+      className="text-muted-foreground hover:text-foreground rounded p-0.5"
       aria-expanded={isExpanded}
       aria-controls={panelId}
-      aria-disabled={disabled ? "true" : undefined}
       aria-label={
         isExpanded
           ? `Hide withdrawals for ${row.merchant}`
           : `Show withdrawals for ${row.merchant}`
       }
-      disabled={disabled}
       onClick={() => onToggleExpanded(row.id)}
     >
       {isExpanded ? (
@@ -140,20 +124,12 @@ function MobileExpandChevron({
   row,
   isExpanded,
   onToggleExpanded,
-  lookbackMonths,
 }: {
   row: BillSuggestion
   isExpanded: boolean
   onToggleExpanded: (id: string) => void
-  lookbackMonths: number
 }) {
-  const { isFetching } = useBillSuggestionRowDrilldown(
-    row.id,
-    lookbackMonths,
-    isExpanded,
-  )
   const panelId = `discover-txn-panel-${row.id}`
-  const disabled = isExpanded && isFetching
 
   if (row.occurrences === 0) {
     return <span className="min-h-[44px] min-w-[44px] shrink-0" aria-hidden />
@@ -162,19 +138,14 @@ function MobileExpandChevron({
   return (
     <button
       type="button"
-      className={cn(
-        "text-muted-foreground hover:text-foreground flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded",
-        disabled && "cursor-not-allowed opacity-50",
-      )}
+      className="text-muted-foreground hover:text-foreground flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded"
       aria-expanded={isExpanded}
       aria-controls={panelId}
-      aria-disabled={disabled ? "true" : undefined}
       aria-label={
         isExpanded
           ? `Hide withdrawals for ${row.merchant}`
           : `Show withdrawals for ${row.merchant}`
       }
-      disabled={disabled}
       onClick={() => onToggleExpanded(row.id)}
     >
       {isExpanded ? (
@@ -231,7 +202,6 @@ export function BillSuggestionBucketSection({
                           row={row}
                           isExpanded={isExpanded}
                           onToggleExpanded={onToggleExpanded}
-                          lookbackMonths={lookbackMonths}
                         />
                       </TableCell>
                       <TableCell>
@@ -326,7 +296,6 @@ export function BillSuggestionBucketSection({
                     row={row}
                     isExpanded={isExpanded}
                     onToggleExpanded={onToggleExpanded}
-                    lookbackMonths={lookbackMonths}
                   />
                   <div className="min-w-0 flex-1">
                     <p className="font-medium">{row.merchant}</p>
