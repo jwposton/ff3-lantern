@@ -382,7 +382,7 @@ function BillDetailPanel({
                 <MetricBlock
                   label="Calendar average"
                   value={formatDisplayAmount(history.calendar_average)}
-                  hint="Rolling 12 months ÷ 12 (drops oldest month)"
+                  hint="12-month window ÷ 12 (prior 12 months until this month's bill posts)"
                 />
                 <MetricBlock
                   label="Active-month average"
