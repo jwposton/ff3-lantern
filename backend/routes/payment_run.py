@@ -527,15 +527,17 @@ async def patch_bill_group(
     if existing is None:
         raise HTTPException(status_code=404, detail="Group not found.")
     updates = body.model_dump(exclude_unset=True)
+    member_ids_update: list[int] | None = None
     if "member_ids" in updates:
         member_ids = updates.pop("member_ids")
         await _validate_bill_group_member_ids(member_ids)
-        await sidecar_db.replace_bill_group_members(group_id, member_ids)
-    if updates:
-        await sidecar_db.upsert_bill_group(
-            id=group_id,
+        member_ids_update = member_ids
+    if member_ids_update is not None or updates:
+        await sidecar_db.patch_bill_group(
+            group_id,
             label=updates.get("label", existing["label"]),
             sort_order=updates.get("sort_order", existing["sort_order"]),
+            member_ids=member_ids_update,
         )
     row = await sidecar_db.get_bill_group(group_id)
     if row is None:

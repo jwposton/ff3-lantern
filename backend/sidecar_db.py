@@ -47,6 +47,7 @@ __all__ = [
     "log_audit",
     "get_suggestion",
     "insert_bill_group_if_absent",
+    "patch_bill_group",
     "replace_bill_group_members",
     "update_discover_ignored_categories",
     "update_worksheet_registry",
@@ -482,17 +483,27 @@ async def upsert_bill_group(
 ) -> None:
     await init_db()
     async with aiosqlite.connect(get_db_path()) as db:
-        await db.execute(
-            """
-            INSERT INTO worksheet_bill_groups (id, label, sort_order)
-            VALUES (?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-              label = excluded.label,
-              sort_order = excluded.sort_order
-            """,
-            (id, label, sort_order),
-        )
+        await _upsert_bill_group_conn(db, id=id, label=label, sort_order=sort_order)
         await db.commit()
+
+
+async def _upsert_bill_group_conn(
+    db: aiosqlite.Connection,
+    *,
+    id: str,
+    label: str,
+    sort_order: int,
+) -> None:
+    await db.execute(
+        """
+        INSERT INTO worksheet_bill_groups (id, label, sort_order)
+        VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          label = excluded.label,
+          sort_order = excluded.sort_order
+        """,
+        (id, label, sort_order),
+    )
 
 
 async def insert_bill_group_if_absent(
@@ -514,6 +525,24 @@ async def insert_bill_group_if_absent(
             await db.commit()
         except aiosqlite.IntegrityError as exc:
             raise ConflictError(f"Bill group id already exists: {id}") from exc
+
+
+async def patch_bill_group(
+    group_id: str,
+    *,
+    label: str,
+    sort_order: int,
+    member_ids: list[int] | None = None,
+) -> None:
+    """Atomically update group metadata and optionally replace members."""
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        if member_ids is not None:
+            await _replace_bill_group_members_conn(db, group_id, member_ids)
+        await _upsert_bill_group_conn(
+            db, id=group_id, label=label, sort_order=sort_order
+        )
+        await db.commit()
 
 
 async def list_bill_group_members(group_id: str) -> list[dict[str, Any]]:
@@ -540,39 +569,47 @@ async def list_bill_group_members(group_id: str) -> list[dict[str, Any]]:
         ]
 
 
+async def _replace_bill_group_members_conn(
+    db: aiosqlite.Connection,
+    group_id: str,
+    member_ids: list[int],
+) -> None:
+    if member_ids:
+        placeholders = ", ".join("?" for _ in member_ids)
+        await db.execute(
+            f"""
+            UPDATE worksheet_registry
+            SET bill_group_id = NULL
+            WHERE bill_group_id = ? AND id NOT IN ({placeholders})
+            """,
+            (group_id, *member_ids),
+        )
+        for member_id in member_ids:
+            await db.execute(
+                """
+                UPDATE worksheet_registry
+                SET bill_group_id = ?
+                WHERE id = ?
+                """,
+                (group_id, member_id),
+            )
+    else:
+        await db.execute(
+            """
+            UPDATE worksheet_registry
+            SET bill_group_id = NULL
+            WHERE bill_group_id = ?
+            """,
+            (group_id,),
+        )
+
+
 async def replace_bill_group_members(
     group_id: str, member_ids: list[int]
 ) -> None:
     await init_db()
     async with aiosqlite.connect(get_db_path()) as db:
-        if member_ids:
-            placeholders = ", ".join("?" for _ in member_ids)
-            await db.execute(
-                f"""
-                UPDATE worksheet_registry
-                SET bill_group_id = NULL
-                WHERE bill_group_id = ? AND id NOT IN ({placeholders})
-                """,
-                (group_id, *member_ids),
-            )
-            for member_id in member_ids:
-                await db.execute(
-                    """
-                    UPDATE worksheet_registry
-                    SET bill_group_id = ?
-                    WHERE id = ?
-                    """,
-                    (group_id, member_id),
-                )
-        else:
-            await db.execute(
-                """
-                UPDATE worksheet_registry
-                SET bill_group_id = NULL
-                WHERE bill_group_id = ?
-                """,
-                (group_id,),
-            )
+        await _replace_bill_group_members_conn(db, group_id, member_ids)
         await db.commit()
 
 

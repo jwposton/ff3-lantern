@@ -237,3 +237,54 @@ def test_insert_bill_group_if_absent_conflict(data_dir):
                 sort_order=1,
             )
         )
+
+
+def test_patch_bill_group_atomic_members_and_metadata(data_dir):
+    async def _seed() -> tuple[int, int]:
+        await sidecar_db.init_db()
+        await sidecar_db.upsert_bill_group(
+            id="subscriptions",
+            label="Subscriptions",
+            sort_order=0,
+        )
+        electric_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "601",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "firefly",
+                "payment_rail": "bank",
+                "rule_id": "201",
+                "row_label": "Electric",
+            }
+        )
+        water_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "602",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "firefly",
+                "payment_rail": "bank",
+                "rule_id": "202",
+                "row_label": "Water",
+            }
+        )
+        return electric_id, water_id
+
+    electric_id, water_id = asyncio.run(_seed())
+    asyncio.run(
+        sidecar_db.patch_bill_group(
+            "subscriptions",
+            label="Streaming",
+            sort_order=5,
+            member_ids=[electric_id, water_id],
+        )
+    )
+    group = asyncio.run(sidecar_db.get_bill_group("subscriptions"))
+    assert group is not None
+    assert group["label"] == "Streaming"
+    assert group["sort_order"] == 5
+    members = asyncio.run(sidecar_db.list_bill_group_members("subscriptions"))
+    assert {m["registry_id"] for m in members} == {electric_id, water_id}
