@@ -9,16 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bill discover ignored categories** — operators choose expense categories to skip on the discover page; new installs seed common dining/travel categories (not Entertainment — subscriptions may live there); settings persist in the sidecar
 - **Bill discover page** — Find recurring bill suggestions at `/manage/payment-run/discover` when payment worksheet is enabled; adopt suggestions into registration wizard
 - **Bill suggestions API** — GET /payment-run/bill-suggestions analyzes withdrawal history and returns ranked bill candidates with wizard prefill (requires payment worksheet enabled)
 - **Opaque payee splitter** — PreApproved clusters split into separate bill suggestions per category+amount sub-group; discover groups rows by payee and shows category + payee detail on each bill row
 
 ### Changed
 
-- **Bill discover grouping** — suggestions group by Firefly payee instead of hardcoded audit buckets (Streaming & Media, etc.)
+- **Bill discover grouping** — suggestions group by Firefly payee instead of hardcoded audit buckets (Streaming & Media, etc.); discretionary category exclusions are operator-managed on the discover page instead of a built-in blocklist
 
 ### Fixed
 
+- **Bill discover visit-style filter** — semi-monthly billing on stable calendar anchor days (e.g. Backblaze on ~12 and ~19) is recognized as cyclical, not restaurant-style visits; no longer bypassed by category name guesses
+- **Bill discover SaaS and hosting gaps** — usage-metered charges with a few line items per month (Cursor) and annual hosting with two renewals in lookback (Ionos) use timing stats, not extra category markers
+- **Bill discover stale subscription links** — withdrawals linked to deleted Firefly bills/subscriptions (ghost `subscription_id` on journals) are analyzed again instead of being silently skipped
+- **Bill discover sidecar migration** — existing databases without `defaults_version` on `discover_settings` no longer crash backend startup during seed insert
 - **Opaque payee two-hit sub-split** — PreApproved clusters that trigger on two category+amount fingerprints with two charges each now emit separate suggestions instead of an empty list
 - **Bill discover UX** — registration success no longer shows an error when cache refresh fails; period dates use local calendar days; suggestion count respects hide-review; invalid lookback URLs normalize; credit-card adopt prefill picks the matching card; registration sheet cannot dismiss mid-save
 - **Bill suggestions opaque payee detection** — subscriptions with varying amounts (e.g. Spotify price changes) are no longer misclassified as combined Apple Services rows

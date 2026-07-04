@@ -1504,3 +1504,53 @@ def test_bill_suggestions_no_sidecar_writes(
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 
+
+def _discover_settings_handler():
+    categories_payload = {
+        "data": [
+            {"type": "categories", "id": "1", "attributes": {"name": "Gas"}},
+            {"type": "categories", "id": "2", "attributes": {"name": "Rent"}},
+        ],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/categories" and request.method == "GET":
+            return httpx.Response(200, json=categories_payload)
+        return httpx.Response(404)
+
+    return handler
+
+
+def test_discover_settings_get_and_put(monkeypatch, client, data_dir, payment_worksheet_env):
+    import firefly_reference_cache
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    firefly_reference_cache.clear()
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(_discover_settings_handler()),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        get_response = client.get("/api/payment-run/discover-settings")
+        assert get_response.status_code == 200
+        body = get_response.json()
+        assert body["ignored_categories"]
+        assert "Gas" in body["ignored_categories"]
+        assert {row["name"] for row in body["available_categories"]} == {"Gas", "Rent"}
+        assert body["suggested_ignored_categories"]
+
+        put_response = client.put(
+            "/api/payment-run/discover-settings",
+            json={"ignored_categories": ["Gas", "gas", " Rent "]},
+        )
+        assert put_response.status_code == 200
+        assert put_response.json()["ignored_categories"] == ["Gas", "Rent"]
+
+        get_again = client.get("/api/payment-run/discover-settings")
+        assert get_again.json()["ignored_categories"] == ["Gas", "Rent"]
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+

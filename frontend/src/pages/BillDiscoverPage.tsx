@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { BillRegistrationSheet } from "@/components/payment-run/BillRegistrationSheet"
 import { BillSuggestionBucketSection } from "@/components/payment-run/BillSuggestionBucketSection"
+import { DiscoverIgnoredCategories } from "@/components/payment-run/DiscoverIgnoredCategories"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -248,6 +249,8 @@ export function BillDiscoverPage() {
               {isFetching ? "Refreshing…" : "Refresh"}
             </Button>
           </div>
+
+          <DiscoverIgnoredCategories lookbackMonths={lookbackMonths} />
         </CardContent>
       </Card>
 

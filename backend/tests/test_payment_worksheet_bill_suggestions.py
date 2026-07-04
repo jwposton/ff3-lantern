@@ -10,6 +10,9 @@ import pytest
 from payment_worksheet_bills import RegisterBillBody
 from payment_worksheet_bill_suggestions import (
     OPAQUE_NOTES,
+    _category_is_ignored,
+    _cluster_withdrawals,
+    _is_quiet_category,
     _merchant_from_category,
     _pad_amounts,
     _resolve_opaque_raw_payee,
@@ -21,14 +24,28 @@ from payment_worksheet_bill_suggestions import (
 )
 
 
-def _engine_kwargs() -> dict[str, Any]:
-    return {
+def _engine_kwargs(*, ignored_categories: list[str] | None = None) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
         "accounts": empty_accounts(),
         "firefly_bills": [],
         "registry_rows": [],
         "period_start": "2025-07-01",
         "period_end": "2026-07-01",
     }
+    if ignored_categories is not None:
+        kwargs["ignored_categories"] = ignored_categories
+    return kwargs
+
+
+DEFAULT_IGNORED_CATEGORIES = [
+    "Gas",
+    "Restaurants",
+    "Restaurant",
+    "Gasoline",
+    "Groceries",
+    "Shopping",
+    "Entertainment",
+]
 
 
 def empty_accounts() -> dict[str, dict[str, Any]]:
@@ -466,22 +483,319 @@ def test_empty_splits():
     [
         (gas_station_noise, "gas_station"),
         (gasoline_variant_noise, "gasoline_variant"),
-        (restaurant_noise, "restaurant"),
-        (restaurant_variant_noise, "restaurant_variant"),
         (apple_cash_p2p, "apple_cash_p2p"),
         (cc_interest_noise, "cc_interest"),
         (loan_payment_noise, "loan_payment"),
     ],
 )
-def test_noise_exclusion_categories(fixture_fn, label):
+def test_accounting_noise_exclusion(fixture_fn, label):
     _ = label
     result = build_bill_suggestions(fixture_fn(6), **_engine_kwargs())
     assert result["data"] == []
 
 
+@pytest.mark.parametrize(
+    ("fixture_fn", "label"),
+    [
+        (restaurant_noise, "restaurant"),
+        (restaurant_variant_noise, "restaurant_variant"),
+    ],
+)
+def test_operator_ignored_category_exclusion(fixture_fn, label):
+    _ = label
+    result = build_bill_suggestions(
+        fixture_fn(6),
+        **_engine_kwargs(ignored_categories=DEFAULT_IGNORED_CATEGORIES),
+    )
+    assert result["data"] == []
+
+
+def test_rent_not_excluded_without_ignore_list():
+    rows: list[dict[str, Any]] = []
+    for i in range(12):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "1200.00",
+            "date": f"{year}-{month:02d}-01",
+            "destination_name": "Property Mgmt LLC",
+            "description": "Monthly rent payment",
+            "category_name": "Rent",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    result = build_bill_suggestions(rows, **_engine_kwargs())
+    assert len(result["data"]) == 1
+    assert result["data"][0]["category"] == "Rent"
+
+
+def test_quiet_rent_merges_payee_variants():
+    rows: list[dict[str, Any]] = []
+    payees = ("Property Mgmt LLC", "New Landlord Inc")
+    for i in range(12):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "1200.00",
+            "date": f"{year}-{month:02d}-01",
+            "destination_name": payees[i % len(payees)],
+            "description": "Monthly rent payment",
+            "category_name": "Rent",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    result = build_bill_suggestions(rows, **_engine_kwargs())
+    assert len(result["data"]) == 1
+    assert result["data"][0]["occurrences"] == 12
+
+
+def test_category_ignore_casefold_and_alias():
+    assert _category_is_ignored("GAS", ["gas"]) is True
+    assert _category_is_ignored("Gasoline", ["Gas"]) is True
+    assert _category_is_ignored("Restaurant", ["Restaurants"]) is True
+    assert _category_is_ignored("Rent", ["Gas", "Groceries"]) is False
+
+
+def arbys_multi_visit_fast_food(months: int = 6) -> list[dict[str, Any]]:
+    """Realistic habit: several Arby's runs per month, not one monthly bill."""
+    from tests.test_bill_discover_recurrence_matrix import multi_visit_restaurant
+    return multi_visit_restaurant(months=months, destination="Arbys", category="Fast Food")
+
+
+def test_arbys_multi_visit_not_suggested():
+    result = build_bill_suggestions(arbys_multi_visit_fast_food(6), **_engine_kwargs())
+    assert result["data"] == []
+
+
+def test_arbys_excluded_when_category_ignored():
+    from tests.test_bill_discover_recurrence_matrix import multi_visit_restaurant
+    result = build_bill_suggestions(
+        multi_visit_restaurant(destination="Arbys", category="Fast Food"),
+        **_engine_kwargs(ignored_categories=["Fast Food"]),
+    )
+    assert result["data"] == []
+
+
+def test_arbys_fast_food_not_suggested():
+    """Alias for multi-visit fixture (statistical visit-style filter)."""
+    result = build_bill_suggestions(arbys_multi_visit_fast_food(6), **_engine_kwargs())
+    assert result["data"] == []
+
+
+def _legacy_arbys_monthly_once(count: int = 6) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "12.47",
+            "date": f"{year}-{month:02d}-08",
+            "destination_name": "Arbys",
+            "description": "Drive thru",
+            "category_name": "Fast Food",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
+def variable_electricity_monthly(count: int = 12) -> list[dict[str, Any]]:
+    amounts = (
+        "82.15", "95.40", "88.22", "110.05", "91.33", "104.88",
+        "87.60", "99.12", "93.45", "108.70", "85.90", "101.25",
+    )
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": amounts[i % len(amounts)],
+            "date": f"{year}-{month:02d}-12",
+            "destination_name": "Eversource Energy",
+            "description": "Electric bill",
+            "category_name": "Electricity",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
+def mixed_utilities_trash_and_electric() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    electric_amounts = ("95.00", "110.00", "88.00", "102.00", "91.00", "105.00")
+    for i in range(12):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "39.00",
+            "date": f"{year}-{month:02d}-01",
+            "destination_name": "All American Waste",
+            "description": "Trash service",
+            "category_name": "Utilities",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+        rows.append({
+            "type": "withdrawal",
+            "amount": electric_amounts[i % len(electric_amounts)],
+            "date": f"{year}-{month:02d}-15",
+            "destination_name": "Eversource Energy",
+            "description": "Electric bill",
+            "category_name": "Utilities",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
+def test_arbys_excluded_when_category_ignored_legacy_once_monthly():
+    result = build_bill_suggestions(
+        _legacy_arbys_monthly_once(6),
+        **_engine_kwargs(ignored_categories=["Fast Food"]),
+    )
+    assert result["data"] == []
+
+
+def entertainment_streaming_monthly(count: int = 12) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "15.99",
+            "date": f"{year}-{month:02d}-03",
+            "destination_name": "Hulu LLC",
+            "description": "Subscription renewal",
+            "category_name": "Entertainment",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
+def test_entertainment_subscription_not_blocked_by_discretionary():
+    result = build_bill_suggestions(entertainment_streaming_monthly(12), **_engine_kwargs())
+    assert len(result["data"]) == 1
+    assert "Hulu" in result["data"][0]["merchant"]
+
+
+def cheap_app_subscription_monthly(count: int = 12) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "0.99",
+            "date": f"{year}-{month:02d}-01",
+            "destination_name": "Apple App Store",
+            "description": "App subscription",
+            "category_name": "App Subscriptions",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
+def small_variable_utility_monthly(count: int = 12) -> list[dict[str, Any]]:
+    amounts = ("3.50", "4.25", "3.99", "4.10", "3.75", "4.00")
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": amounts[i % len(amounts)],
+            "date": f"{year}-{month:02d}-05",
+            "destination_name": "Town Water Dept",
+            "description": "Water bill",
+            "category_name": "Utilities",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
+def test_cheap_app_subscription_suggested():
+    result = build_bill_suggestions(cheap_app_subscription_monthly(12), **_engine_kwargs())
+    assert len(result["data"]) == 1
+    assert abs(Decimal(result["data"][0]["amount_avg"]) - Decimal("0.99")) < Decimal("0.01")
+
+
+def test_small_variable_utility_suggested():
+    result = build_bill_suggestions(small_variable_utility_monthly(12), **_engine_kwargs())
+    assert len(result["data"]) == 1
+    assert "Water" in result["data"][0]["merchant"] or "Town" in result["data"][0]["merchant"]
+
+
+def test_variable_electricity_suggested():
+    result = build_bill_suggestions(variable_electricity_monthly(12), **_engine_kwargs())
+    assert len(result["data"]) == 1
+    assert "Eversource" in result["data"][0]["merchant"]
+
+
+def test_mixed_utilities_trash_and_electric_both_suggested():
+    result = build_bill_suggestions(mixed_utilities_trash_and_electric(), **_engine_kwargs())
+    merchants = {row["merchant"] for row in result["data"]}
+    assert len(result["data"]) == 2
+    assert any("All American Waste" in m for m in merchants)
+    assert any("Eversource" in m for m in merchants)
+
+
 def test_noise_does_not_block_spotify():
     splits = spotify_monthly_withdrawals(12) + gas_station_noise(6) + restaurant_noise(6)
-    result = build_bill_suggestions(splits, **_engine_kwargs())
+    result = build_bill_suggestions(
+        splits,
+        **_engine_kwargs(ignored_categories=DEFAULT_IGNORED_CATEGORIES),
+    )
     assert len(result["data"]) == 1
     assert result["data"][0]["merchant"] == "Spotify"
 
@@ -976,6 +1290,29 @@ def test_linked_subscription_split_excluded():
     kwargs["registry_rows"] = [{"row_label": "Rent", "firefly_bill_id": "7"}]
     result = build_bill_suggestions(rent_monthly_withdrawals_linked(12), **kwargs)
     assert result["data"] == []
+
+
+def test_active_firefly_subscription_excluded_without_registry():
+    kwargs = _engine_kwargs()
+    kwargs["firefly_bills"] = [{"id": "14", "name": "Trash"}]
+    rows = all_american_waste_monthly(12)
+    for row in rows:
+        row["subscription_id"] = "14"
+    result = build_bill_suggestions(rows, **kwargs)
+    assert result["data"] == []
+
+
+def test_stale_deleted_subscription_link_still_suggested():
+    """subscription_id on journal after Firefly bill deleted — not an active link."""
+    kwargs = _engine_kwargs()
+    kwargs["firefly_bills"] = [{"id": "22", "name": "Rent"}]
+    rows = all_american_waste_monthly(12)
+    for row in rows:
+        row["subscription_id"] = "14"
+        row["subscription_name"] = "Trash"
+    result = build_bill_suggestions(rows, **kwargs)
+    assert len(result["data"]) == 1
+    assert "All American Waste" in result["data"][0]["merchant"]
 
 
 def test_unlinked_recurring_still_suggested():

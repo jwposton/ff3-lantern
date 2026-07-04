@@ -188,8 +188,9 @@ function mockDiscoverFetch(options: {
       })
     : null
 
-  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input)
+    const method = init?.method ?? "GET"
 
     if (url.includes("/health")) {
       return new Response(
@@ -200,6 +201,26 @@ function mockDiscoverFetch(options: {
           openrouter_configured: false,
           sidecar_writable: true,
           payment_worksheet_enabled: paymentEnabled,
+        }),
+        { status: 200 },
+      )
+    }
+
+    if (url.includes("/api/payment-run/discover-settings")) {
+      if (method === "PUT") {
+        return new Response(
+          JSON.stringify({ ignored_categories: ["Gas"] }),
+          { status: 200 },
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          ignored_categories: [],
+          available_categories: [
+            { id: "1", name: "Gas" },
+            { id: "2", name: "Rent" },
+          ],
+          suggested_ignored_categories: ["Gas", "Restaurants"],
         }),
         { status: 200 },
       )
@@ -895,5 +916,36 @@ describe("BillDiscoverPage", () => {
         "href",
       ),
     ).toBe("/manage/bills")
+  })
+
+  it("shows ignored categories controls and saves selection", async () => {
+    mockDiscoverFetch({
+      suggestions: {
+        data: [],
+        meta: {
+          withdrawals_analyzed: 0,
+          suggestions_count: 0,
+          period_start: "2025-07-04",
+          period_end: "2026-07-04",
+        },
+      },
+    })
+
+    render(
+      <TestProviders>
+        <BillDiscoverPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Ignored categories")).toBeTruthy()
+    })
+
+    const select = screen.getByLabelText("Add ignored category")
+    fireEvent.change(select, { target: { value: "Gas" } })
+
+    await waitFor(() => {
+      expect(screen.getByText("Gas")).toBeTruthy()
+    })
   })
 })

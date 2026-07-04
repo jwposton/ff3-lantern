@@ -24,6 +24,7 @@ __all__ = [
     "get_bucket_balances_for_month",
     "get_data_dir",
     "get_db_path",
+    "get_discover_settings",
     "get_funding_bucket",
     "get_worksheet_refresh",
     "get_worksheet_registry",
@@ -35,6 +36,7 @@ __all__ = [
     "list_worksheet_registry",
     "log_audit",
     "get_suggestion",
+    "update_discover_ignored_categories",
     "update_worksheet_registry",
     "upsert_bucket_balance",
     "upsert_funding_bucket",
@@ -106,11 +108,27 @@ CREATE TABLE IF NOT EXISTS worksheet_bucket_balance (
   user_balance_override INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (bucket_key, month)
 );
+
+CREATE TABLE IF NOT EXISTS discover_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  ignored_categories_json TEXT NOT NULL DEFAULT '[]',
+  defaults_version INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
 _LEGACY_DB_FILENAME = "ff3analytics.db"
 _DB_FILENAME = "ff3lantern.db"
+
+DEFAULT_DISCOVER_IGNORED_CATEGORIES: list[str] = [
+    "Gas",
+    "Groceries",
+    "Restaurants",
+    "Restraunts",
+    "Fast Food",
+    "Coffee",
+    "Shopping",
+]
 
 
 def get_data_dir() -> Path:
@@ -192,6 +210,50 @@ async def init_db() -> None:
             )
         except aiosqlite.OperationalError:
             pass
+        try:
+            await db.execute(
+                "ALTER TABLE discover_settings ADD COLUMN defaults_version INTEGER NOT NULL DEFAULT 0"
+            )
+        except aiosqlite.OperationalError:
+            pass
+        cursor = await db.execute("PRAGMA table_info(discover_settings)")
+        discover_columns = {row[1] for row in await cursor.fetchall()}
+        if "defaults_version" in discover_columns:
+            await db.execute(
+                """
+                INSERT OR IGNORE INTO discover_settings (id, ignored_categories_json, defaults_version)
+                VALUES (1, ?, 1)
+                """,
+                (json.dumps(DEFAULT_DISCOVER_IGNORED_CATEGORIES),),
+            )
+            await db.execute(
+                """
+                UPDATE discover_settings
+                SET ignored_categories_json = ?,
+                    defaults_version = 1
+                WHERE id = 1
+                  AND defaults_version = 0
+                  AND ignored_categories_json = '[]'
+                """,
+                (json.dumps(DEFAULT_DISCOVER_IGNORED_CATEGORIES),),
+            )
+        else:
+            await db.execute(
+                """
+                INSERT OR IGNORE INTO discover_settings (id, ignored_categories_json)
+                VALUES (1, ?)
+                """,
+                (json.dumps(DEFAULT_DISCOVER_IGNORED_CATEGORIES),),
+            )
+            await db.execute(
+                """
+                UPDATE discover_settings
+                SET ignored_categories_json = ?
+                WHERE id = 1
+                  AND ignored_categories_json = '[]'
+                """,
+                (json.dumps(DEFAULT_DISCOVER_IGNORED_CATEGORIES),),
+            )
         await db.commit()
 
 
@@ -618,3 +680,57 @@ async def upsert_bucket_balance(
             (bucket_key, month, user_balance, user_balance_override),
         )
         await db.commit()
+
+
+async def get_discover_settings() -> dict[str, Any]:
+    """Return persisted bill-discover settings (single-row sidecar config)."""
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT ignored_categories_json FROM discover_settings WHERE id = 1"
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return {"ignored_categories": []}
+        try:
+            categories = json.loads(row["ignored_categories_json"])
+        except json.JSONDecodeError:
+            categories = []
+        if not isinstance(categories, list):
+            categories = []
+        cleaned = [
+            str(name).strip()
+            for name in categories
+            if name is not None and str(name).strip()
+        ]
+        return {"ignored_categories": cleaned}
+
+
+async def update_discover_ignored_categories(categories: list[str]) -> dict[str, Any]:
+    """Replace operator-selected categories excluded from bill discovery."""
+    await init_db()
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for name in categories:
+        text = str(name).strip()
+        if not text:
+            continue
+        folded = text.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        cleaned.append(text)
+    payload = json.dumps(cleaned)
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT INTO discover_settings (id, ignored_categories_json)
+            VALUES (1, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              ignored_categories_json = excluded.ignored_categories_json
+            """,
+            (payload,),
+        )
+        await db.commit()
+    return {"ignored_categories": cleaned}

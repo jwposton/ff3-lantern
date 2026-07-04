@@ -627,6 +627,40 @@ async def available_bills(
     return {"data": available}
 
 
+class DiscoverSettingsBody(BaseModel):
+    ignored_categories: list[str] = []
+
+
+@router.get("/payment-run/discover-settings")
+async def get_discover_settings_route(
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    try:
+        categories = await client.fetch_categories()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    settings = await sidecar_db.get_discover_settings()
+    available = sorted(
+        [{"id": str(cat["id"]), "name": cat["name"]} for cat in categories],
+        key=lambda row: row["name"].casefold(),
+    )
+    return {
+        "ignored_categories": settings["ignored_categories"],
+        "available_categories": available,
+        "suggested_ignored_categories": sidecar_db.DEFAULT_DISCOVER_IGNORED_CATEGORIES,
+    }
+
+
+@router.put("/payment-run/discover-settings")
+async def put_discover_settings_route(
+    body: DiscoverSettingsBody,
+    _: None = Depends(require_payment_worksheet),
+):
+    updated = await sidecar_db.update_discover_ignored_categories(body.ignored_categories)
+    return updated
+
+
 @router.get("/payment-run/bill-suggestions")
 async def bill_suggestions(
     lookback_months: int = 12,

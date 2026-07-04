@@ -19,28 +19,6 @@ LOOKBACK_CHOICES: tuple[int, ...] = (6, 12, 24)
 
 CONFIDENCE_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
 
-CATEGORY_BLOCKLIST: frozenset[str] = frozenset({
-    "Restraunts",
-    "Restaurants",
-    "Groceries",
-    "Gas",
-    "Fast Food",
-    "Coffee",
-    "Shopping",
-    "Entertainment",
-    "Travel",
-    "Rideshare",
-    "Uber",
-    "Lyft",
-    "Parking",
-    "Tolls",
-    "Credit Card Interest",
-    "Loan Payment",
-    "Loan Interest",
-    "Mortgage",
-    "Mortgate interest",
-})
-
 LEGAL_SUFFIX_RE = re.compile(
     r"\b(inc\.?|llc\.?|l\.?l\.?c\.?|corp\.?|ltd\.?|usa)\s*$",
     re.IGNORECASE,
@@ -62,18 +40,34 @@ GAS_MERCHANT_KEYWORDS: tuple[str, ...] = (
 APPLE_CASH_P2P_RE = re.compile(r"APPLE CASH SENT MONEY", re.IGNORECASE)
 CC_INTEREST_DESC_RE = re.compile(r"interest charge", re.IGNORECASE)
 
-_BLOCKLIST_FOLDED: frozenset[str] = frozenset(c.casefold() for c in CATEGORY_BLOCKLIST)
+_CATEGORY_IGNORE_ALIASES: dict[str, frozenset[str]] = {
+    "restaurants": frozenset({"restaurant", "restraunt", "restraunts", "dining out", "food & dining"}),
+    "gas": frozenset({"gasoline", "fuel"}),
+    "groceries": frozenset({"grocery"}),
+}
 
-_CATEGORY_BLOCK_ALIASES: frozenset[str] = frozenset({
-    "restaurant",
-    "restraunt",
-    "gasoline",
+# Substrings — utility/bill categories get relaxed variable-amount recurrence rules.
+_BILL_LIKE_CATEGORY_MARKERS: tuple[str, ...] = (
+    "utilit",
+    "electric",
+    "heat",
     "fuel",
-    "food & dining",
-    "dining out",
-    "grocery",
-    "mortgage interest",
-})
+    "oil",
+    "propane",
+    "trash",
+    "waste",
+    "water",
+    "sewer",
+    "internet",
+    "phone",
+    "cell",
+    "cable",
+    "insurance",
+    "rent",
+    "mortgage",
+    "subscription",
+    "streaming",
+)
 
 OPAQUE_NOTES = "Multiple subscriptions detected; review before adopting"
 
@@ -81,22 +75,197 @@ PREAPPROVED_RE = re.compile(r"preapproved payment", re.IGNORECASE)
 BILL_USER_PAYMENT_RE = re.compile(r"bill user payment", re.IGNORECASE)
 
 
-def _should_exclude_category(category: str) -> bool:
-    """True when category matches D-06 blocklist (case-insensitive, with aliases)."""
+def _category_folded(category: str) -> str:
+    return (category or "").strip().casefold()
+
+
+def _category_matches_markers(category: str, markers: tuple[str, ...]) -> bool:
+    folded = _category_folded(category)
+    if not folded:
+        return False
+    return any(marker in folded for marker in markers)
+
+
+def _is_bill_like_category(category: str) -> bool:
+    return _category_matches_markers(category, _BILL_LIKE_CATEGORY_MARKERS)
+
+
+def _charges_per_calendar_month(txns: list[dict[str, Any]]) -> dict[str, int]:
+    """Count withdrawal rows per YYYY-MM."""
+    counts: dict[str, int] = {}
+    for txn in txns:
+        date_str = str(txn.get("date") or "")[:10]
+        if len(date_str) < 7:
+            continue
+        month_key = date_str[:7]
+        counts[month_key] = counts.get(month_key, 0) + 1
+    return counts
+
+
+def _monthly_charge_slots(
+    txns: list[dict[str, Any]],
+) -> dict[str, list[tuple[int, Decimal]]]:
+    """Map YYYY-MM -> [(day_of_month, amount), ...] sorted by day."""
+    by_month: dict[str, list[tuple[int, Decimal]]] = {}
+    for txn in txns:
+        date_str = str(txn.get("date") or "")[:10]
+        if len(date_str) < 10:
+            continue
+        month = date_str[:7]
+        dom = int(date_str[8:10])
+        amount = txn.get("amount")
+        if not isinstance(amount, Decimal):
+            try:
+                amount = Decimal(str(amount))
+            except (InvalidOperation, TypeError):
+                continue
+        by_month.setdefault(month, []).append((dom, amount))
+    for month in by_month:
+        by_month[month].sort(key=lambda item: item[0])
+    return by_month
+
+
+def _dom_spread(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    return statistics.pstdev(values)
+
+
+def _tier_ratio_cv(pairs: list[tuple[Decimal, Decimal]]) -> float | None:
+    """Coefficient of variation for larger/smaller amount ratio across months."""
+    ratios: list[float] = []
+    for a1, a2 in pairs:
+        lo, hi = (a1, a2) if a1 <= a2 else (a2, a1)
+        if lo <= 0:
+            continue
+        ratios.append(float(hi / lo))
+    if len(ratios) < 2:
+        return None
+    mean = sum(ratios) / len(ratios)
+    if mean <= 0:
+        return None
+    return statistics.pstdev(ratios) / mean
+
+
+def _has_billing_anchor_cyclicality(
+    txns: list[dict[str, Any]],
+    *,
+    min_months: int = 3,
+    dom_spread_max: float = 2.5,
+    tier_ratio_cv_max: float = 0.35,
+) -> bool:
+    """True when charges land on 1-2 stable calendar days each cycle — not habit visits.
+
+    Semi-monthly billing (e.g. Backblaze on ~12 and ~19) repeats the same anchor days
+    with a stable amount tier ratio. Twice-monthly dining on similar days but varying
+    tier ratios still reads as visit-style.
+    """
+    by_month = _monthly_charge_slots(txns)
+    if len(by_month) < min_months:
+        return False
+
+    if any(len(slots) >= 4 for slots in by_month.values()):
+        return False
+
+    single_months = [(month, slots[0]) for month, slots in by_month.items() if len(slots) == 1]
+    if len(single_months) >= min_months:
+        doms = [float(slot[0]) for _, slot in single_months]
+        if _dom_spread(doms) <= dom_spread_max and len(single_months) / len(by_month) >= 0.6:
+            return True
+
+    pair_months = [(month, slots) for month, slots in by_month.items() if len(slots) == 2]
+    if len(pair_months) >= min_months:
+        first_doms = [float(slots[0][0]) for _, slots in pair_months]
+        second_doms = [float(slots[1][0]) for _, slots in pair_months]
+        if (
+            _dom_spread(first_doms) <= dom_spread_max
+            and _dom_spread(second_doms) <= dom_spread_max
+        ):
+            amount_pairs = [(slots[0][1], slots[1][1]) for _, slots in pair_months]
+            tier_cv = _tier_ratio_cv(amount_pairs)
+            if tier_cv is not None and tier_cv <= tier_ratio_cv_max:
+                ratios = []
+                for a1, a2 in amount_pairs:
+                    lo, hi = (a1, a2) if a1 <= a2 else (a2, a1)
+                    if lo > 0:
+                        ratios.append(float(hi / lo))
+                if ratios and (sum(ratios) / len(ratios)) >= 1.5:
+                    return True
+
+    return False
+
+
+def _is_visit_style_spending(
+    txns: list[dict[str, Any]],
+    *,
+    metrics: dict[str, Any] | None = None,
+) -> bool:
+    """True when the payee looks like repeat visits, not one bill per cycle.
+
+    Dining/gas habits often hit 2+ times in the same calendar month with varying
+    amounts and uneven spacing (e.g. 9 days then 22 days). True subscriptions
+    and biweekly bills keep steady gaps (~14 days) with at most two hits per month.
+
+    High-dollar clusters (e.g. heating-oil fill-ups in the same cold month) are
+    not visit-style even when 3+ hits land in one calendar month.
+    """
+    by_month = _charges_per_calendar_month(txns)
+    if not by_month:
+        return False
+
+    if _has_billing_anchor_cyclicality(txns):
+        return False
+
+    amounts: list[Decimal] = []
+    for txn in txns:
+        amount = txn.get("amount")
+        if isinstance(amount, Decimal):
+            amounts.append(amount)
+        else:
+            try:
+                amounts.append(Decimal(str(amount)))
+            except (InvalidOperation, TypeError):
+                continue
+    if amounts:
+        amount_avg = sum(amounts, Decimal("0")) / Decimal(len(amounts))
+        if amount_avg >= Decimal("75"):
+            return False
+
+    if any(count >= 3 for count in by_month.values()):
+        return True
+
+    multi_charge_months = sum(1 for count in by_month.values() if count >= 2)
+    if multi_charge_months < 2:
+        return False
+
+    if metrics is None:
+        return True
+
+    avg_gap = float(metrics.get("avg_gap_days") or 0)
+    gap_std = float(metrics.get("gap_std") or 0)
+    if avg_gap <= 0:
+        return True
+
+    gap_irregularity = gap_std / avg_gap
+    # Twice-a-month habits (short + long gaps) vs steady biweekly (~14d, low std).
+    return gap_irregularity >= 0.25
+
+
+def _category_is_ignored(category: str, ignored_categories: list[str]) -> bool:
+    """True when category matches operator ignore list (case-insensitive, with aliases)."""
     text = (category or "").strip()
-    if not text:
+    if not text or not ignored_categories:
         return False
     folded = text.casefold()
-    if folded in _BLOCKLIST_FOLDED or folded in _CATEGORY_BLOCK_ALIASES:
-        return True
-    for blocked in _BLOCKLIST_FOLDED:
-        if blocked in folded:
+    for ignored in ignored_categories:
+        ignored_text = ignored.strip()
+        if not ignored_text:
+            continue
+        ignored_folded = ignored_text.casefold()
+        if folded == ignored_folded:
             return True
-        stem = blocked.rstrip("s")
-        if len(stem) >= 3 and stem in folded:
-            return True
-    for alias in _CATEGORY_BLOCK_ALIASES:
-        if alias in folded:
+        aliases = _CATEGORY_IGNORE_ALIASES.get(ignored_folded, frozenset())
+        if folded in aliases:
             return True
     return False
 
@@ -128,10 +297,15 @@ def _is_gas_merchant(destination: str, category: str) -> bool:
     return any(keyword in dest for keyword in GAS_MERCHANT_KEYWORDS)
 
 
-def _is_noise_transaction(tx: dict[str, Any], accounts: dict[str, dict[str, Any]]) -> bool:
-    """Exclude D-06 noise: blocklisted categories, gas, P2P, interest, loans, internal transfers."""
+def _is_noise_transaction(
+    tx: dict[str, Any],
+    accounts: dict[str, dict[str, Any]],
+    *,
+    ignored_categories: list[str],
+) -> bool:
+    """Exclude operator-ignored categories and accounting-only noise."""
     category = str(tx.get("category_name") or "")
-    if _should_exclude_category(category):
+    if _category_is_ignored(category, ignored_categories):
         return True
 
     destination = str(tx.get("destination_name") or "")
@@ -203,6 +377,33 @@ def _split_subscription_id(row: dict[str, Any]) -> str | None:
     return None
 
 
+def _live_firefly_bill_ids(firefly_bills: list[dict[str, Any]]) -> set[str]:
+    return {
+        str(bill.get("id") or "").strip()
+        for bill in firefly_bills
+        if bill.get("id") is not None and str(bill.get("id")).strip()
+    }
+
+
+def _is_active_subscription_link(
+    row: dict[str, Any],
+    *,
+    live_bill_ids: set[str],
+    registered_bill_ids: set[str],
+) -> bool:
+    """True when split links to a Firefly bill/subscription that still exists.
+
+    Journals can retain subscription_id after the bill was deleted in Firefly —
+    those stale links are ignored so discover can still suggest the charge.
+    """
+    linked_id = _split_subscription_id(row)
+    if not linked_id:
+        return False
+    if linked_id in live_bill_ids:
+        return True
+    return linked_id in registered_bill_ids
+
+
 def _normalize_key(destination: str, description: str) -> str:
     """Group key: payee when present, else normalized description fingerprint."""
     payee = (destination or "").strip()
@@ -223,6 +424,78 @@ def _group_withdrawals(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, A
             continue
         groups.setdefault(key, []).append(row)
     return groups
+
+
+def _group_by_fingerprint(
+    rows: list[dict[str, Any]],
+) -> dict[tuple[str, Decimal], list[dict[str, Any]]]:
+    groups: dict[tuple[str, Decimal], list[dict[str, Any]]] = {}
+    for row in rows:
+        amount = row.get("amount")
+        if not isinstance(amount, Decimal):
+            try:
+                amount = Decimal(str(amount))
+            except (InvalidOperation, TypeError):
+                continue
+        fp = _fingerprint({**row, "amount": amount})
+        groups.setdefault(fp, []).append(row)
+    return groups
+
+
+def _fingerprint_cluster_key(category: str, amount: Decimal) -> str:
+    return f"fp:{category}:{amount.quantize(Decimal('0.01'), ROUND_HALF_UP)}"
+
+
+def _is_quiet_category(txns: list[dict[str, Any]]) -> bool:
+    """D-43: 2–3 payee variants and at most 3 amount fingerprints in category."""
+    if not txns:
+        return False
+    payee_keys = {
+        _normalize_key(
+            str(txn.get("destination_name") or ""),
+            str(txn.get("description") or ""),
+        )
+        for txn in txns
+    }
+    payee_keys.discard("")
+    if len(payee_keys) < 2:
+        return False
+    fp_counts = _fingerprint_date_counts(txns)
+    return len(payee_keys) <= 3 and len(fp_counts) <= 3
+
+
+def _cluster_withdrawals(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Route withdrawals: opaque payee → payee sub-split; quiet category → fingerprint; else payee."""
+    payee_groups = _group_withdrawals(rows)
+    opaque_keys = {
+        key
+        for key, txns in payee_groups.items()
+        if _should_subsplit_opaque_payee(txns)
+    }
+
+    clusters: dict[str, list[dict[str, Any]]] = {}
+    for key in opaque_keys:
+        clusters[key] = payee_groups[key]
+
+    remaining: list[dict[str, Any]] = []
+    for key, txns in payee_groups.items():
+        if key not in opaque_keys:
+            remaining.extend(txns)
+
+    by_category: dict[str, list[dict[str, Any]]] = {}
+    for row in remaining:
+        category = str(row.get("category_name") or "").strip() or "(uncategorized)"
+        by_category.setdefault(category, []).append(row)
+
+    for category, cat_rows in by_category.items():
+        if _is_quiet_category(cat_rows):
+            for fp, fp_rows in _group_by_fingerprint(cat_rows).items():
+                clusters[_fingerprint_cluster_key(fp[0], fp[1])] = fp_rows
+        else:
+            for key, payee_rows in _group_withdrawals(cat_rows).items():
+                clusters[key] = payee_rows
+
+    return clusters
 
 
 def _format_decimal(value: Decimal) -> str:
@@ -316,7 +589,7 @@ def _classify_freq(avg_gap_days: float) -> str:
         return "biweekly"
     if 85 <= avg_gap_days <= 100:
         return "quarterly"
-    if 350 <= avg_gap_days <= 380:
+    if 250 <= avg_gap_days <= 400:
         return "annual"
     return "irregular"
 
@@ -330,11 +603,25 @@ def _is_fixed_subscription(metrics: dict[str, Any]) -> bool:
 
 
 def _is_utility_like(metrics: dict[str, Any]) -> bool:
+    """Recurring spend with moderate date regularity (any category, any amount)."""
     return (
-        metrics["amount_avg"] > Decimal("40")
-        and metrics["regularity"] >= 0.4
+        metrics["regularity"] >= 0.4
         and metrics["occurrences"] >= 3
     )
+
+
+def _is_variable_bill(metrics: dict[str, Any]) -> bool:
+    """Bill-like categories with varying amounts on monthly or seasonal cadence."""
+    if not _is_bill_like_category(str(metrics.get("category") or "")):
+        return False
+    if metrics["occurrences"] < 3:
+        return False
+    if metrics["freq"] == "monthly" and metrics["regularity"] >= 0.35:
+        return True
+    if metrics["regularity"] >= 0.35 and 20 <= metrics["avg_gap_days"] <= 45:
+        return True
+    # Seasonal / irregular cadence (heating oil, propane): steady spacing among deliveries.
+    return metrics["regularity"] >= 0.4 and metrics["occurrences"] >= 3
 
 
 def _analyze_misc_metrics(key: str, txns: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -391,7 +678,42 @@ def _analyze_misc_metrics(key: str, txns: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
-def _is_recurring_candidate(metrics: dict[str, Any]) -> bool:
+def _has_in_month_usage_cluster(txns: list[dict[str, Any]], *, max_span_days: int = 10) -> bool:
+    """True when 3+ charges in one month fall within a short window (metered billing)."""
+    by_month = _monthly_charge_slots(txns)
+    for slots in by_month.values():
+        if len(slots) < 3:
+            continue
+        span = slots[-1][0] - slots[0][0]
+        if span <= max_span_days:
+            return True
+    return False
+
+
+def _is_usage_metered_saas(
+    metrics: dict[str, Any],
+    txns: list[dict[str, Any]],
+) -> bool:
+    """Usage line items clustered in-month (e.g. AI metered billing) — category-agnostic."""
+    if metrics["occurrences"] < 3:
+        return False
+    by_month = _charges_per_calendar_month(txns)
+    if len(by_month) < 3:
+        return False
+    peak = max(by_month.values())
+    if peak > 4 or peak < 3:
+        return False
+    return _has_in_month_usage_cluster(txns)
+
+
+def _is_recurring_candidate(
+    metrics: dict[str, Any],
+    txns: list[dict[str, Any]] | None = None,
+) -> bool:
+    if txns and _is_usage_metered_saas(metrics, txns):
+        return True
+    if txns and _is_visit_style_spending(txns, metrics=metrics):
+        return False
     freq = metrics["freq"]
     if freq == "monthly" and metrics["regularity"] >= 0.5 and metrics["occurrences"] >= 3:
         return True
@@ -401,14 +723,21 @@ def _is_recurring_candidate(metrics: dict[str, Any]) -> bool:
         return True
     if _is_utility_like(metrics):
         return True
+    if _is_variable_bill(metrics):
+        return True
     return False
 
 
-def _should_emit_opaque_subgroup(sub_metrics: dict[str, Any], *, is_misc: bool) -> bool:
+def _should_emit_opaque_subgroup(
+    sub_metrics: dict[str, Any],
+    *,
+    is_misc: bool,
+    txns: list[dict[str, Any]] | None = None,
+) -> bool:
     """Stable opaque subgroups under D-34-01 may have only two hits."""
     if is_misc:
         return True
-    if _is_recurring_candidate(sub_metrics):
+    if _is_recurring_candidate(sub_metrics, txns):
         return True
     return sub_metrics["occurrences"] >= 2
 
@@ -426,6 +755,7 @@ def _score_confidence(metrics: dict[str, Any]) -> Literal["high", "medium", "low
         (freq == "monthly" and metrics["regularity"] >= 0.5)
         or _is_fixed_subscription(metrics)
         or _is_utility_like(metrics)
+        or _is_variable_bill(metrics)
     ):
         return "medium"
     return "low"
@@ -813,9 +1143,13 @@ def _is_already_registered(
 ) -> bool:
     """Skip suggestions already represented in worksheet registry or Firefly bills."""
     if txns:
+        live_bill_ids = _live_firefly_bill_ids(firefly_bills)
         for txn in txns:
-            linked_id = _split_subscription_id(txn)
-            if linked_id and linked_id in registered_bill_ids:
+            if _is_active_subscription_link(
+                txn,
+                live_bill_ids=live_bill_ids,
+                registered_bill_ids=registered_bill_ids,
+            ):
                 return True
 
     friendly = _friendly_merchant_name(str(metrics.get("merchant") or key))
@@ -922,6 +1256,7 @@ async def fetch_bill_suggestions(
     accounts = await client.fetch_accounts()
     bills = await client.fetch_bills()
     registry_rows = await sidecar_db.list_worksheet_registry()
+    settings = await sidecar_db.get_discover_settings()
     return build_bill_suggestions(
         splits,
         accounts=accounts,
@@ -929,6 +1264,7 @@ async def fetch_bill_suggestions(
         registry_rows=registry_rows,
         period_start=start_iso,
         period_end=end_iso,
+        ignored_categories=settings["ignored_categories"],
     )
 
 
@@ -940,18 +1276,33 @@ def build_bill_suggestions(
     registry_rows: list[dict[str, Any]],
     period_start: str,
     period_end: str,
+    ignored_categories: list[str] | None = None,
 ) -> dict[str, Any]:
     """Pure engine — primary unit-test entry point."""
+    ignore_list = ignored_categories if ignored_categories is not None else []
     registered_bill_ids = {
         str(row["firefly_bill_id"])
         for row in registry_rows
         if row.get("firefly_bill_id")
     }
+    live_bill_ids = _live_firefly_bill_ids(firefly_bills)
 
     parsed = [row for row in (_parse_withdrawal(split) for split in splits) if row is not None]
-    filtered = [row for row in parsed if not _is_noise_transaction(row, accounts)]
-    filtered = [row for row in filtered if _split_subscription_id(row) is None]
-    groups = _group_withdrawals(filtered)
+    filtered = [
+        row
+        for row in parsed
+        if not _is_noise_transaction(row, accounts, ignored_categories=ignore_list)
+    ]
+    filtered = [
+        row
+        for row in filtered
+        if not _is_active_subscription_link(
+            row,
+            live_bill_ids=live_bill_ids,
+            registered_bill_ids=registered_bill_ids,
+        )
+    ]
+    groups = _cluster_withdrawals(filtered)
 
     suggestions: list[dict[str, Any]] = []
     for key, txns in groups.items():
@@ -970,7 +1321,11 @@ def build_bill_suggestions(
                     sub_metrics = _analyze_misc_metrics(key, subgroup_txns)
                 if sub_metrics is None:
                     continue
-                if not _should_emit_opaque_subgroup(sub_metrics, is_misc=is_misc):
+                if not _should_emit_opaque_subgroup(
+                    sub_metrics,
+                    is_misc=is_misc,
+                    txns=subgroup_txns,
+                ):
                     continue
                 if is_misc:
                     category = sub_metrics["category"]
@@ -1003,7 +1358,7 @@ def build_bill_suggestions(
                     )
                 )
             continue
-        if not _is_recurring_candidate(metrics):
+        if not _is_recurring_candidate(metrics, txns):
             continue
         if _is_already_registered(
             key,

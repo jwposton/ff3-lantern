@@ -70,3 +70,28 @@ def test_upsert_suggestion_round_trip(data_dir):
     result = asyncio.run(sidecar_db.get_suggestion("J100", "gpt-4o-mini"))
     assert result is not None
     assert json.loads(result) == payload
+
+
+def test_init_db_migrates_discover_settings_defaults_version(data_dir):
+    async def setup_legacy_discover_settings():
+        import aiosqlite
+
+        async with aiosqlite.connect(sidecar_db.get_db_path()) as db:
+            await db.execute(
+                """
+                CREATE TABLE discover_settings (
+                  id INTEGER PRIMARY KEY CHECK (id = 1),
+                  ignored_categories_json TEXT NOT NULL DEFAULT '[]'
+                )
+                """
+            )
+            await db.execute(
+                "INSERT INTO discover_settings (id, ignored_categories_json) VALUES (1, '[]')"
+            )
+            await db.commit()
+
+    asyncio.run(setup_legacy_discover_settings())
+    asyncio.run(sidecar_db.init_db())
+    asyncio.run(sidecar_db.init_db())
+    settings = asyncio.run(sidecar_db.get_discover_settings())
+    assert "Gas" in settings["ignored_categories"]

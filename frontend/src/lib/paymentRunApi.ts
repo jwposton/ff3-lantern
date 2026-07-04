@@ -297,6 +297,17 @@ export type BillSuggestionsEnvelope = {
   }
 }
 
+export type DiscoverCategoryOption = {
+  id: string
+  name: string
+}
+
+export type DiscoverSettingsEnvelope = {
+  ignored_categories: string[]
+  available_categories: DiscoverCategoryOption[]
+  suggested_ignored_categories?: string[]
+}
+
 async function parseError(res: Response, fallback: string): Promise<never> {
   let detail = fallback
   try {
@@ -514,6 +525,28 @@ export async function fetchBillSuggestions(
     await parseError(res, `Failed to load bill suggestions (${res.status})`)
   }
   return (await res.json()) as BillSuggestionsEnvelope
+}
+
+export async function fetchDiscoverSettings(): Promise<DiscoverSettingsEnvelope> {
+  const res = await fetch("/api/payment-run/discover-settings")
+  if (!res.ok) {
+    await parseError(res, `Failed to load discover settings (${res.status})`)
+  }
+  return (await res.json()) as DiscoverSettingsEnvelope
+}
+
+export async function updateDiscoverSettings(
+  ignoredCategories: string[],
+): Promise<Pick<DiscoverSettingsEnvelope, "ignored_categories">> {
+  const res = await fetch("/api/payment-run/discover-settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ignored_categories: ignoredCategories }),
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to save discover settings (${res.status})`)
+  }
+  return (await res.json()) as Pick<DiscoverSettingsEnvelope, "ignored_categories">
 }
 
 export async function registerBill(

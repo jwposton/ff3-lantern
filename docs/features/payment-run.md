@@ -378,6 +378,8 @@ Route module: `backend/routes/payment_run.py`
 | `GET/POST/PUT /payment-run/buckets` | Funding bucket CRUD |
 | `GET /payment-run/available` | Unregistered FF accounts/bills |
 | `GET /payment-run/bill-suggestions` | Analyze withdrawal history; ranked bill candidates with register wizard prefill |
+| `GET /payment-run/discover-settings` | Ignored categories + available Firefly categories for discover UI |
+| `PUT /payment-run/discover-settings` | Replace ignored categories (`{ "ignored_categories": ["Gas", …] }`) |
 | `POST /payment-run/link-transaction` | Phase 3: attach bill to withdrawal |
 
 Helper: `backend/payment_worksheet_profiles.py` (parse/write notes, mirror `loan_profiles.py`).
@@ -396,7 +398,9 @@ Invalid lookback values return **422** with `lookback_months must be 6, 12, or 2
 
 Each suggestion includes `register_prefill` shaped for `POST /payment-run/bills/register` (wizard prefill). Results are **not persisted** — re-fetch on each GET. Implementation: `backend/payment_worksheet_bill_suggestions.py` (`fetch_bill_suggestions` → `build_bill_suggestions`).
 
-**Discover grouping:** Suggestions are grouped on the discover page by **payee** (`payee` / `bucket` fields — Firefly `destination_name`, or a canonical token from withdrawal descriptions when present). Audit-style buckets (Streaming & Media, etc.) are not used.
+**Discover grouping:** Suggestions are grouped on the discover page by **payee** (`payee` / `bucket` fields — Firefly `destination_name`, or a canonical token from withdrawal descriptions when present). Audit-style buckets (Streaming & Media, etc.) are not used. **Quiet categories** (few payee variants, stable fingerprints — e.g. rent after a landlord rename) merge by category+amount before suggestions are emitted.
+
+**Ignored categories:** On the discover page, operators pick Firefly expense categories to exclude from analysis (e.g. Gas, Groceries, Restaurants). Settings persist in the sidecar (`discover_settings` table) via `GET` / `PUT /payment-run/discover-settings`. Matching is case-insensitive with common aliases (e.g. `Gas` also skips `Gasoline`). Withdrawals in ignored categories never become suggestions; accounting-only noise (internal transfers, liability payees, CC interest, Apple Cash P2P, gas merchants) is still filtered regardless.
 
 **Opaque payee clusters:** When a PreApproved/Bill User Payment payee has multiple distinct **category+amount** fingerprints (e.g. `APPLE.COM/BILL`, PayPal bill payments), the engine emits **one suggestion per sub-group** instead of a single combined row. Sub-groups share the same payee section header. The engine scans withdrawal descriptions for domain-like tokens (e.g. `APPLE.COM/BILL`, `PAYPAL *DIGITALGOODS`) and uses the most frequent match; when no token is found, the payee falls back to Firefly `destination_name` (which may be a friendly label like `Apple Services`). Each sub-group carries a `cluster` slug (slugified payee) and **category-derived** `merchant` label (category is the stable alignment field when payee strings shift); a **misc catch-all** row (`{payee} (misc)`) may appear for unresolved one-offs with `status: review` and intermittent amounts. The Bill column shows the merchant name with muted category and payee detail beneath.
 
