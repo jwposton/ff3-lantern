@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Bills** — Manage sidebar entry and routes at `/manage/bills` when the payment worksheet is enabled (bill history page ships in a follow-up)
+- **Bill history** — open `/manage/bills` from Manage sidebar to view 12-month payment history, monthly averages, and Firefly links for worksheet-registered bills
+- **Bills** — Manage sidebar entry and routes at `/manage/bills` when the payment worksheet is enabled
 - **Payment worksheet** — Monthly payment planning at `/manage/payment-run` (feature flag `FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED`): funding buckets with reported/user balances and planned outflows; credit card table with manual refresh, mark paid, shortfall banner, expandable activity drill-down (charges, interest, fees under **New**), and Details sheet (bucket, limit, due day, APR, default pay, exclude); bills and liabilities with cash-plan subtotals and grand total; inline editable planned/paid, bucket user balances, bill owed (month-only), and amount due; soft placeholders for unset planned and user-balance fields; **Configure worksheet** panel for cash buckets, bill registry, credit cards, and loans/liabilities (replaces the separate Payment setup sidebar entry; legacy `/manage/payment-run/setup` redirects)
 - **Bill registration** — Register Firefly bills on the worksheet with matching rules in one confirmed action; create-new or link-existing wizard with payee/description/category triggers, amount min/max, object-group placement, and rollback on failure; link-existing reuses an existing rule when present
 - **Credit card worksheet profiles** — Include-all-by-default from Firefly on refresh (`ccAsset` and `creditCard`); exclude and bucket assignment via Details or Configure; liability accounts stay out of the credit card table
