@@ -1926,6 +1926,24 @@ def test_bill_groups_crud(monkeypatch, client, data_dir):
     assert renamed.json()["id"] == "mobile-apps-2"
 
 
+def test_bill_group_patch_member_ids_null_422(monkeypatch, client, data_dir):
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+
+    create = client.post(
+        "/api/payment-run/bill-groups",
+        json={"label": "Null Members", "sort_order": 0},
+    )
+    assert create.status_code == 200
+    group_id = create.json()["id"]
+
+    response = client.patch(
+        f"/api/payment-run/bill-groups/{group_id}",
+        json={"member_ids": None},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "member_ids must be an array when provided."
+
+
 def test_registry_group_show_in_group_requires_group(
     monkeypatch, client, data_dir, payment_worksheet_env
 ):

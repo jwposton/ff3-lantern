@@ -530,6 +530,11 @@ async def patch_bill_group(
     member_ids_update: list[int] | None = None
     if "member_ids" in updates:
         member_ids = updates.pop("member_ids")
+        if member_ids is None:
+            raise HTTPException(
+                status_code=422,
+                detail="member_ids must be an array when provided.",
+            )
         await _validate_bill_group_member_ids(member_ids)
         member_ids_update = member_ids
     if member_ids_update is not None or updates:
