@@ -7,97 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Global date picker** — shown only on routes where it drives page data (dashboard, charts except variance, transaction explorer, categorize, loan splits queue, loan profile); hidden on payment worksheet, MoM variance, loans list, and About; the top header bar is omitted entirely when the picker is hidden
-- **Sidebar toggle** — collapse control moved into the sidebar header (always available; no empty shell bar on non-date routes)
-- **Clear cache** — moved from the header to a **Clear cache** item in the sidebar footer (above About)
-- **MoM variance toolbar** — title, lens toggle, and month/compare controls pinned above scroll (layout pin, like payment worksheet funding buckets); charts and tables scroll underneath
-- **Payment worksheet funding buckets** — bucket table sticks while the page title and actions scroll away; add/edit buckets live in Configure worksheet (Cash buckets section)
-- **Payment worksheet header** — page description moved to a help tooltip; last-refreshed timestamp and action buttons share one compact row; Refresh balances matches Configure worksheet button size
-- **Payment worksheet funding bucket bar** — linked accounts inline on the bucket name row (truncated with full list on hover); no Add bucket button on the worksheet bar
-- **Payment worksheet bills & liabilities** — section subtotals are a single table row (like credit cards) instead of multi-line footers
-- **Payment worksheet tables** — credit cards default to an explicit per-card sort order (set in card details); column headers sort the table temporarily; Bills **Rail** renamed to **Pmt Src**; Liabilities columns reordered (Name, Pmt Src, Owed, Remaining pmt, Est. interest, Amt. Due, Planned, Paid, Actions); Actions column aligned across all tables; Bill and liability names link to Firefly (primary color, underline on hover) like credit cards
-- **Charts Spending/Cash Flow toggle** — moved from the sidebar to each chart report page header; sidebar Charts nav lists chart types only (Bar, Line/Trend, Sankey, Variance)
-- **Payment worksheet configuration** — consolidated setup into a **Configure worksheet** panel on the payment worksheet (bills registry, credit cards, loans & liabilities); removed the separate Payment setup sidebar entry; legacy `/manage/payment-run/setup` redirects to the worksheet
-- **Liability account actions** — loan/mortgage rows on the worksheet open a profile sheet (bucket, exclude, link to loan profile) from the Actions pencil
-
-### Fixed
-
-- **Payment worksheet refresh** — a stale registered bill missing in Firefly no longer aborts the entire refresh; other cards, bills, and liabilities still update
-- **Bill registration** — failed rule or registry steps roll back newly created Firefly bills and rules when possible
-- **Payment setup link bill** — Link bill on the setup page pre-selects the clicked Firefly bill in the registration wizard
-- **Worksheet bill edit** — the edit pencil on bill rows opens the registration sheet with that row’s settings instead of a blank create wizard
-- **Bill registration rules** — new rules can match on payee contains, description contains, and/or category is (at least one required); Firefly bill create includes required due date and sets the subscription **active**
-- **Link existing bill** — selecting a Firefly bill with an existing link rule reuses that rule instead of creating a duplicate (fixes Firefly 422 on Link to worksheet); discovers rules via Firefly's bill rules API (matches by bill name, not id)
-- **Intermittent bill registration** — create-new with no amount no longer fails Firefly validation; uses a wide bill range in Firefly while worksheet owed and planned stay at $0 until you enter an amount
-- **Bill amount min/max** — registration wizard accepts explicit Firefly amount min and max (one field mirrors the other when only one is set); recurring worksheet **Owed** uses the average of min and max on refresh
-- **Link existing bill list** — refreshes from Firefly when opening the registration sheet (not affected by reference cache clear); sorted alphabetically
-
 ### Added
 
-- **Bill registration object group** — wizard **Create new** subscriptions are placed in a Firefly object group (`FF3ANALYTICS_PAYMENT_WORKSHEET_BILL_GROUP`, default same as rule group)
-- **Payment setup page** — manage bill registration and worksheet placement at `/manage/payment-run/setup`
-- **Bills and liabilities sections** — payment worksheet shows bills, liabilities, cash-plan subtotals, grand total footer, and inline bill registration wizard
-- **Bill registration API** — Register bills on the payment worksheet with a Firefly bill and matching rule in one user-confirmed action
-- **Bills and liabilities on worksheet** — Backend envelope includes bills and liabilities sections with cash-plan subtotals, grand totals, and liability auto-draft from loan profiles
-- **Bill registry foundation** — Worksheet registry persistence and Firefly bills API support for payment worksheet setup
-- **Payment worksheet credit card activity** — expand the **New** column on a card row to see an inline table of charges, interest, and fees that sum to **New** (from the last refresh snapshot; refresh again after new Firefly imports); activity rows include payee and budget, indented below the card row with full-width columns
-- **Payment worksheet planned amount** — unset planned payment shows a soft **0.00** placeholder (empty field on focus); clearing the field resets to the default; saved amounts still require explicit edits
-- **Payment worksheet bucket user balance** — unset user balance shows a soft placeholder matching **Reported** (empty field on focus); clearing the field resets to reported; saved overrides still require explicit edits
-- **Payment worksheet bill owed** — **Owed** on bill rows is editable for this month only; intermittent bills start empty until you enter an amount; recurring bills can be overridden without changing Firefly bill settings; clearing the field resets to the refresh value
-- **Payment worksheet amount due** — bill and liability rows use an editable **Amt. Due** column (worksheet-only); loan auto-draft rows default **Amt. Due** to **Planned**; section and grand totals show **Owed**, **Due**, and **Planned** subtotals
-
-### Fixed
-
-- **Liability on credit card list** — editing a loan/mortgage account’s worksheet profile no longer adds that Firefly account to the Revolving Credit table (stale snapshot entries are ignored and cleaned up on the next profile save)
-
-### Changed
-
-- **Bills section sort order** — worksheet bill rows group as cash monthly, cash intermittent, credit monthly, then credit intermittent (alphabetical within each group)
-- **Worksheet bill and liability badges** — Auto-draft, Manual, and Via card badges sit inline beside the row name instead of on a second line
-- **Payment worksheet credit card activity** — activity sub-table is right-aligned under the dollar columns with fixed column widths
-- **Payment worksheet credit cards** — card name links to Firefly; pencil opens **Details** (bucket, limit, due day, APR, default pay, exclude); table shows read-only balances with only **Planned** and **Paid** editable inline; paid rows use a light green background; table help is a header tooltip; excluded cards live in **Manage cards**; subtotal row sums dollar columns with balance-weighted APR and portfolio utilization; bucket, limit, due, APR, and util columns hide below xl width to reduce horizontal scrolling; due dates turn red when due today or earlier, the row is not marked paid, and no bank payment posted this month
-- **Payment worksheet bucket sheet** — compact footer buttons (Delete, Cancel, Save) aligned on one row, matching credit card Details
-- **Payment worksheet buckets** — bucket cards show linked Firefly account names; footer totals are left-aligned; edit sheet includes delete with confirmation
-- **Payment worksheet onboarding** — clearer copy that credit cards load from Firefly on Refresh (no separate add control)
-- **Transaction Explorer default scope** — Shows all transaction types by default (bank and credit card withdrawals, deposits, transfers); optional **Bank spending only** narrows to checking/savings purchases
-- **Categorize Open in Explorer** — Button height matches **Save** / **Ignore** on the transaction card row
-- **Transaction Explorer table** — Description column added (sortable); type always renders as plain text
-- **Transaction Explorer search** — General search matches text across description, accounts, category, budget, type, amount, and date; supports **or** between terms (e.g. `Patreon or CFBDB`); fields with an explicit filter are excluded from search
-- **Transaction Explorer AI filters** — Merchant/keyword queries (e.g. "spotify", "spotify charges") map to the general **search** field, same as typing in the search box — not description-only filters; combined OR + amount queries (e.g. `Spotify or Patreon or amount is 700`, `700 and CFBD or patreon`) set exact amount **and** OR search terms (amount must match **and** any keyword)
-- **Transaction Explorer amount range** — Advanced filters include **Min amount** and **Max amount** (inclusive); AI and deterministic parsing support `over 500`, `under 20`, `between 50 and 100`, `amount between 100 and 200`, `value between X and Y`, and combinations with OR keyword search — amount/value keywords are not left in the search box
-- **Date and amount display** — Transaction dates show as `YYYY-MM-DD` (no timestamps) in the explorer, categorize queue, loan splits, and rule preview; amounts use two decimal places
-- **Click affordance** — Pointer cursor on buttons, links, and other standard interactive controls
-- **Categorize cards** — Tighter layout on transaction tiles; mode toggle **Transaction** / **Rule**; direct apply uses **Save** instead of Approve
-- **Categorize rule preview** — Matching transactions shown as a compact table (up to 10 rows: date, amount, from, to, description, budget, category) on a plain background; amounts and dates formatted consistently app-wide
-
-### Added
-
-- **Payment worksheet foundation** — Sidecar tables and funding-bucket API behind `FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED` feature flag
-- **Credit card Details sheet** — payment due day, APR %, credit limit, default planned payment, funding bucket, and exclude; fields that Firefly ccAsset cannot persist are stored in worksheet profile notes
-- **Credit card worksheet profiles** — Include-all-by-default credit cards with exclude via account notes; inline bucket assign and exclude update the worksheet snapshot without a full refresh
-- **Refresh balances** — Manual refresh pulls Firefly balances and credit card activity columns (New, interest, fees, owed, last payment amount); activity window starts at the latest bank→card payment in the current month, or the prior month when none yet this month
-- **Payment worksheet API** — View endpoint returns sidecar snapshot without live Firefly pull; inline profile edits visible on GET without refresh
-- **Payment worksheet mutations** — Row planned/paid and bucket user balance endpoints
-- **Payment worksheet page** — Manage screen at `/manage/payment-run` with manual Refresh and GET-only load on open
-- **Funding bucket bar** — Sticky bucket cards with reported, user, planned outflows, remaining, and footer totals
-- **Credit cards worksheet** — Table with mark paid, shortfall banner, and per-card bucket assignment
-- **Categorize transaction description** — Optional description edit when saving a single transaction; field pre-fills with the Firefly bank description (not a placeholder)
+- **Payment worksheet** — Monthly payment planning at `/manage/payment-run` (feature flag `FF3ANALYTICS_PAYMENT_WORKSHEET_ENABLED`): funding buckets with reported/user balances and planned outflows; credit card table with manual refresh, mark paid, shortfall banner, expandable activity drill-down (charges, interest, fees under **New**), and Details sheet (bucket, limit, due day, APR, default pay, exclude); bills and liabilities with cash-plan subtotals and grand total; inline editable planned/paid, bucket user balances, bill owed (month-only), and amount due; soft placeholders for unset planned and user-balance fields; **Configure worksheet** panel for cash buckets, bill registry, credit cards, and loans/liabilities (replaces the separate Payment setup sidebar entry; legacy `/manage/payment-run/setup` redirects)
+- **Bill registration** — Register Firefly bills on the worksheet with matching rules in one confirmed action; create-new or link-existing wizard with payee/description/category triggers, amount min/max, object-group placement, and rollback on failure; link-existing reuses an existing rule when present
+- **Credit card worksheet profiles** — Include-all-by-default from Firefly on refresh (`ccAsset` and `creditCard`); exclude and bucket assignment via Details or Configure; liability accounts stay out of the credit card table
 - **Transaction Explorer mass edit** — Advanced filters (description, destination, type, exact amount, uncategorized only), row selection, and bulk category/budget updates via Firefly API
-- **Transaction Explorer AI filters** — Optional natural-language filter parsing via OpenRouter; `OPENROUTER_FILTER_MODEL` overrides the categorize model when set
-- **Categorize → Explorer link** — Open in Explorer tile on Categorize pre-applies the queue filter for bulk edit
-- **Categorize → Explorer per item** — **Open in Explorer** on each transaction card pre-filters by description and destination (Transaction mode) or rule triggers (Rule mode), matching rule preview behavior for bulk edit without creating a rule
+- **Transaction Explorer AI filters** — Optional natural-language filter parsing via OpenRouter (`OPENROUTER_FILTER_MODEL` overrides the categorize model when set)
+- **Categorize → Explorer links** — Open in Explorer from the queue or each transaction card with pre-applied filters (transaction description/destination or rule triggers)
+- **Categorize transaction description** — Optional description edit when saving a single transaction; field pre-fills with the Firefly bank description
+
+### Changed
+
+- **App shell** — Global date picker only on routes where it drives page data; top header bar hidden elsewhere; sidebar collapse toggle in the sidebar header; **Clear cache** moved to sidebar footer (above About)
+- **MoM variance** — Title, lens toggle, and month/compare controls pinned above scroll; charts and tables scroll underneath
+- **Charts** — Spending/Cash Flow toggle on each chart page header; sidebar Charts lists types only (Bar, Line/Trend, Sankey, Variance)
+- **Payment worksheet layout** — Compact header (description in help tooltip); funding bucket table sticks while title and actions scroll; bucket add/edit in Configure worksheet; linked accounts inline on bucket rows; section subtotals as single table rows; bill/liability names link to Firefly; Bills **Rail** renamed **Pmt Src**; liabilities columns reordered; credit cards sort by configured order with temporary header sort; actions column aligned across tables; loan/mortgage rows open a profile sheet from the Actions pencil
+- **Payment worksheet bills** — Rows grouped cash monthly → cash intermittent → credit monthly → credit intermittent; Auto-draft, Manual, and Via card badges inline beside names
+- **Payment worksheet credit cards** — Read-only balances with only Planned and Paid editable inline; paid rows use a light green background; card name links to Firefly; subtotal sums dollar columns with balance-weighted APR and utilization; narrow columns hide below xl; due dates red when overdue, unpaid, and no bank payment posted this month; activity sub-table aligned under dollar columns
+- **Transaction Explorer** — Shows all transaction types by default with optional **Bank spending only**; description column (sortable); general search across fields with OR terms; min/max amount filters; AI maps merchant keywords to search and supports combined amount + OR queries; dates as `YYYY-MM-DD` and amounts to two decimals app-wide (explorer, categorize, loan splits, rule preview)
+- **Categorize** — Tighter transaction tiles; Transaction/Rule mode toggle; direct apply uses **Save**; rule preview as compact matching table; **Open in Explorer** button height matches row actions
+- **Click affordance** — Pointer cursor on standard interactive controls
 
 ### Fixed
 
-- **Payment worksheet credit cards** — Firefly `ccAsset` account role is recognized so credit card accounts appear after Refresh (not only `creditCard`)
-- **Funding bucket accounts** — bucket setup lists and accepts only non–credit-card asset accounts (checking/savings); credit cards cannot be mapped to a cash pool
-- **Worksheet profile month** — bucket assignment and exclude changes apply to the month you are viewing, including near month boundaries
-- **Credit card bucket unassign** — selecting Unassigned clears funding bucket on the worksheet without editing Firefly notes manually
-- **Credit card bucket assign** — bucket selection persists on the worksheet even when no refresh snapshot existed yet
-- **Credit card profile saves** — limit, bucket, and exclude updates work for Firefly `ccAsset` accounts (PUT no longer sends invalid liability fields back to Firefly); `monthly_payment_date` is normalized to `YYYY-MM-DD` when Firefly returns a day-only value
-- **AI filter parse** — Account allowlist for natural-language filter parsing no longer crashes when reading Firefly accounts
+- **Payment worksheet refresh** — A stale registered bill missing in Firefly no longer aborts the entire refresh
+- **Bill registration wizard** — Edit pencil opens existing row settings; link bill pre-selects the clicked Firefly bill; link-existing list refreshes from Firefly when opened; intermittent create without amount no longer fails Firefly validation; recurring **Owed** uses the average of min and max on refresh
+- **Payment worksheet profiles** — Bucket assignment and exclude apply to the viewed month; bucket unassign clears assignment; ccAsset profile saves no longer send invalid liability fields back to Firefly
+- **Funding buckets** — Only non–credit-card asset accounts (checking/savings) can be linked to a cash pool
+- **AI filter parse** — Account allowlist for natural-language parsing no longer crashes when reading Firefly accounts
 
 ## [1.1.12] - 2026-07-02
 
