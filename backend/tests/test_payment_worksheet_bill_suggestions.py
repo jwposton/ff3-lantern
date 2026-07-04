@@ -21,6 +21,7 @@ from payment_worksheet_bill_suggestions import (
     _subgroups_for_opaque_payee,
     build_bill_suggestions,
     fetch_bill_suggestions,
+    find_suggestion_transactions,
 )
 
 
@@ -1319,6 +1320,65 @@ def test_unlinked_recurring_still_suggested():
     result = build_bill_suggestions(spotify_monthly_withdrawals(12), **_engine_kwargs())
     assert len(result["data"]) == 1
     assert result["data"][0]["merchant"] == "Spotify"
+
+
+def test_drilldown_not_found_returns_none():
+    fixture = spotify_monthly_withdrawals(12)
+    result = find_suggestion_transactions(
+        fixture,
+        **_engine_kwargs(),
+        suggestion_id="sug-nonexistent0000",
+    )
+    assert result is None
+
+
+def test_drilldown_opaque_subgroup_isolated():
+    fixture = opaque_subsplit_fixture()
+    built = build_bill_suggestions(fixture, **_engine_kwargs())
+    cloud = next(row for row in built["data"] if row["merchant"].startswith("Cloud Storage"))
+    txns = find_suggestion_transactions(
+        fixture,
+        **_engine_kwargs(),
+        suggestion_id=cloud["id"],
+    )
+    assert txns is not None
+    amounts = {t["amount"] for t in txns}
+    assert amounts == {"10.09"}
+    assert all(t["category"] == "Cloud Storage" for t in txns)
+    assert "6.37" not in amounts
+    assert "7.43" not in amounts
+
+
+def test_drilldown_regular_returns_all_withdrawals_sorted():
+    fixture = spotify_monthly_withdrawals(12)
+    built = build_bill_suggestions(fixture, **_engine_kwargs())
+    spotify_id = built["data"][0]["id"]
+    txns = find_suggestion_transactions(
+        fixture,
+        **_engine_kwargs(),
+        suggestion_id=spotify_id,
+    )
+    assert txns is not None
+    assert len(txns) == 12
+    dates = [t["date"] for t in txns]
+    assert dates == sorted(dates, reverse=True)
+
+
+def test_drilldown_fields_include_required_keys():
+    fixture = spotify_monthly_withdrawals(12)
+    built = build_bill_suggestions(fixture, **_engine_kwargs())
+    spotify_id = built["data"][0]["id"]
+    txns = find_suggestion_transactions(
+        fixture,
+        **_engine_kwargs(),
+        suggestion_id=spotify_id,
+    )
+    assert txns is not None
+    required = {"date", "amount", "description", "category", "payee", "budget"}
+    for txn in txns:
+        assert required.issubset(txn.keys())
+        assert txn["category"] == "Music Streaming"
+        assert txn["payee"] == "Spotify USA Inc"
 
 
 @pytest.mark.asyncio

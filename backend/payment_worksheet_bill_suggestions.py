@@ -1240,6 +1240,181 @@ def _enrich_suggestion(
     return suggestion
 
 
+def _normalize_drilldown_transaction(row: dict[str, Any]) -> dict[str, Any]:
+    amount = row.get("amount")
+    if not isinstance(amount, Decimal):
+        amount = Decimal(str(amount))
+    return {
+        "date": str(row.get("date") or "")[:10],
+        "amount": _format_decimal(amount),
+        "description": str(row.get("description") or "").strip(),
+        "category": (str(row.get("category_name") or "").strip() or None),
+        "payee": (str(row.get("destination_name") or "").strip() or None),
+        "budget": (str(row.get("budget_name") or "").strip() or None),
+    }
+
+
+def _sort_drilldown_transactions(txns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized = [_normalize_drilldown_transaction(txn) for txn in txns]
+    normalized.sort(key=lambda row: row["date"] or "", reverse=True)
+    return normalized
+
+
+def _prepare_bill_suggestion_groups(
+    splits: list[dict[str, Any]],
+    *,
+    accounts: dict[str, dict[str, Any]],
+    firefly_bills: list[dict[str, Any]],
+    registry_rows: list[dict[str, Any]],
+    ignored_categories: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]], set[str], set[str]]:
+    ignore_list = ignored_categories if ignored_categories is not None else []
+    registered_bill_ids = {
+        str(row["firefly_bill_id"])
+        for row in registry_rows
+        if row.get("firefly_bill_id")
+    }
+    live_bill_ids = _live_firefly_bill_ids(firefly_bills)
+
+    parsed = [row for row in (_parse_withdrawal(split) for split in splits) if row is not None]
+    filtered = [
+        row
+        for row in parsed
+        if not _is_noise_transaction(row, accounts, ignored_categories=ignore_list)
+    ]
+    filtered = [
+        row
+        for row in filtered
+        if not _is_active_subscription_link(
+            row,
+            live_bill_ids=live_bill_ids,
+            registered_bill_ids=registered_bill_ids,
+        )
+    ]
+    groups = _cluster_withdrawals(filtered)
+    return parsed, groups, registered_bill_ids, live_bill_ids
+
+
+def _resolve_opaque_subgroup_suggestion_id(
+    key: str,
+    subgroup_txns: list[dict[str, Any]],
+    *,
+    is_misc: bool,
+    category: str,
+) -> str:
+    if is_misc:
+        return _make_opaque_subgroup_id(key, category, Decimal("0"), is_misc=True)
+    fp_amount = subgroup_txns[0].get("amount") if subgroup_txns else Decimal("0")
+    if not isinstance(fp_amount, Decimal):
+        fp_amount = Decimal(str(fp_amount)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    return _make_opaque_subgroup_id(key, category, fp_amount, is_misc=False)
+
+
+def _find_matching_suggestion_transactions(
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    accounts: dict[str, dict[str, Any]],
+    firefly_bills: list[dict[str, Any]],
+    registry_rows: list[dict[str, Any]],
+    registered_bill_ids: set[str],
+    suggestion_id: str,
+) -> list[dict[str, Any]] | None:
+    for key, txns in groups.items():
+        metrics = _analyze_group(key, txns)
+        if metrics is None:
+            continue
+        if _should_subsplit_opaque_payee(txns):
+            raw_payee = _resolve_opaque_raw_payee(
+                txns,
+                str(metrics["merchant"] or key).strip() or key,
+            )
+            for subgroup_txns, subgroup_kind in _subgroups_for_opaque_payee(txns):
+                is_misc = subgroup_kind == "misc"
+                sub_metrics = _analyze_group(key, subgroup_txns)
+                if sub_metrics is None and is_misc:
+                    sub_metrics = _analyze_misc_metrics(key, subgroup_txns)
+                if sub_metrics is None:
+                    continue
+                if not _should_emit_opaque_subgroup(
+                    sub_metrics,
+                    is_misc=is_misc,
+                    txns=subgroup_txns,
+                ):
+                    continue
+                if is_misc:
+                    category = sub_metrics["category"]
+                    merchant_label = f"{raw_payee.strip()} (misc)"
+                else:
+                    category, _ = _fingerprint(subgroup_txns[0])
+                    merchant_label = _merchant_from_category(
+                        category,
+                        sub_metrics["occurrences"],
+                    )
+                reg_metrics = {**sub_metrics, "merchant": merchant_label}
+                if _is_already_registered(
+                    key,
+                    reg_metrics,
+                    registry_rows=registry_rows,
+                    firefly_bills=firefly_bills,
+                    registered_bill_ids=registered_bill_ids,
+                    txns=subgroup_txns,
+                ):
+                    continue
+                subgroup_id = _resolve_opaque_subgroup_suggestion_id(
+                    key,
+                    subgroup_txns,
+                    is_misc=is_misc,
+                    category=category,
+                )
+                if subgroup_id == suggestion_id:
+                    return _sort_drilldown_transactions(subgroup_txns)
+            continue
+        if not _is_recurring_candidate(metrics, txns):
+            continue
+        if _is_already_registered(
+            key,
+            metrics,
+            registry_rows=registry_rows,
+            firefly_bills=firefly_bills,
+            registered_bill_ids=registered_bill_ids,
+            txns=txns,
+        ):
+            continue
+        if _make_suggestion_id(key) == suggestion_id:
+            return _sort_drilldown_transactions(txns)
+    return None
+
+
+def find_suggestion_transactions(
+    splits: list[dict[str, Any]],
+    *,
+    accounts: dict[str, dict[str, Any]],
+    firefly_bills: list[dict[str, Any]],
+    registry_rows: list[dict[str, Any]],
+    period_start: str,
+    period_end: str,
+    ignored_categories: list[str] | None = None,
+    suggestion_id: str,
+) -> list[dict[str, Any]] | None:
+    """Return normalized withdrawal rows for suggestion_id, or None if not found."""
+    _ = period_start, period_end
+    _, groups, registered_bill_ids, _live_bill_ids = _prepare_bill_suggestion_groups(
+        splits,
+        accounts=accounts,
+        firefly_bills=firefly_bills,
+        registry_rows=registry_rows,
+        ignored_categories=ignored_categories,
+    )
+    return _find_matching_suggestion_transactions(
+        groups,
+        accounts=accounts,
+        firefly_bills=firefly_bills,
+        registry_rows=registry_rows,
+        registered_bill_ids=registered_bill_ids,
+        suggestion_id=suggestion_id,
+    )
+
+
 async def fetch_bill_suggestions(
     client: FireflyClient,
     *,
@@ -1279,30 +1454,13 @@ def build_bill_suggestions(
     ignored_categories: list[str] | None = None,
 ) -> dict[str, Any]:
     """Pure engine — primary unit-test entry point."""
-    ignore_list = ignored_categories if ignored_categories is not None else []
-    registered_bill_ids = {
-        str(row["firefly_bill_id"])
-        for row in registry_rows
-        if row.get("firefly_bill_id")
-    }
-    live_bill_ids = _live_firefly_bill_ids(firefly_bills)
-
-    parsed = [row for row in (_parse_withdrawal(split) for split in splits) if row is not None]
-    filtered = [
-        row
-        for row in parsed
-        if not _is_noise_transaction(row, accounts, ignored_categories=ignore_list)
-    ]
-    filtered = [
-        row
-        for row in filtered
-        if not _is_active_subscription_link(
-            row,
-            live_bill_ids=live_bill_ids,
-            registered_bill_ids=registered_bill_ids,
-        )
-    ]
-    groups = _cluster_withdrawals(filtered)
+    parsed, groups, registered_bill_ids, _live_bill_ids = _prepare_bill_suggestion_groups(
+        splits,
+        accounts=accounts,
+        firefly_bills=firefly_bills,
+        registry_rows=registry_rows,
+        ignored_categories=ignored_categories,
+    )
 
     suggestions: list[dict[str, Any]] = []
     for key, txns in groups.items():
