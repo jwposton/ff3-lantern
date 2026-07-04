@@ -678,6 +678,94 @@ def test_fetch_bill_raises_on_404():
         asyncio.run(client.fetch_bill("99"))
 
 
+def test_fetch_bill_transactions():
+    bill_id = "7"
+    page = {"current": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(f"/bills/{bill_id}/transactions"):
+            page["current"] += 1
+            assert request.url.params["start"] == "2025-08-01"
+            assert request.url.params["end"] == "2026-07-03"
+            assert request.url.params["limit"] == "1000"
+            if page["current"] == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {
+                                "type": "transactions",
+                                "id": "200",
+                                "attributes": {
+                                    "description": "Rent payment",
+                                    "transactions": [
+                                        {
+                                            "type": "withdrawal",
+                                            "amount": "-1200.00",
+                                            "destination_name": "Landlord",
+                                            "date": "2026-01-15",
+                                            "description": "Rent payment",
+                                            "transaction_journal_id": "2001",
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                        "meta": {
+                            "pagination": {"current_page": 1, "total_pages": 2}
+                        },
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "transactions",
+                            "id": "201",
+                            "attributes": {
+                                "description": "Rent payment",
+                                "transactions": [
+                                    {
+                                        "type": "withdrawal",
+                                        "amount": "-1200.00",
+                                        "destination_name": "Landlord",
+                                        "date": "2026-02-15",
+                                        "description": "February rent",
+                                        "transaction_journal_id": "2002",
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 2, "total_pages": 2}},
+                },
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    flat = asyncio.run(
+        client.fetch_bill_transactions(bill_id, "2025-08-01", "2026-07-03")
+    )
+    assert len(flat) == 2
+    assert flat[0]["journal_id"] == "200"
+    assert flat[0]["bill_id"] == bill_id
+    assert flat[0]["date"] == "2026-01-15"
+    assert flat[0]["amount"] == "-1200.00"
+    assert flat[0]["payee"] == "Landlord"
+    assert flat[0]["description"] == "Rent payment"
+    assert flat[0]["type"] == "withdrawal"
+    assert flat[0]["transaction_journal_id"] == "2001"
+    assert flat[1]["journal_id"] == "201"
+    assert flat[1]["bill_id"] == bill_id
+    assert all(row["bill_id"] == bill_id for row in flat)
+    assert all(row["journal_id"] for row in flat)
+
+
 def test_create_bill_posts_and_returns_id():
     seen: list[dict] = []
 

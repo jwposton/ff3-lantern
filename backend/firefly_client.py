@@ -649,3 +649,61 @@ class FireflyClient:
                     break
                 page += 1
         return flat
+
+    async def fetch_bill_transactions(
+        self, bill_id: str, start: str, end: str
+    ) -> list[dict[str, Any]]:
+        flat: list[dict[str, Any]] = []
+        page = 1
+        async with self._build_client() as client:
+            while True:
+                response = await client.get(
+                    f"/api/v1/bills/{bill_id}/transactions",
+                    params={
+                        "start": start,
+                        "end": end,
+                        "limit": 1000,
+                        "page": page,
+                    },
+                )
+                if response.status_code != 200:
+                    raise RuntimeError(
+                        f"Firefly API error {response.status_code}: {response.text}"
+                    )
+                payload = response.json()
+                journals = payload.get("data", [])
+                for entry in journals:
+                    journal_id = str(entry.get("id") or "")
+                    attrs = entry.get("attributes", {})
+                    parent_description = attrs.get("description")
+                    for split in attrs.get("transactions", []):
+                        tjid = split.get("transaction_journal_id")
+                        flat.append(
+                            {
+                                "journal_id": journal_id,
+                                "bill_id": bill_id,
+                                "type": split.get("type"),
+                                "amount": split.get("amount"),
+                                "date": split.get("date"),
+                                "payee": split.get("destination_name"),
+                                "description": split.get("description")
+                                or parent_description,
+                                "transaction_journal_id": str(tjid)
+                                if tjid is not None
+                                else None,
+                            }
+                        )
+                pagination = payload.get("meta", {}).get("pagination", {})
+                current = pagination.get("current_page", 1)
+                total_pages = pagination.get("total_pages", 1)
+                logger.info(
+                    "Fetched bill %s transactions page %s/%s (%s journals)",
+                    bill_id,
+                    current,
+                    total_pages,
+                    len(journals),
+                )
+                if current >= total_pages:
+                    break
+                page += 1
+        return flat
