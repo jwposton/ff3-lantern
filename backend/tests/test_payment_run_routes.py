@@ -1775,3 +1775,179 @@ def test_suggestion_transactions_firefly_error_502(
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 
+
+def test_bill_groups_crud(monkeypatch, client, data_dir):
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+    import asyncio
+
+    async def _seed_registry() -> tuple[int, int, int]:
+        await sidecar_db.init_db()
+        electric_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "501",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "firefly",
+                "payment_rail": "bank",
+                "rule_id": "99",
+                "row_label": "Electric",
+                "show_in_group": True,
+            }
+        )
+        water_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "502",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "firefly",
+                "payment_rail": "bank",
+                "rule_id": "100",
+                "row_label": "Water",
+                "show_in_group": False,
+            }
+        )
+        credit_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "503",
+                "worksheet_section": "credit",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "firefly",
+                "payment_rail": "bank",
+                "rule_id": "101",
+                "row_label": "Card Payment",
+            }
+        )
+        return electric_id, water_id, credit_id
+
+    electric_id, water_id, credit_id = asyncio.run(_seed_registry())
+
+    create = client.post(
+        "/api/payment-run/bill-groups",
+        json={"label": "Mobile Apps!", "sort_order": 0},
+    )
+    assert create.status_code == 200
+    body = create.json()
+    assert body["id"] == "mobile-apps"
+    assert body["label"] == "Mobile Apps!"
+    assert body["member_count"] == 0
+    assert body["visible_count"] == 0
+    assert body["members"] == []
+
+    collision = client.post(
+        "/api/payment-run/bill-groups",
+        json={"label": "Mobile Apps!", "sort_order": 1},
+    )
+    assert collision.status_code == 200
+    assert collision.json()["id"] == "mobile-apps-2"
+
+    listed = client.get("/api/payment-run/bill-groups")
+    assert listed.status_code == 200
+    groups = listed.json()["data"]
+    assert [group["id"] for group in groups] == ["mobile-apps", "mobile-apps-2"]
+    assert all("member_count" in group for group in groups)
+    assert all("visible_count" in group for group in groups)
+    assert all("members" in group for group in groups)
+
+    assigned = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps",
+        json={"member_ids": [electric_id, water_id]},
+    )
+    assert assigned.status_code == 200
+    assigned_body = assigned.json()
+    assert assigned_body["member_count"] == 2
+    assert assigned_body["visible_count"] == 1
+    member_ids = {member["registry_id"] for member in assigned_body["members"]}
+    assert member_ids == {electric_id, water_id}
+    members_by_id = {
+        member["registry_id"]: member for member in assigned_body["members"]
+    }
+    assert members_by_id[electric_id]["show_in_group"] is True
+    assert members_by_id[water_id]["show_in_group"] is False
+
+    replace_one = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps",
+        json={"member_ids": [electric_id]},
+    )
+    assert replace_one.status_code == 200
+    assert replace_one.json()["member_count"] == 1
+    unlinked = asyncio.run(sidecar_db.get_worksheet_registry(water_id))
+    assert unlinked is not None
+    assert unlinked["bill_group_id"] is None
+    assert unlinked["show_in_group"] is False
+
+    clear_all = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps",
+        json={"member_ids": []},
+    )
+    assert clear_all.status_code == 200
+    assert clear_all.json()["member_count"] == 0
+    cleared_electric = asyncio.run(sidecar_db.get_worksheet_registry(electric_id))
+    assert cleared_electric is not None
+    assert cleared_electric["bill_group_id"] is None
+    assert cleared_electric["show_in_group"] is True
+
+    reassigned = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps",
+        json={"member_ids": [electric_id, water_id]},
+    )
+    assert reassigned.status_code == 200
+
+    deleted = client.delete("/api/payment-run/bill-groups/mobile-apps")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"ok": True}
+
+    after_delete_electric = asyncio.run(sidecar_db.get_worksheet_registry(electric_id))
+    after_delete_water = asyncio.run(sidecar_db.get_worksheet_registry(water_id))
+    assert after_delete_electric is not None
+    assert after_delete_water is not None
+    assert after_delete_electric["bill_group_id"] is None
+    assert after_delete_water["bill_group_id"] is None
+
+    remaining = client.get("/api/payment-run/bill-groups")
+    assert len(remaining.json()["data"]) == 1
+    assert remaining.json()["data"][0]["id"] == "mobile-apps-2"
+
+    invalid_section = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps-2",
+        json={"member_ids": [credit_id]},
+    )
+    assert invalid_section.status_code == 422
+
+    renamed = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps-2",
+        json={"label": "Subscriptions", "sort_order": 5},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["label"] == "Subscriptions"
+    assert renamed.json()["sort_order"] == 5
+    assert renamed.json()["id"] == "mobile-apps-2"
+
+
+def test_bill_groups_disabled_returns_404(monkeypatch, client):
+    monkeypatch.delenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", raising=False)
+
+    get_resp = client.get("/api/payment-run/bill-groups")
+    assert get_resp.status_code == 404
+    assert get_resp.json()["detail"] == "Payment worksheet is not enabled."
+
+    post_resp = client.post(
+        "/api/payment-run/bill-groups",
+        json={"label": "Test"},
+    )
+    assert post_resp.status_code == 404
+    assert post_resp.json()["detail"] == "Payment worksheet is not enabled."
+
+    patch_resp = client.patch(
+        "/api/payment-run/bill-groups/test",
+        json={"label": "Test"},
+    )
+    assert patch_resp.status_code == 404
+    assert patch_resp.json()["detail"] == "Payment worksheet is not enabled."
+
+    delete_resp = client.delete("/api/payment-run/bill-groups/test")
+    assert delete_resp.status_code == 404
+    assert delete_resp.json()["detail"] == "Payment worksheet is not enabled."
+
