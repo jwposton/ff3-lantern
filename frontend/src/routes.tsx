@@ -18,6 +18,7 @@ import { LoanSplitsQueuePage } from "@/pages/LoanSplitsQueuePage"
 import { AboutPage } from "@/pages/AboutPage"
 import { PaymentWorksheetPage } from "@/pages/PaymentWorksheetPage"
 import { PaymentSetupPage } from "@/pages/PaymentSetupPage"
+import { BillsDetailPage } from "@/pages/BillsDetailPage"
 
 export const router = createBrowserRouter([
   {
@@ -52,6 +53,14 @@ export const router = createBrowserRouter([
       {
         path: "manage/payment-run/setup",
         element: <PaymentSetupPage />,
+      },
+      {
+        path: "manage/bills",
+        element: <BillsDetailPage />,
+      },
+      {
+        path: "manage/bills/:registryId",
+        element: <BillsDetailPage />,
       },
       {
         path: "reports/spending",

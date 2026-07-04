@@ -3,6 +3,7 @@ import {
   Info,
   Landmark,
   LayoutDashboard,
+  Receipt,
   Table,
   Tags,
   TrendingUp,
@@ -80,6 +81,13 @@ const paymentWorksheetNavItem = {
   label: "Payment Worksheet",
   icon: Wallet,
   end: true,
+} as const
+
+const billsNavItem = {
+  to: "/manage/bills",
+  label: "Bills",
+  icon: Receipt,
+  end: false,
 } as const
 
 function formatBadgeCount(count: number): string {
@@ -183,7 +191,7 @@ function ManageNavItems({
   paymentWorksheetEnabled: boolean
 }) {
   const manageNavItems = paymentWorksheetEnabled
-    ? [...baseManageNavItems, paymentWorksheetNavItem]
+    ? [...baseManageNavItems, paymentWorksheetNavItem, billsNavItem]
     : baseManageNavItems
 
   const badgeCounts: Record<string, number> = {
