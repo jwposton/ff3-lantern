@@ -763,6 +763,47 @@ def test_paypal_opaque_splits_generic():
         assert_valid_register_prefill(row["register_prefill"])
 
 
+def test_misc_catch_all_opaque():
+    result = build_bill_suggestions(apple_services_operator_fixture(), **_engine_kwargs())
+    misc = next(row for row in result["data"] if row["merchant"] == "APPLE.COM/BILL (misc)")
+    assert misc["status"] == "review"
+    prefill = misc["register_prefill"]
+    assert prefill["amount_mode"] == "intermittent"
+    assert prefill["amount_exactly"] is None
+    assert prefill["name"] == "APPLE.COM/BILL (misc)"
+    expected_lo, expected_hi = _pad_amounts(
+        Decimal(misc["amount_min"]),
+        Decimal(misc["amount_max"]),
+    )
+    assert prefill["amount_min"] == expected_lo
+    assert prefill["amount_max"] == expected_hi
+    assert prefill["amount_min"] != misc["amount_min"] or prefill["amount_max"] != misc["amount_max"]
+
+
+def test_opaque_partial_adoption():
+    kwargs = _engine_kwargs()
+    kwargs["registry_rows"] = [{"row_label": "Cloud Storage", "firefly_bill_id": None}]
+    result = build_bill_suggestions(apple_services_operator_fixture(), **kwargs)
+    merchants = {row["merchant"] for row in result["data"]}
+    assert "Cloud Storage" not in merchants
+    assert "Ulysses App" in merchants
+
+
+def test_sub_group_prefill_fields():
+    result = build_bill_suggestions(apple_services_operator_fixture(), **_engine_kwargs())
+    stable = [
+        row for row in result["data"]
+        if row["merchant"] != "APPLE.COM/BILL (misc)" and row["occurrences"] >= 12
+    ]
+    assert stable
+    for row in stable:
+        prefill = row["register_prefill"]
+        assert prefill["destination_account"] == "APPLE.COM/BILL"
+        assert prefill["category_name"]
+        assert prefill["amount_exactly"] is not None
+        assert_valid_register_prefill(prefill)
+
+
 def test_sort_bucket_confidence_occurrences():
     splits = (
         spotify_monthly_withdrawals(12)
