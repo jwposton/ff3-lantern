@@ -10,6 +10,7 @@ import pytest
 from payment_worksheet_bills import RegisterBillBody
 from payment_worksheet_bill_suggestions import (
     OPAQUE_NOTES,
+    _enrich_opaque_subgroup,
     _merchant_from_category,
     _pad_amounts,
     _should_subsplit_opaque_payee,
@@ -497,6 +498,83 @@ def _opaque_txn(
         "source_type": "Asset account",
         "source_role": "Credit card",
     }
+
+
+def opaque_subsplit_fixture() -> list[dict[str, Any]]:
+    """Two stable opaque fingerprints plus misc one-offs."""
+    rows: list[dict[str, Any]] = []
+    combos = (
+        ("Cloud Storage", "10.09", ["2025-07-10", "2025-08-10", "2025-09-10"]),
+        ("Ulysses App", "6.37", ["2025-07-15", "2025-08-15", "2025-09-15"]),
+        ("App Subscriptions", "7.43", ["2025-10-10", "2025-11-10", "2025-12-10"]),
+    )
+    for category, amount, dates in combos:
+        for date in dates:
+            rows.append({
+                "type": "withdrawal",
+                "amount": amount,
+                "date": date,
+                "destination_name": "APPLE.COM/BILL",
+                "description": "PreApproved Payment Bill User Payment",
+                "category_name": category,
+                "source_name": "PayPal Credit",
+                "source_id": "cc-paypal",
+                "source_type": "Asset account",
+                "source_role": "Credit card",
+            })
+    rows.append({
+        "type": "withdrawal",
+        "amount": "1.05",
+        "date": "2025-08-20",
+        "destination_name": "APPLE.COM/BILL",
+        "description": "PreApproved Payment Bill User Payment",
+        "category_name": "App Subscriptions",
+        "source_name": "PayPal Credit",
+        "source_id": "cc-paypal",
+        "source_type": "Asset account",
+        "source_role": "Credit card",
+    })
+    return rows
+
+
+def test_opaque_subgroup_no_parent_row_on_subsplit():
+    result = build_bill_suggestions(opaque_subsplit_fixture(), **_engine_kwargs())
+    assert len(result["data"]) >= 3
+    assert all(row["bucket"] == "APPLE.COM/BILL" for row in result["data"])
+    assert all(row["cluster"] == "apple-com-bill" for row in result["data"])
+    assert all(row.get("notes") is None for row in result["data"])
+    merchants = {row["merchant"] for row in result["data"]}
+    assert "Apple.com/bill" not in merchants
+
+
+def test_enrich_opaque_subgroup_stable_prefill_amount_exactly():
+    result = build_bill_suggestions(opaque_subsplit_fixture(), **_engine_kwargs())
+    cloud = next(row for row in result["data"] if row["merchant"].startswith("Cloud Storage"))
+    prefill = cloud["register_prefill"]
+    assert prefill["destination_account"] == "APPLE.COM/BILL"
+    assert prefill["category_name"] == "Cloud Storage"
+    assert prefill["amount_exactly"] == "10.09"
+    assert_valid_register_prefill(prefill)
+
+
+def test_enrich_opaque_subgroup_misc_row():
+    result = build_bill_suggestions(opaque_subsplit_fixture(), **_engine_kwargs())
+    misc = next(row for row in result["data"] if row["merchant"] == "APPLE.COM/BILL (misc)")
+    assert misc["status"] == "review"
+    assert misc["register_prefill"]["amount_mode"] == "intermittent"
+    assert misc["register_prefill"]["amount_exactly"] is None
+
+
+def test_opaque_subgroup_unique_ids():
+    result = build_bill_suggestions(opaque_subsplit_fixture(), **_engine_kwargs())
+    ids = [row["id"] for row in result["data"]]
+    assert len(ids) == len(set(ids))
+
+
+def test_enrich_opaque_subgroup_likely_suffix():
+    result = build_bill_suggestions(opaque_subsplit_fixture(), **_engine_kwargs())
+    arcade = next(row for row in result["data"] if "App Subscriptions" in row["merchant"])
+    assert arcade["merchant"] == "App Subscriptions (likely)"
 
 
 def test_subsplit_trigger_false_for_single_fingerprint():

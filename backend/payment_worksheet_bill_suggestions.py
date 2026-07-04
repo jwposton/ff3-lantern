@@ -350,6 +350,60 @@ def _is_utility_like(metrics: dict[str, Any]) -> bool:
     )
 
 
+def _analyze_misc_metrics(key: str, txns: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Build metrics for misc catch-all one-offs that lack recurrence threshold."""
+    if not txns:
+        return None
+    amounts: list[Decimal] = []
+    unique_dates: set[date] = set()
+    for txn in txns:
+        amount = txn.get("amount")
+        if isinstance(amount, Decimal):
+            amounts.append(amount)
+        parsed = _parse_date(str(txn.get("date") or ""))
+        if parsed is not None:
+            unique_dates.add(parsed)
+    if not amounts:
+        return None
+
+    amount_min = min(amounts)
+    amount_max = max(amounts)
+    amount_avg = sum(amounts, Decimal("0")) / Decimal(len(amounts))
+    if amount_avg > 0:
+        max_dev = max(abs(a - amount_avg) for a in amounts)
+        amt_variance_pct = float((max_dev / amount_avg) * Decimal("100"))
+    else:
+        amt_variance_pct = 0.0
+
+    sorted_dates = sorted(unique_dates)
+    latest_txn = max(txns, key=lambda txn: str(txn.get("date") or ""))
+    last_date = sorted_dates[-1].isoformat() if sorted_dates else ""
+    first_date = sorted_dates[0].isoformat() if sorted_dates else ""
+
+    return {
+        "occurrences": len(unique_dates) or len(txns),
+        "amount_min": amount_min,
+        "amount_max": amount_max,
+        "amount_avg": amount_avg,
+        "amt_variance_pct": amt_variance_pct,
+        "gaps": [],
+        "avg_gap_days": 0.0,
+        "gap_std": 0.0,
+        "regularity": 0.0,
+        "freq": "irregular",
+        "last_date": last_date,
+        "first_date": first_date,
+        "payment_source": str(latest_txn.get("source_name") or ""),
+        "category": str(latest_txn.get("category_name") or ""),
+        "merchant": str(latest_txn.get("destination_name") or "").strip() or key,
+        "sample_descriptions": sorted({
+            str(txn.get("description") or "").strip()
+            for txn in txns
+            if str(txn.get("description") or "").strip()
+        })[:3],
+    }
+
+
 def _is_recurring_candidate(metrics: dict[str, Any]) -> bool:
     freq = metrics["freq"]
     if freq == "monthly" and metrics["regularity"] >= 0.5 and metrics["occurrences"] >= 3:
@@ -578,6 +632,91 @@ def _subgroups_for_opaque_payee(
     if misc_txns:
         result.append((misc_txns, "misc"))
     return result
+
+
+def _opaque_parent_bucket(raw_payee: str) -> str:
+    return raw_payee.strip()
+
+
+def _make_opaque_subgroup_id(
+    key: str,
+    category: str,
+    amount: Decimal,
+    *,
+    is_misc: bool,
+) -> str:
+    if is_misc:
+        digest_input = f"{key}:misc"
+    else:
+        digest_input = f"{key}:{category}:{amount}"
+    digest = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()[:16]
+    return f"sug-{digest}"
+
+
+def _enrich_opaque_subgroup(
+    key: str,
+    subgroup_txns: list[dict[str, Any]],
+    sub_metrics: dict[str, Any],
+    accounts: dict[str, dict[str, Any]],
+    *,
+    raw_payee: str,
+    category: str,
+    is_misc: bool,
+) -> dict[str, Any]:
+    if is_misc:
+        merchant = f"{raw_payee.strip()} (misc)"
+    else:
+        merchant = _merchant_from_category(category, sub_metrics["occurrences"])
+
+    register_prefill = _build_register_prefill(
+        sub_metrics,
+        subgroup_txns,
+        accounts,
+        raw_payee=raw_payee,
+        is_opaque=False,
+    )
+    register_prefill["name"] = merchant
+    register_prefill["destination_account"] = raw_payee
+    if is_misc:
+        register_prefill["category_name"] = ""
+        register_prefill["amount_mode"] = "intermittent"
+        register_prefill["amount_exactly"] = None
+    else:
+        register_prefill["category_name"] = category
+        if sub_metrics["amt_variance_pct"] < 3:
+            register_prefill["amount_exactly"] = _format_decimal(sub_metrics["amount_avg"])
+        else:
+            register_prefill["amount_exactly"] = None
+
+    confidence = _score_confidence(sub_metrics)
+    status: Literal["ready", "review"] = "review" if is_misc else _assign_status(confidence)
+
+    fp_amount = subgroup_txns[0].get("amount") if subgroup_txns else Decimal("0")
+    if not isinstance(fp_amount, Decimal):
+        fp_amount = Decimal(str(fp_amount)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+    suggestion: dict[str, Any] = {
+        "id": _make_opaque_subgroup_id(key, category, fp_amount, is_misc=is_misc),
+        "merchant": merchant,
+        "confidence": confidence,
+        "status": status,
+        "amount_min": _format_decimal(sub_metrics["amount_min"]),
+        "amount_max": _format_decimal(sub_metrics["amount_max"]),
+        "amount_avg": _format_decimal(sub_metrics["amount_avg"]),
+        "occurrences": sub_metrics["occurrences"],
+        "freq": sub_metrics["freq"],
+        "regularity": round(sub_metrics["regularity"], 2),
+        "last_date": sub_metrics["last_date"],
+        "first_date": sub_metrics["first_date"],
+        "category": category if not is_misc else sub_metrics["category"],
+        "payment_source": sub_metrics["payment_source"],
+        "sample_descriptions": sub_metrics["sample_descriptions"],
+        "bucket": _opaque_parent_bucket(raw_payee),
+        "cluster": _slugify_cluster(raw_payee),
+        "register_prefill": register_prefill,
+        "reasons": _build_reasons(sub_metrics, is_opaque=True),
+    }
+    return suggestion
 
 
 def _is_opaque_payee_cluster(txns: list[dict[str, Any]]) -> bool:
@@ -809,6 +948,48 @@ def build_bill_suggestions(
     for key, txns in groups.items():
         metrics = _analyze_group(key, txns)
         if metrics is None:
+            continue
+        if _should_subsplit_opaque_payee(txns):
+            raw_payee = str(metrics["merchant"] or key).strip() or key
+            for subgroup_txns, subgroup_kind in _subgroups_for_opaque_payee(txns):
+                is_misc = subgroup_kind == "misc"
+                sub_metrics = _analyze_group(key, subgroup_txns)
+                if sub_metrics is None and is_misc:
+                    sub_metrics = _analyze_misc_metrics(key, subgroup_txns)
+                if sub_metrics is None:
+                    continue
+                if not _is_recurring_candidate(sub_metrics) and not is_misc:
+                    continue
+                if is_misc:
+                    category = sub_metrics["category"]
+                    merchant_label = f"{raw_payee.strip()} (misc)"
+                else:
+                    category, _ = _fingerprint(subgroup_txns[0])
+                    merchant_label = _merchant_from_category(
+                        category,
+                        sub_metrics["occurrences"],
+                    )
+                reg_metrics = {**sub_metrics, "merchant": merchant_label}
+                if _is_already_registered(
+                    key,
+                    reg_metrics,
+                    registry_rows=registry_rows,
+                    firefly_bills=firefly_bills,
+                    registered_bill_ids=registered_bill_ids,
+                    txns=subgroup_txns,
+                ):
+                    continue
+                suggestions.append(
+                    _enrich_opaque_subgroup(
+                        key,
+                        subgroup_txns,
+                        sub_metrics,
+                        accounts,
+                        raw_payee=raw_payee,
+                        category=category,
+                        is_misc=is_misc,
+                    )
+                )
             continue
         if not _is_recurring_candidate(metrics):
             continue
