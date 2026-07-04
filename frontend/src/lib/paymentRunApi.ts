@@ -316,6 +316,22 @@ export type BillSuggestionTransactionsEnvelope = {
   }
 }
 
+export type BillSuggestionExplainRuleHints = {
+  destination_account: string
+  category_name: string
+  amount_exactly: string
+}
+
+export type BillSuggestionExplainResponse = {
+  suggestion_id: string
+  display_name: string
+  service_guess: string
+  amount_mode_rationale: string
+  rule_hints: BillSuggestionExplainRuleHints
+  rationale: string
+  confidence_note: string
+}
+
 export type DiscoverCategoryOption = {
   id: string
   name: string
@@ -563,6 +579,24 @@ export async function fetchBillSuggestionTransactions(
     )
   }
   return (await res.json()) as BillSuggestionTransactionsEnvelope
+}
+
+export async function explainBillSuggestion(
+  suggestionId: string,
+  lookbackMonths: number,
+): Promise<BillSuggestionExplainResponse> {
+  const res = await fetch(
+    `/api/payment-run/bill-suggestions/${encodeURIComponent(suggestionId)}/explain`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lookback_months: lookbackMonths }),
+    },
+  )
+  if (!res.ok) {
+    await parseError(res, `Failed to explain bill suggestion (${res.status})`)
+  }
+  return (await res.json()) as BillSuggestionExplainResponse
 }
 
 export async function fetchDiscoverSettings(): Promise<DiscoverSettingsEnvelope> {
