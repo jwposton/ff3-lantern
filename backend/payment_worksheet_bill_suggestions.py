@@ -8,6 +8,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
+from payment_worksheet_liabilities import is_liability_summary
 from transaction_normalization import description_fingerprint
 
 LOOKBACK_CHOICES: tuple[int, ...] = (6, 12, 24)
@@ -53,6 +54,92 @@ LEGAL_SUFFIX_RE = re.compile(
     r"\b(inc\.?|llc\.?|l\.?l\.?c\.?|corp\.?|ltd\.?|usa)\s*$",
     re.IGNORECASE,
 )
+
+GAS_MERCHANT_KEYWORDS: tuple[str, ...] = (
+    "sunoco",
+    "exxon",
+    "shell",
+    "chevron",
+    "mobil",
+    "texaco",
+    "marathon",
+    "speedway",
+    "bp ",
+    "circle k",
+)
+
+APPLE_CASH_P2P_RE = re.compile(r"APPLE CASH SENT MONEY", re.IGNORECASE)
+CC_INTEREST_DESC_RE = re.compile(r"interest charge", re.IGNORECASE)
+
+_BLOCKLIST_FOLDED: frozenset[str] = frozenset(c.casefold() for c in CATEGORY_BLOCKLIST)
+
+
+def _should_exclude_category(category: str) -> bool:
+    """True when category matches D-06 blocklist (case-insensitive)."""
+    text = (category or "").strip()
+    if not text:
+        return False
+    return text.casefold() in _BLOCKLIST_FOLDED
+
+
+def _account_summary(
+    tx: dict[str, Any],
+    accounts: dict[str, dict[str, Any]],
+    *,
+    side: str,
+) -> dict[str, Any]:
+    account_id = str(tx.get(f"{side}_id") or "")
+    if account_id and account_id in accounts:
+        return accounts[account_id]
+    return {
+        "type": tx.get(f"{side}_type") or "",
+        "role": tx.get(f"{side}_role") or "",
+    }
+
+
+def _is_asset_account(summary: dict[str, Any]) -> bool:
+    acct_type = (summary.get("type") or "").casefold()
+    return "asset" in acct_type
+
+
+def _is_gas_merchant(destination: str, category: str) -> bool:
+    dest = (destination or "").casefold()
+    if "gas" in (category or "").casefold():
+        return True
+    return any(keyword in dest for keyword in GAS_MERCHANT_KEYWORDS)
+
+
+def _is_noise_transaction(tx: dict[str, Any], accounts: dict[str, dict[str, Any]]) -> bool:
+    """Exclude D-06 noise: blocklisted categories, gas, P2P, interest, loans, internal transfers."""
+    category = str(tx.get("category_name") or "")
+    if _should_exclude_category(category):
+        return True
+
+    destination = str(tx.get("destination_name") or "")
+    description = str(tx.get("description") or "")
+
+    if _is_gas_merchant(destination, category):
+        return True
+
+    if APPLE_CASH_P2P_RE.search(description):
+        return True
+
+    if CC_INTEREST_DESC_RE.search(description) or category.casefold() == "credit card interest":
+        return True
+
+    dest_summary = _account_summary(tx, accounts, side="destination")
+    if is_liability_summary(dest_summary):
+        return True
+
+    source_summary = _account_summary(tx, accounts, side="source")
+    if _is_asset_account(source_summary) and _is_asset_account(dest_summary):
+        if destination.strip() and not is_liability_summary(dest_summary):
+            src_name = (source_summary.get("name") or str(tx.get("source_name") or "")).casefold()
+            dst_name = (dest_summary.get("name") or destination).casefold()
+            if src_name != dst_name:
+                return True
+
+    return False
 
 
 def _subtract_months(end: date, months: int) -> date:
@@ -296,10 +383,11 @@ def build_bill_suggestions(
     period_end: str,
 ) -> dict[str, Any]:
     """Pure engine — primary unit-test entry point."""
-    _ = accounts, firefly_bills, registry_rows
+    _ = firefly_bills, registry_rows
 
     parsed = [row for row in (_parse_withdrawal(split) for split in splits) if row is not None]
-    groups = _group_withdrawals(parsed)
+    filtered = [row for row in parsed if not _is_noise_transaction(row, accounts)]
+    groups = _group_withdrawals(filtered)
 
     suggestions: list[dict[str, Any]] = []
     for key, txns in groups.items():

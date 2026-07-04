@@ -102,6 +102,125 @@ def low_confidence_quarterly(count: int = 2) -> list[dict[str, Any]]:
     return rows
 
 
+def gas_station_noise(count: int = 6) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    stations = ("Sunoco", "Exxon")
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "45.00",
+            "date": f"{year}-{month:02d}-05",
+            "destination_name": stations[i % len(stations)],
+            "description": "Fuel purchase",
+            "category_name": "Gas",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
+def restaurant_noise(count: int = 6) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "28.50",
+            "date": f"{year}-{month:02d}-12",
+            "destination_name": "Local Diner",
+            "description": "Dinner",
+            "category_name": "Restaurants",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
+def apple_cash_p2p(count: int = 6) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "25.00",
+            "date": f"{year}-{month:02d}-20",
+            "destination_name": "Friend",
+            "description": "APPLE CASH SENT MONEY VIA MOBILE",
+            "category_name": "Transfer",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    return rows
+
+
+def cc_interest_noise(count: int = 6) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "18.75",
+            "date": f"{year}-{month:02d}-01",
+            "destination_name": "PayPal Credit",
+            "description": "Interest Charge",
+            "category_name": "Credit Card Interest",
+            "source_name": "PayPal Credit",
+            "source_id": "cc-paypal",
+            "source_type": "Asset account",
+            "source_role": "Credit card",
+        })
+    return rows
+
+
+def loan_payment_noise(count: int = 6) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i in range(count):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append({
+            "type": "withdrawal",
+            "amount": "850.00",
+            "date": f"{year}-{month:02d}-01",
+            "destination_name": "Mortgage",
+            "description": "Loan payment",
+            "category_name": "Loan Payment",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+            "destination_id": "mortgage",
+            "destination_type": "Liability account",
+            "destination_role": "Debt",
+        })
+    return rows
+
+
 def test_spotify_monthly_high_confidence():
     result = build_bill_suggestions(
         spotify_monthly_withdrawals(12),
@@ -166,3 +285,26 @@ def test_empty_splits():
     result = build_bill_suggestions([], **_engine_kwargs())
     assert result["data"] == []
     assert result["meta"]["suggestions_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("fixture_fn", "label"),
+    [
+        (gas_station_noise, "gas_station"),
+        (restaurant_noise, "restaurant"),
+        (apple_cash_p2p, "apple_cash_p2p"),
+        (cc_interest_noise, "cc_interest"),
+        (loan_payment_noise, "loan_payment"),
+    ],
+)
+def test_noise_exclusion_categories(fixture_fn, label):
+    _ = label
+    result = build_bill_suggestions(fixture_fn(6), **_engine_kwargs())
+    assert result["data"] == []
+
+
+def test_noise_does_not_block_spotify():
+    splits = spotify_monthly_withdrawals(12) + gas_station_noise(6) + restaurant_noise(6)
+    result = build_bill_suggestions(splits, **_engine_kwargs())
+    assert len(result["data"]) == 1
+    assert result["data"][0]["merchant"] == "Spotify USA Inc"
