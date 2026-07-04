@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Bill history window** — fetches 13 calendar months (including the current month) so last year's same-month payment still appears when this month's rent has not posted yet; 12-month total and calendar average unchanged
 - **App shell** — Global date picker only on routes where it drives page data; top header bar hidden elsewhere; sidebar collapse toggle in the sidebar header; **Clear cache** moved to sidebar footer (above About)
 - **MoM variance** — Title, lens toggle, and month/compare controls pinned above scroll; charts and tables scroll underneath
 - **Charts** — Spending/Cash Flow toggle on each chart page header; sidebar Charts lists types only (Bar, Line/Trend, Sankey, Variance)

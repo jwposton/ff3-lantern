@@ -19,11 +19,16 @@ def _format_decimal(value: Decimal) -> str:
 
 
 def bill_history_date_window(today: date | None = None) -> tuple[str, str]:
-    """Last 12 calendar months: first day of month 11 months ago through today inclusive."""
+    """Fetch window: 13 calendar months through today (month - 12 through current).
+
+    One extra month vs a strict 12-month stats window so early in the current month
+    you still see the same month last year (e.g. July rent before July payment posts).
+    Stats (total, calendar average) still normalize against 12 per D-06/D-07.
+    """
     if today is None:
         today = date.today()
     year = today.year
-    month = today.month - 11
+    month = today.month - 12
     while month <= 0:
         month += 12
         year -= 1

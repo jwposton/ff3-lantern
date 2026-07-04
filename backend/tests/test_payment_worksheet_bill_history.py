@@ -12,13 +12,13 @@ from payment_worksheet_bill_history import (
 
 def test_bill_history_date_window_span():
     start, end = bill_history_date_window(date(2026, 7, 3))
-    assert start == "2025-08-01"
+    assert start == "2025-07-01"
     assert end == "2026-07-03"
 
 
 def test_bill_history_date_window_year_rollover():
     start, end = bill_history_date_window(date(2026, 2, 15))
-    assert start == "2025-03-01"
+    assert start == "2025-02-01"
     assert end == "2026-02-15"
 
 
