@@ -1656,3 +1656,58 @@ def test_suggestion_transactions_firefly_error_502(
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 
+
+def test_explain_503_without_key(monkeypatch, client, data_dir, payment_worksheet_env):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    response = client.post(
+        "/api/payment-run/bill-suggestions/sug-deadbeefcafebabe/explain",
+        json={"lookback_months": 12},
+    )
+    assert response.status_code == 503
+    assert "bill suggestion explain is unavailable" in response.json()["detail"]
+
+
+def test_explain_422_invalid_lookback(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    app, get_firefly_client = _override_bill_suggestions_client(
+        monkeypatch, _bill_suggestions_handler()
+    )
+    try:
+        response = client.post(
+            "/api/payment-run/bill-suggestions/sug-deadbeefcafebabe/explain",
+            json={"lookback_months": 18},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "lookback_months must be 6, 12, or 24."
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_explain_404_not_found(monkeypatch, client, data_dir, payment_worksheet_env):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    app, get_firefly_client = _override_bill_suggestions_client(
+        monkeypatch, _bill_suggestions_handler()
+    )
+    try:
+        response = client.post(
+            "/api/payment-run/bill-suggestions/sug-nonexistent0000/explain",
+            json={"lookback_months": 12},
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Suggestion not found."
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_explain_disabled_worksheet(monkeypatch, client):
+    monkeypatch.delenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    response = client.post(
+        "/api/payment-run/bill-suggestions/sug-deadbeefcafebabe/explain",
+        json={"lookback_months": 12},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Payment worksheet is not enabled."
+
