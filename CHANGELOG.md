@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Bill discover fuzzy payee merge** — recurring charges with the same category and amount merge across landlord/payee renames in noisy categories; near-match payee strings (LLC/Inc variants) also collapse to one suggestion
 - **Bill discover grouping** — suggestions group by Firefly payee instead of hardcoded audit buckets (Streaming & Media, etc.); discretionary category exclusions are operator-managed on the discover page instead of a built-in blocklist
 
 ### Fixed

@@ -13,6 +13,7 @@ from payment_worksheet_bill_suggestions import (
     _category_is_ignored,
     _cluster_withdrawals,
     _is_quiet_category,
+    _payee_similarity,
     _merchant_from_category,
     _pad_amounts,
     _resolve_opaque_raw_payee,
@@ -560,6 +561,152 @@ def test_quiet_rent_merges_payee_variants():
     result = build_bill_suggestions(rows, **_engine_kwargs())
     assert len(result["data"]) == 1
     assert result["data"][0]["occurrences"] == 12
+
+
+def _rent_row(
+    *,
+    amount: str,
+    date: str,
+    destination: str,
+    category: str = "Rent",
+    description: str = "Monthly rent payment",
+) -> dict[str, Any]:
+    return {
+        "type": "withdrawal",
+        "amount": amount,
+        "date": date,
+        "destination_name": destination,
+        "description": description,
+        "category_name": category,
+        "source_name": "Checking",
+        "source_id": "checking",
+        "source_type": "Asset account",
+        "source_role": "Default asset",
+    }
+
+
+def _noisy_rent_category_rows() -> list[dict[str, Any]]:
+    """Rent rename plus extra Rent-category payees so category is not quiet (>3 payees)."""
+    rows: list[dict[str, Any]] = []
+    payees = ("Property Mgmt LLC", "Harvest Wind Rentals")
+    for i in range(12):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append(
+            _rent_row(
+                amount="1850.00",
+                date=f"{year}-{month:02d}-01",
+                destination=payees[i % len(payees)],
+            )
+        )
+    for i, payee in enumerate(
+        ("Utility Co", "Insurance Co", "HOA Fees", "Parking LLC"),
+        start=1,
+    ):
+        rows.append(
+            _rent_row(
+                amount=f"{50 + i}.00",
+                date="2025-08-01",
+                destination=payee,
+                description="misc",
+            )
+        )
+    return rows
+
+
+def test_rent_payee_rename_single_suggestion():
+    """#55: noisy Rent category still merges landlord rename into one row."""
+    result = build_bill_suggestions(_noisy_rent_category_rows(), **_engine_kwargs())
+    rent_rows = [
+        row
+        for row in result["data"]
+        if row.get("register_prefill", {}).get("category_name") == "Rent"
+        and row.get("amount_avg") == "1850.00"
+    ]
+    assert len(rent_rows) == 1
+    assert rent_rows[0]["occurrences"] == 12
+
+
+def test_fuzzy_payee_near_match_merges():
+    rows: list[dict[str, Any]] = []
+    payees = ("Property Mgmt LLC", "Property Mgmt, LLC")
+    for i in range(6):
+        month = 7 + i
+        year = 2025
+        while month > 12:
+            month -= 12
+            year += 1
+        rows.append(
+            _rent_row(
+                amount="1200.00",
+                date=f"{year}-{month:02d}-01",
+                destination=payees[i % len(payees)],
+            )
+        )
+    assert _payee_similarity(payees[0], payees[1]) >= 0.85
+    result = build_bill_suggestions(rows, **_engine_kwargs())
+    assert len(result["data"]) == 1
+    assert result["data"][0]["occurrences"] == 6
+
+
+def test_same_category_different_amounts_stay_separate():
+    rows = [
+        _rent_row(amount="1850.00", date="2025-07-01", destination="Property Mgmt LLC"),
+        _rent_row(amount="1850.00", date="2025-08-01", destination="Property Mgmt LLC"),
+        _rent_row(amount="1850.00", date="2025-09-01", destination="Property Mgmt LLC"),
+        _rent_row(amount="75.00", date="2025-07-15", destination="Property Mgmt LLC", description="Parking"),
+        _rent_row(amount="75.00", date="2025-08-15", destination="Property Mgmt LLC", description="Parking"),
+        _rent_row(amount="75.00", date="2025-09-15", destination="Property Mgmt LLC", description="Parking"),
+    ]
+    result = build_bill_suggestions(rows, **_engine_kwargs())
+    assert len(result["data"]) == 2
+    amounts = {row["amount_avg"] for row in result["data"]}
+    assert amounts == {"75.00", "1850.00"}
+
+
+def test_parallel_same_amount_subscriptions_do_not_merge():
+    rows: list[dict[str, Any]] = []
+    services = ("Netflix", "Hulu", "Disney+", "Max", "Spotify")
+    for service in services[:2]:
+        for i in range(6):
+            month = 7 + i
+            year = 2025
+            while month > 12:
+                month -= 12
+                year += 1
+            rows.append({
+                "type": "withdrawal",
+                "amount": "15.99",
+                "date": f"{year}-{month:02d}-05",
+                "destination_name": service,
+                "description": f"{service} subscription",
+                "category_name": "Entertainment",
+                "source_name": "Checking",
+                "source_id": "checking",
+                "source_type": "Asset account",
+                "source_role": "Default asset",
+            })
+    for service in services[2:]:
+        rows.append({
+            "type": "withdrawal",
+            "amount": "9.99",
+            "date": "2025-08-01",
+            "destination_name": service,
+            "description": f"{service} subscription",
+            "category_name": "Entertainment",
+            "source_name": "Checking",
+            "source_id": "checking",
+            "source_type": "Asset account",
+            "source_role": "Default asset",
+        })
+    result = build_bill_suggestions(rows, **_engine_kwargs())
+    amount_1599 = [
+        row for row in result["data"] if row.get("amount_avg") == "15.99"
+    ]
+    assert len(amount_1599) == 2
 
 
 def test_category_ignore_casefold_and_alias():

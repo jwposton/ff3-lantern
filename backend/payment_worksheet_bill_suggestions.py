@@ -7,6 +7,7 @@ import re
 import statistics
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, ROUND_UP, Decimal, InvalidOperation
+from difflib import SequenceMatcher
 from typing import Any, Iterator, Literal, NamedTuple
 
 import sidecar_db
@@ -23,6 +24,9 @@ LEGAL_SUFFIX_RE = re.compile(
     r"\b(inc\.?|llc\.?|l\.?l\.?c\.?|corp\.?|ltd\.?|usa)\s*$",
     re.IGNORECASE,
 )
+
+FUZZY_PAYEE_MERGE_RATIO = 0.85
+_PAYEE_HANDOFF_MAX_OVERLAP = 0.25
 
 GAS_MERCHANT_KEYWORDS: tuple[str, ...] = (
     "sunoco",
@@ -446,6 +450,204 @@ def _fingerprint_cluster_key(category: str, amount: Decimal) -> str:
     return f"fp:{category}:{amount.quantize(Decimal('0.01'), ROUND_HALF_UP)}"
 
 
+def _normalize_payee_for_fuzzy_match(name: str) -> str:
+    text = (name or "").strip()
+    text = LEGAL_SUFFIX_RE.sub("", text).strip()
+    text = re.sub(r"[^a-z0-9]+", " ", text.casefold()).strip()
+    return text
+
+
+def _payee_similarity(a: str, b: str) -> float:
+    na = _normalize_payee_for_fuzzy_match(a)
+    nb = _normalize_payee_for_fuzzy_match(b)
+    if not na or not nb:
+        return 0.0
+    if na == nb:
+        return 1.0
+    return SequenceMatcher(None, na, nb).ratio()
+
+
+def _pick_canonical_payee(txns: list[dict[str, Any]]) -> str:
+    """Most frequent destination_name; tie → most recent charge date."""
+    counts: dict[str, int] = {}
+    latest: dict[str, str] = {}
+    for txn in txns:
+        payee = str(txn.get("destination_name") or "").strip()
+        if not payee:
+            continue
+        counts[payee] = counts.get(payee, 0) + 1
+        charge_date = str(txn.get("date") or "")[:10]
+        if payee not in latest or charge_date > latest[payee]:
+            latest[payee] = charge_date
+    if not counts:
+        return ""
+    max_count = max(counts.values())
+    candidates = [payee for payee, count in counts.items() if count == max_count]
+    if len(candidates) == 1:
+        return candidates[0]
+    return max(candidates, key=lambda payee: latest.get(payee, ""))
+
+
+def _charge_dates_for_payee(txns: list[dict[str, Any]]) -> set[date]:
+    dates: set[date] = set()
+    for txn in txns:
+        parsed = _parse_date(str(txn.get("date") or ""))
+        if parsed is not None:
+            dates.add(parsed)
+    return dates
+
+
+def _payee_streams_are_handoff(dates_a: set[date], dates_b: set[date]) -> bool:
+    """True when payee streams look like rename/handoff, not parallel subscriptions."""
+    if not dates_a or not dates_b:
+        return False
+    overlap = len(dates_a & dates_b)
+    denom = min(len(dates_a), len(dates_b))
+    if denom == 0:
+        return False
+    return (overlap / denom) <= _PAYEE_HANDOFF_MAX_OVERLAP
+
+
+def _merge_clusters_same_fingerprint(
+    clusters: dict[str, list[dict[str, Any]]],
+) -> list[list[dict[str, Any]]]:
+    """Merge payee-first clusters sharing a fingerprint when fuzzy match or handoff."""
+    payee_to_txns: dict[str, list[dict[str, Any]]] = {}
+    for key, txns in clusters.items():
+        for txn in txns:
+            payee = str(txn.get("destination_name") or "").strip() or key
+            payee_to_txns.setdefault(payee, []).append(txn)
+
+    payees = list(payee_to_txns.keys())
+    if len(payees) <= 1:
+        return [txns for txns in payee_to_txns.values()]
+
+    parent = {payee: payee for payee in payees}
+
+    def find(payee: str) -> str:
+        while parent[payee] != payee:
+            parent[payee] = parent[parent[payee]]
+            payee = parent[payee]
+        return payee
+
+    def union(a: str, b: str) -> None:
+        root_a, root_b = find(a), find(b)
+        if root_a != root_b:
+            parent[root_b] = root_a
+
+    dates_by_payee = {
+        payee: _charge_dates_for_payee(txns) for payee, txns in payee_to_txns.items()
+    }
+
+    for i, payee_a in enumerate(payees):
+        for payee_b in payees[i + 1 :]:
+            if _payee_similarity(payee_a, payee_b) >= FUZZY_PAYEE_MERGE_RATIO:
+                union(payee_a, payee_b)
+            elif _payee_streams_are_handoff(
+                dates_by_payee[payee_a],
+                dates_by_payee[payee_b],
+            ):
+                union(payee_a, payee_b)
+
+    merged: dict[str, list[dict[str, Any]]] = {}
+    for payee, txns in payee_to_txns.items():
+        root = find(payee)
+        merged.setdefault(root, []).extend(txns)
+
+    return list(merged.values())
+
+
+_BILL_SPLIT_MIN_AMOUNT = Decimal("40.00")
+
+
+def _fingerprint_groups_are_distinct_fixed_bills(
+    fingerprint_groups: dict[tuple[str, Decimal], list[dict[str, Any]]],
+) -> bool:
+    """True when 2+ amount fingerprints look like separate fixed recurring bills."""
+    stable_recurring = 0
+    for fingerprint, fp_rows in fingerprint_groups.items():
+        if fingerprint[1] < _BILL_SPLIT_MIN_AMOUNT:
+            continue
+        metrics = _analyze_group("", fp_rows)
+        if metrics is None or not _is_recurring_candidate(metrics, fp_rows):
+            continue
+        if metrics.get("amt_variance_pct", 100) < 3:
+            stable_recurring += 1
+    return stable_recurring >= 2
+
+
+def _payee_has_distinct_monthly_amount_bills(txns: list[dict[str, Any]]) -> bool:
+    """True when the same calendar month often has multiple distinct charge amounts."""
+    by_month: dict[str, set[Decimal]] = {}
+    for txn in txns:
+        month = str(txn.get("date") or "")[:7]
+        amount = txn.get("amount")
+        if not month or not isinstance(amount, Decimal):
+            continue
+        by_month.setdefault(month, set()).add(
+            amount.quantize(Decimal("0.01"), ROUND_HALF_UP),
+        )
+    months_with_multiple = sum(1 for amounts in by_month.values() if len(amounts) > 1)
+    return months_with_multiple >= 2
+
+
+def _merge_payee_clusters_in_category(
+    payee_clusters: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Apply D-44 fuzzy payee merge within stable category+amount fingerprints."""
+    if not payee_clusters:
+        return {}
+
+    consumed_ids: set[int] = set()
+    merged: dict[str, list[dict[str, Any]]] = {}
+
+    by_fingerprint: dict[tuple[str, Decimal], dict[str, list[dict[str, Any]]]] = {}
+    for payee_key, txns in payee_clusters.items():
+        for txn in txns:
+            fingerprint = _fingerprint(txn)
+            by_fingerprint.setdefault(fingerprint, {}).setdefault(payee_key, []).append(txn)
+
+    for fingerprint, fingerprint_clusters in by_fingerprint.items():
+        if len(fingerprint_clusters) < 2:
+            continue
+        merged_groups = _merge_clusters_same_fingerprint(fingerprint_clusters)
+        cluster_key = _fingerprint_cluster_key(fingerprint[0], fingerprint[1])
+        if len(merged_groups) == 1:
+            merged[cluster_key] = list(merged_groups[0])
+            for txn in merged_groups[0]:
+                consumed_ids.add(id(txn))
+            continue
+        for txns in merged_groups:
+            payee_key = _normalize_key(_pick_canonical_payee(txns), "")
+            merged[payee_key] = list(txns)
+            for txn in txns:
+                consumed_ids.add(id(txn))
+
+    for payee_key, txns in payee_clusters.items():
+        remaining = [txn for txn in txns if id(txn) not in consumed_ids]
+        if not remaining:
+            continue
+        fingerprint_groups = _group_by_fingerprint(remaining)
+        if (
+            len(fingerprint_groups) > 1
+            and _payee_has_distinct_monthly_amount_bills(remaining)
+            and _fingerprint_groups_are_distinct_fixed_bills(fingerprint_groups)
+            and not _is_visit_style_spending(remaining)
+        ):
+            for fingerprint, fp_rows in fingerprint_groups.items():
+                metrics = _analyze_group(payee_key, fp_rows)
+                if metrics is None or not _is_recurring_candidate(metrics, fp_rows):
+                    continue
+                merged[_fingerprint_cluster_key(fingerprint[0], fingerprint[1])] = list(fp_rows)
+            continue
+        if payee_key in merged:
+            merged[payee_key].extend(remaining)
+        else:
+            merged[payee_key] = list(remaining)
+
+    return merged
+
+
 def _is_quiet_category(txns: list[dict[str, Any]]) -> bool:
     """D-43: 2–3 payee variants and at most 3 amount fingerprints in category."""
     if not txns:
@@ -492,8 +694,9 @@ def _cluster_withdrawals(rows: list[dict[str, Any]]) -> dict[str, list[dict[str,
             for fp, fp_rows in _group_by_fingerprint(cat_rows).items():
                 clusters[_fingerprint_cluster_key(fp[0], fp[1])] = fp_rows
         else:
-            for key, payee_rows in _group_withdrawals(cat_rows).items():
-                clusters[key] = payee_rows
+            payee_clusters = _group_withdrawals(cat_rows)
+            for key, txns in _merge_payee_clusters_in_category(payee_clusters).items():
+                clusters[key] = txns
 
     return clusters
 
