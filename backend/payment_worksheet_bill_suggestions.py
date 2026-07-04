@@ -1443,6 +1443,47 @@ async def fetch_bill_suggestions(
     )
 
 
+async def fetch_bill_suggestion_transactions(
+    client: FireflyClient,
+    *,
+    suggestion_id: str,
+    lookback_months: int = 12,
+) -> dict[str, Any] | None:
+    """Fetch Firefly data and resolve drill-down transactions for one suggestion."""
+    if lookback_months not in LOOKBACK_CHOICES:
+        raise ValueError("lookback_months must be 6, 12, or 24.")
+    period_end = date.today()
+    period_start = _subtract_months(period_end, lookback_months)
+    start_iso = period_start.isoformat()
+    end_iso = period_end.isoformat()
+    splits = await client.fetch_splits(start_iso, end_iso)
+    accounts = await client.fetch_accounts()
+    bills = await client.fetch_bills()
+    registry_rows = await sidecar_db.list_worksheet_registry()
+    settings = await sidecar_db.get_discover_settings()
+    txns = find_suggestion_transactions(
+        splits,
+        accounts=accounts,
+        firefly_bills=bills,
+        registry_rows=registry_rows,
+        period_start=start_iso,
+        period_end=end_iso,
+        ignored_categories=settings["ignored_categories"],
+        suggestion_id=suggestion_id,
+    )
+    if txns is None:
+        return None
+    return {
+        "data": txns,
+        "meta": {
+            "suggestion_id": suggestion_id,
+            "transaction_count": len(txns),
+            "period_start": start_iso,
+            "period_end": end_iso,
+        },
+    }
+
+
 def build_bill_suggestions(
     splits: list[dict[str, Any]],
     *,

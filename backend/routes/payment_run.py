@@ -28,6 +28,7 @@ from payment_worksheet_profiles import (
 )
 from payment_worksheet_bill_suggestions import (
     LOOKBACK_CHOICES,
+    fetch_bill_suggestion_transactions,
     fetch_bill_suggestions,
 )
 from payment_worksheet_bills import (
@@ -676,3 +677,28 @@ async def bill_suggestions(
         return await fetch_bill_suggestions(client, lookback_months=lookback_months)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/payment-run/bill-suggestions/{suggestion_id}/transactions")
+async def bill_suggestion_transactions(
+    suggestion_id: str,
+    lookback_months: int = 12,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    if lookback_months not in LOOKBACK_CHOICES:
+        raise HTTPException(
+            status_code=422,
+            detail="lookback_months must be 6, 12, or 24.",
+        )
+    try:
+        result = await fetch_bill_suggestion_transactions(
+            client,
+            suggestion_id=suggestion_id,
+            lookback_months=lookback_months,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Suggestion not found.")
+    return result

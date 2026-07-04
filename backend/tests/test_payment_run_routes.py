@@ -1554,3 +1554,105 @@ def test_discover_settings_get_and_put(monkeypatch, client, data_dir, payment_wo
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 
+
+def _override_bill_suggestions_client(monkeypatch, handler):
+    import firefly_reference_cache
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    firefly_reference_cache.clear()
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    return app, get_firefly_client
+
+
+def test_suggestion_transactions_ok(monkeypatch, client, data_dir, payment_worksheet_env):
+    app, get_firefly_client = _override_bill_suggestions_client(
+        monkeypatch, _bill_suggestions_handler()
+    )
+    try:
+        list_response = client.get("/api/payment-run/bill-suggestions")
+        assert list_response.status_code == 200
+        suggestion_id = list_response.json()["data"][0]["id"]
+        response = client.get(
+            f"/api/payment-run/bill-suggestions/{suggestion_id}/transactions"
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert isinstance(body["data"], list)
+        assert len(body["data"]) == 12
+        meta = body["meta"]
+        assert meta["suggestion_id"] == suggestion_id
+        assert meta["transaction_count"] == 12
+        assert "period_start" in meta
+        assert "period_end" in meta
+        txn = body["data"][0]
+        assert {"date", "amount", "description", "category", "payee", "budget"}.issubset(
+            txn.keys()
+        )
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_suggestion_transactions_lookback_invalid_422(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    app, get_firefly_client = _override_bill_suggestions_client(
+        monkeypatch, _bill_suggestions_handler()
+    )
+    try:
+        response = client.get(
+            "/api/payment-run/bill-suggestions/sug-deadbeefcafebabe/transactions",
+            params={"lookback_months": 18},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "lookback_months must be 6, 12, or 24."
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_suggestion_transactions_not_found_404(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    app, get_firefly_client = _override_bill_suggestions_client(
+        monkeypatch, _bill_suggestions_handler()
+    )
+    try:
+        response = client.get(
+            "/api/payment-run/bill-suggestions/sug-nonexistent0000/transactions"
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Suggestion not found."
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_suggestion_transactions_disabled_returns_404(monkeypatch, client):
+    monkeypatch.delenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", raising=False)
+    response = client.get(
+        "/api/payment-run/bill-suggestions/sug-deadbeefcafebabe/transactions"
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Payment worksheet is not enabled."
+
+
+def test_suggestion_transactions_firefly_error_502(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    app, get_firefly_client = _override_bill_suggestions_client(
+        monkeypatch, _bill_suggestions_handler(transactions_status=500)
+    )
+    try:
+        response = client.get(
+            "/api/payment-run/bill-suggestions/sug-deadbeefcafebabe/transactions"
+        )
+        assert response.status_code == 502
+        detail = response.json()["detail"]
+        assert "Firefly API error 500" in detail
+        assert "test-token" not in detail
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
