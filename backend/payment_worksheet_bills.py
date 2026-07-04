@@ -42,6 +42,8 @@ class RegisterBillBody(BaseModel):
     amount_exactly: str | None = None
     firefly_bill_id: str | None = None
     rule_id: str | None = None
+    bill_group_id: str | None = None
+    show_in_group: bool = False
 
     @field_validator("name")
     @classmethod

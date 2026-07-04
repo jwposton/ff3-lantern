@@ -1926,6 +1926,119 @@ def test_bill_groups_crud(monkeypatch, client, data_dir):
     assert renamed.json()["id"] == "mobile-apps-2"
 
 
+def test_registry_group_show_in_group_requires_group(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-grp-show",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-grp-show",
+                "row_label": "Electric",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"show_in_group": True},
+    )
+    assert response.status_code == 422
+
+
+def test_registry_group_unknown_group_422(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-grp-unknown",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-grp-unknown",
+                "row_label": "Water",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"bill_group_id": "missing-group"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Group not found"
+
+
+def test_registry_group_section_guard_422(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    async def _seed() -> int:
+        await sidecar_db.init_db()
+        await sidecar_db.upsert_bill_group(
+            id="utilities",
+            label="Utilities",
+            sort_order=0,
+        )
+        return await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-grp-credit",
+                "worksheet_section": "credit",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-grp-credit",
+                "row_label": "Card Payment",
+            }
+        )
+
+    reg_id = asyncio.run(_seed())
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"bill_group_id": "utilities"},
+    )
+    assert response.status_code == 422
+
+
 def test_bill_groups_disabled_returns_404(monkeypatch, client):
     monkeypatch.delenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", raising=False)
 
