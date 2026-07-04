@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-07-04
+
 ### Added
 
 - **Bill history registration** — Bills page lets you link an existing Firefly bill or register a new one from the header or empty state, using the same registration wizard as discover and the payment worksheet
@@ -17,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Payment worksheet demotion** — worksheet is plan-only: inline planned/paid/balances stay; bill registration, configure sheet, and structural edit pencils are removed in favor of links to domain hubs and Payment setup
 - **Sidebar** — **Payment setup** nav entry when payment worksheet is enabled; worksheet header button renamed from Configure worksheet to Payment setup
+
+### Fixed
+
+- **Bill summary stats window** — 12-month total and averages on the Bills page keep last year's same-month payment until this month's bill posts; after it posts, stats roll forward and drop the oldest month
 
 ## [2.1.0] - 2026-07-04
 
@@ -327,7 +333,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/jwposton/ff3-lantern/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/jwposton/ff3-lantern/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/jwposton/ff3-lantern/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/jwposton/FF3Analytics/compare/v1.1.12...v1.2.0
