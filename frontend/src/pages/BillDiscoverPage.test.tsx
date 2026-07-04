@@ -192,9 +192,47 @@ const TXN_ENVELOPES: Record<
   },
 }
 
+const EXPLAIN_ENVELOPES: Record<
+  string,
+  {
+    suggestion_id: string
+    display_name: string
+    service_guess: string
+    amount_mode_rationale: string
+    rule_hints: {
+      destination_account: string
+      category_name: string
+      amount_exactly: string
+    }
+    rationale: string
+    confidence_note: string
+  }
+> = {
+  "review-row": {
+    suggestion_id: "review-row",
+    display_name: "AI Mystery Bill",
+    service_guess: "Unknown subscription service",
+    amount_mode_rationale: "Stable monthly charge pattern",
+    rule_hints: {
+      destination_account: "Mystery Vendor",
+      category_name: "Subscriptions",
+      amount_exactly: "12.99",
+    },
+    rationale: "Recurring monthly withdrawals suggest a subscription.",
+    confidence_note: "Low confidence — verify before adopting.",
+  },
+}
+
 function suggestionTransactionsUrl(url: string): string | null {
   const match = url.match(
     /\/api\/payment-run\/bill-suggestions\/([^/?]+)\/transactions/,
+  )
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+function suggestionExplainUrl(url: string): string | null {
+  const match = url.match(
+    /\/api\/payment-run\/bill-suggestions\/([^/?]+)\/explain/,
   )
   return match ? decodeURIComponent(match[1]) : null
 }
@@ -230,18 +268,23 @@ function TestProviders({
 
 function mockDiscoverFetch(options: {
   paymentEnabled?: boolean
+  openrouterConfigured?: boolean
   suggestions?: BillSuggestionsEnvelope
   suggestionsStatus?: number
   delaySuggestions?: boolean
   worksheet?: PaymentWorksheetEnvelope
   transactionEnvelopes?: typeof TXN_ENVELOPES
+  explainEnvelopes?: typeof EXPLAIN_ENVELOPES
 }) {
   const paymentEnabled = options.paymentEnabled ?? true
+  const openrouterConfigured = options.openrouterConfigured ?? false
   const suggestions = options.suggestions ?? SUGGESTIONS_FIXTURE
   const worksheet = options.worksheet ?? EMPTY_WORKSHEET
   const transactionEnvelopes = options.transactionEnvelopes ?? TXN_ENVELOPES
+  const explainEnvelopes = options.explainEnvelopes ?? EXPLAIN_ENVELOPES
   let suggestionsCalls = 0
   let transactionCalls = 0
+  let explainCalls = 0
   let worksheetCalls = 0
   let registerCalls = 0
   let resolveSuggestions: (() => void) | null = null
@@ -261,7 +304,7 @@ function mockDiscoverFetch(options: {
           status: "ok",
           firefly_base_url_configured: true,
           firefly_api_token_configured: true,
-          openrouter_configured: false,
+          openrouter_configured: openrouterConfigured,
           sidecar_writable: true,
           payment_worksheet_enabled: paymentEnabled,
         }),
@@ -305,6 +348,18 @@ function mockDiscoverFetch(options: {
         }),
         { status: 200 },
       )
+    }
+
+    const explainId = suggestionExplainUrl(url)
+    if (explainId != null && method === "POST") {
+      explainCalls += 1
+      const envelope = explainEnvelopes[explainId]
+      if (!envelope) {
+        return new Response(JSON.stringify({ detail: "Suggestion not found." }), {
+          status: 404,
+        })
+      }
+      return new Response(JSON.stringify(envelope), { status: 200 })
     }
 
     if (url.includes("/api/payment-run/bill-suggestions")) {
@@ -362,6 +417,7 @@ function mockDiscoverFetch(options: {
     fetchSpy,
     getSuggestionsCalls: () => suggestionsCalls,
     getTransactionCalls: () => transactionCalls,
+    getExplainCalls: () => explainCalls,
     getWorksheetCalls: () => worksheetCalls,
     getRegisterCalls: () => registerCalls,
     getSuggestionUrls: () =>
@@ -1291,5 +1347,168 @@ describe("BillDiscoverPage", () => {
     expect(
       screen.getAllByRole("region", { name: /Withdrawals for Netflix/ }).length,
     ).toBeGreaterThan(0)
+  })
+
+  describe("explain", () => {
+    it("hides Explain button when openrouter is not configured", async () => {
+      mockDiscoverFetch({
+        suggestions: MULTI_PAYEE_SUGGESTIONS,
+        openrouterConfigured: false,
+      })
+
+      render(
+        <TestProviders>
+          <BillDiscoverPage />
+        </TestProviders>,
+      )
+
+      await waitFor(() => {
+        expect(screen.getAllByText("Mystery Charge").length).toBeGreaterThan(0)
+      })
+
+      expect(
+        screen.queryAllByRole("button", {
+          name: "Explain Mystery Charge suggestion",
+        }),
+      ).toHaveLength(0)
+    })
+
+    it("hides Explain on ready rows when openrouter is configured", async () => {
+      mockDiscoverFetch({
+        suggestions: MULTI_PAYEE_SUGGESTIONS,
+        openrouterConfigured: true,
+      })
+
+      render(
+        <TestProviders>
+          <BillDiscoverPage />
+        </TestProviders>,
+      )
+
+      await waitFor(() => {
+        expect(
+          screen.getAllByRole("button", { name: "Adopt Spotify as bill" }).length,
+        ).toBeGreaterThan(0)
+      })
+
+      expect(
+        screen.queryAllByRole("button", {
+          name: "Explain Spotify suggestion",
+        }),
+      ).toHaveLength(0)
+      expect(
+        screen.getAllByRole("button", { name: "Adopt Spotify as bill" }).length,
+      ).toBeGreaterThan(0)
+    })
+
+    it("shows Explain on review rows when openrouter is configured", async () => {
+      mockDiscoverFetch({
+        suggestions: MULTI_PAYEE_SUGGESTIONS,
+        openrouterConfigured: true,
+      })
+
+      render(
+        <TestProviders>
+          <BillDiscoverPage />
+        </TestProviders>,
+      )
+
+      await waitFor(() => {
+        expect(
+          screen.getAllByRole("button", {
+            name: "Explain Mystery Charge suggestion",
+          }).length,
+        ).toBeGreaterThan(0)
+      })
+      expect(
+        screen.getAllByRole("button", { name: "Adopt Mystery Charge as bill" })
+          .length,
+      ).toBeGreaterThan(0)
+    })
+
+    it("opens explain dialog with structured fields from POST response", async () => {
+      const { getExplainCalls } = mockDiscoverFetch({
+        suggestions: MULTI_PAYEE_SUGGESTIONS,
+        openrouterConfigured: true,
+      })
+
+      render(
+        <TestProviders>
+          <BillDiscoverPage />
+        </TestProviders>,
+      )
+
+      await waitFor(() => {
+        expect(
+          screen.getAllByRole("button", {
+            name: "Explain Mystery Charge suggestion",
+          }).length,
+        ).toBeGreaterThan(0)
+      })
+
+      fireEvent.click(
+        screen.getAllByRole("button", {
+          name: "Explain Mystery Charge suggestion",
+        })[0],
+      )
+
+      await waitFor(() => {
+        expect(getExplainCalls()).toBe(1)
+      })
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { name: "AI explanation" })).toBeTruthy()
+      })
+      expect(screen.getByText("AI Mystery Bill")).toBeTruthy()
+      expect(screen.getByText("Unknown subscription service")).toBeTruthy()
+      expect(
+        screen.getByText("Recurring monthly withdrawals suggest a subscription."),
+      ).toBeTruthy()
+    })
+
+    it("adopt uses deterministic register_prefill not explain response", async () => {
+      mockDiscoverFetch({
+        suggestions: MULTI_PAYEE_SUGGESTIONS,
+        openrouterConfigured: true,
+      })
+
+      render(
+        <TestProviders>
+          <BillDiscoverPage />
+        </TestProviders>,
+      )
+
+      await waitFor(() => {
+        expect(
+          screen.getAllByRole("button", {
+            name: "Explain Mystery Charge suggestion",
+          }).length,
+        ).toBeGreaterThan(0)
+      })
+
+      fireEvent.click(
+        screen.getAllByRole("button", {
+          name: "Explain Mystery Charge suggestion",
+        })[0],
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { name: "AI explanation" })).toBeTruthy()
+      })
+      expect(screen.getByText("AI Mystery Bill")).toBeTruthy()
+
+      fireEvent.click(
+        screen.getAllByRole("button", {
+          name: "Adopt Mystery Charge as bill",
+        })[0],
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { name: "Register a bill" })).toBeTruthy()
+      })
+
+      const nameInput = screen.getByLabelText("Bill name") as HTMLInputElement
+      expect(nameInput.value).toBe("Mystery Charge")
+      expect(screen.queryByText("AI Mystery Bill")).toBeNull()
+    })
   })
 })
