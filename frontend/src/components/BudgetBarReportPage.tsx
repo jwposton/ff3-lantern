@@ -7,7 +7,7 @@ import { SpendingBarChart } from "@/components/SpendingBarChart"
 import { Button } from "@/components/ui/button"
 import { useDateRange } from "@/context/DateRangeContext"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
-import { buildBarChartData } from "@/lib/barChart"
+import { buildBarChartData, buildMonthlyIncomeTotals } from "@/lib/barChart"
 import type { OmniRow } from "@/types/NormalizedTransaction"
 
 export type BudgetBarReportPageProps = {
@@ -67,6 +67,11 @@ export function BudgetBarReportPage({
     [sliceRows, committedStart, committedEnd, useCashFlowLabels],
   )
 
+  const monthlyIncome = useMemo(
+    () => buildMonthlyIncomeTotals(allRows, committedStart, committedEnd),
+    [allRows, committedStart, committedEnd],
+  )
+
   return (
     <div className="space-y-8">
       <ReportPageHeader title={pageTitle} />
@@ -104,6 +109,7 @@ export function BudgetBarReportPage({
             onSelect={setSelectedBudget}
             chartTitle={mainChartTitle}
             yAxisName={yAxisName}
+            monthlyIncome={monthlyIncome}
           />
           {selectedBudget != null && (
             <BudgetReportDrilldown

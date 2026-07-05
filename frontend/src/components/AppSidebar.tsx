@@ -44,7 +44,9 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar"
+import { cn } from "@/lib/utils"
 
 const generalNavItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -200,6 +202,29 @@ function ManageNavItem({
   )
 }
 
+function SidebarLogoToggle() {
+  const { toggleSidebar } = useSidebar()
+
+  return (
+    <button
+      type="button"
+      data-sidebar="logo-toggle"
+      aria-label="Toggle sidebar"
+      onClick={toggleSidebar}
+      className={cn(
+        "shrink-0 rounded-md p-0.5 transition-colors",
+        "cursor-pointer hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+      )}
+    >
+      <AppLogo
+        decorative
+        size={20}
+        className="group-data-[collapsible=icon]:size-8"
+      />
+    </button>
+  )
+}
+
 function ManageNavItems({
   categorizeCount,
   loanSplitCount,
@@ -251,10 +276,7 @@ export function AppSidebar() {
             aria-label="Toggle sidebar"
             className="group-data-[collapsible=icon]:hidden"
           />
-          <AppLogo
-            size={20}
-            className="group-data-[collapsible=icon]:size-6"
-          />
+          <SidebarLogoToggle />
           <span className="truncate font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
             {PRODUCT_NAME}
           </span>

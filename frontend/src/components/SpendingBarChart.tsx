@@ -1,10 +1,14 @@
-import { useCallback, useMemo, useRef } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import ReactECharts from "echarts-for-react"
 import type { EChartsOption } from "echarts"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { BarChartData } from "@/lib/barChart"
+import {
+  INCOME_LINE_COLOR,
+  INCOME_LINE_LABEL,
+} from "@/lib/barChart"
 import { CHART_COLORS } from "@/lib/chartColors"
 import { categoryAxisColumnStripes } from "@/lib/chartStripes"
 import {
@@ -20,6 +24,8 @@ type SpendingBarChartProps = {
   onSelect: (budget: string) => void
   chartTitle?: string
   yAxisName?: string
+  /** Monthly bank inflow totals (same length as chartData.months). Enables income line overlay. */
+  monthlyIncome?: number[]
 }
 
 function tooltipValue(value: unknown): number {
@@ -43,6 +49,36 @@ function itemTooltipFormatter(params: unknown): string {
   return `${period}\n${record.seriesName}: ${formatCurrency(tooltipValue(record.value))}`
 }
 
+function incomeAwareItemTooltipFormatter(
+  monthlyIncome: number[],
+  incomeVisible: boolean,
+) {
+  return (params: unknown): string => {
+    const item = Array.isArray(params) ? params[0] : params
+    if (!item || typeof item !== "object") return ""
+    const record = item as {
+      seriesName?: string
+      name?: string
+      value?: unknown
+      dataIndex?: number
+    }
+    const period = String(record.name ?? "")
+    const lines = [
+      `${record.seriesName}: ${formatCurrency(tooltipValue(record.value))}`,
+    ]
+    const appendIncome =
+      incomeVisible &&
+      record.seriesName !== INCOME_LINE_LABEL &&
+      typeof record.dataIndex === "number"
+    if (appendIncome) {
+      lines.push(
+        `${INCOME_LINE_LABEL}: ${formatCurrency(monthlyIncome[record.dataIndex] ?? 0)}`,
+      )
+    }
+    return `${period}\n${lines.join("\n")}`
+  }
+}
+
 function hasNonZeroStacks(chartData: BarChartData): boolean {
   const { months, stacks, data } = chartData
   return stacks.some((stack) =>
@@ -57,10 +93,13 @@ export function SpendingBarChart({
   onSelect,
   chartTitle = "Spending by month",
   yAxisName = "Spending",
+  monthlyIncome,
 }: SpendingBarChartProps) {
   const { months, stacks, data } = chartData
+  const showIncomeLine = monthlyIncome != null
   const isEmpty = !loading && !hasNonZeroStacks(chartData)
   const chartRef = useRef<ReactECharts>(null)
+  const [incomeLegendVisible, setIncomeLegendVisible] = useState(true)
 
   const option = useMemo((): EChartsOption => {
     const monthlyTotals = months.map((month) =>
@@ -95,16 +134,38 @@ export function SpendingBarChart({
       }
     })
 
+    const legendLabels = showIncomeLine
+      ? [...stacks, INCOME_LINE_LABEL]
+      : stacks
+
+    const incomeSeries = showIncomeLine
+      ? [
+          {
+            name: INCOME_LINE_LABEL,
+            type: "line" as const,
+            data: monthlyIncome,
+            showSymbol: true,
+            symbolSize: 6,
+            itemStyle: { color: INCOME_LINE_COLOR },
+            lineStyle: { color: INCOME_LINE_COLOR, width: 2 },
+            emphasis: { focus: "series" as const },
+            z: 10,
+          },
+        ]
+      : []
+
     return {
       tooltip: {
         trigger: "item",
-        formatter: itemTooltipFormatter,
+        formatter: showIncomeLine
+          ? incomeAwareItemTooltipFormatter(monthlyIncome, incomeLegendVisible)
+          : itemTooltipFormatter,
       },
       legend: {
-        ...verticalRightLegend(stacks),
+        ...verticalRightLegend(legendLabels),
         triggerEvent: true,
       },
-      grid: chartGridWithVerticalLegend(stacks),
+      grid: chartGridWithVerticalLegend(legendLabels),
       xAxis: {
         type: "category",
         data: months,
@@ -122,15 +183,14 @@ export function SpendingBarChart({
           lineStyle: { type: "dashed", color: "hsl(240 5% 90%)" },
         },
       },
-      series: echartsSeries,
+      series: [...echartsSeries, ...incomeSeries],
     }
-  }, [months, stacks, data, yAxisName])
+  }, [months, stacks, data, yAxisName, showIncomeLine, monthlyIncome, incomeLegendVisible])
 
   const handleChartClick = useCallback(
     (params: { seriesName?: string }) => {
-      if (params?.seriesName) {
-        onSelect(params.seriesName)
-      }
+      if (!params?.seriesName || params.seriesName === INCOME_LINE_LABEL) return
+      onSelect(params.seriesName)
     },
     [onSelect],
   )
@@ -138,6 +198,10 @@ export function SpendingBarChart({
   const handleLegendSelectChanged = useCallback(
     (params: { name?: string; selected?: Record<string, boolean> }) => {
       if (!params.name) return
+      if (params.name === INCOME_LINE_LABEL) {
+        setIncomeLegendVisible(params.selected?.[INCOME_LINE_LABEL] ?? true)
+        return
+      }
       onSelect(params.name)
       const chart = chartRef.current?.getEchartsInstance()
       if (chart && params.selected) {

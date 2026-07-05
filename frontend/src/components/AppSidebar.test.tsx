@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
 import type { ReactNode } from "react"
@@ -15,9 +15,11 @@ const RANGE = { start: "2024-06-01", end: "2024-06-30" }
 function TestProviders({
   children,
   initialEntries = [`/?start=${RANGE.start}&end=${RANGE.end}`],
+  defaultOpen = true,
 }: {
   children: ReactNode
   initialEntries?: string[]
+  defaultOpen?: boolean
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -26,7 +28,7 @@ function TestProviders({
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={initialEntries}>
         <DateRangeProvider>
-          <SidebarProvider>{children}</SidebarProvider>
+          <SidebarProvider defaultOpen={defaultOpen}>{children}</SidebarProvider>
         </DateRangeProvider>
       </MemoryRouter>
     </QueryClientProvider>
@@ -87,12 +89,22 @@ beforeEach(() => {
   })
 })
 
-function renderSidebar(initialEntry: string) {
+function renderSidebar(initialEntry: string, defaultOpen = true) {
   return render(
-    <TestProviders initialEntries={[initialEntry]}>
+    <TestProviders initialEntries={[initialEntry]} defaultOpen={defaultOpen}>
       <AppSidebar />
     </TestProviders>,
   )
+}
+
+function getSidebarState(): string | null {
+  return document.querySelector('[data-slot="sidebar"]')?.getAttribute("data-state") ?? null
+}
+
+function logoToggleButton(): HTMLElement {
+  const button = document.querySelector('[data-sidebar="logo-toggle"]')
+  expect(button).toBeTruthy()
+  return button as HTMLElement
 }
 
 function menuButtonForPath(path: string): HTMLElement {
@@ -360,8 +372,94 @@ describe("AppSidebar Manage section", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Toggle sidebar" })).toBeTruthy()
+      expect(
+        screen.getAllByRole("button", { name: "Toggle sidebar" }).length,
+      ).toBeGreaterThanOrEqual(1)
     })
+    expect(document.querySelector('[data-sidebar="trigger"]')).toBeTruthy()
+    expect(logoToggleButton()).toBeTruthy()
+  })
+})
+
+describe("AppSidebar logo toggle", () => {
+  beforeEach(() => {
+    mockPendingFetch(0, 0)
+  })
+
+  it("expands the sidebar when the logo is clicked while collapsed", async () => {
+    render(
+      <TestProviders defaultOpen={false}>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(getSidebarState()).toBe("collapsed")
+    })
+
+    fireEvent.click(logoToggleButton())
+
+    await waitFor(() => {
+      expect(getSidebarState()).toBe("expanded")
+    })
+  })
+
+  it("collapses the sidebar when the logo is clicked while expanded", async () => {
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(getSidebarState()).toBe("expanded")
+    })
+
+    fireEvent.click(logoToggleButton())
+
+    await waitFor(() => {
+      expect(getSidebarState()).toBe("collapsed")
+    })
+  })
+
+  it("keeps SidebarTrigger visible and functional when expanded", async () => {
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(getSidebarState()).toBe("expanded")
+    })
+
+    const trigger = document.querySelector(
+      '[data-sidebar="trigger"]',
+    ) as HTMLElement
+    expect(trigger).toBeTruthy()
+
+    fireEvent.click(trigger)
+
+    await waitFor(() => {
+      expect(getSidebarState()).toBe("collapsed")
+    })
+  })
+
+  it("renders a larger logo mark in collapsed icon mode", async () => {
+    render(
+      <TestProviders defaultOpen={false}>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(getSidebarState()).toBe("collapsed")
+    })
+
+    const logo = logoToggleButton().querySelector("svg")
+    expect(logo).toBeTruthy()
+    expect(logo?.getAttribute("class")).toContain("size-8")
+    expect(logo?.getAttribute("class")).not.toContain("size-6")
   })
 })
 
