@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Bill group PATCH** — removing cross-section members no longer blocks single-step remediation of polluted groups (#43)
+- **Bill group hidden members** — bills with `show_in_group` false render as ungrouped individuals instead of group child rows (#44)
 - **Bill group validation** — fails when a group member references a missing registry row (#43)
 - **Bill groups PATCH** — explicit `member_ids: null` returns 422 instead of HTTP 500 (#42)
 - **Bill group assignment** — empty `bill_group_id` strings are cleared instead of stored as invalid references (#42)

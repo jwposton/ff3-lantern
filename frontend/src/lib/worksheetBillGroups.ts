@@ -105,14 +105,18 @@ export function deriveWorksheetBillRows(
 
   for (const [groupId, members] of groupBuckets) {
     const visible = members.filter((m) => m.show_in_group)
+    const hidden = members.filter((m) => !m.show_in_group)
+    for (const member of hidden) {
+      ungroupedIndividuals.push(member)
+    }
     if (visible.length >= 2) {
       groupBlocks.push({
         groupId,
-        members: [...members].sort(compareBillRows),
+        members: [...visible].sort(compareBillRows),
         summary: groupSummaryFrom(groupId, billGroups, members),
       })
     } else {
-      for (const member of members) {
+      for (const member of visible) {
         ungroupedIndividuals.push(member)
       }
     }
