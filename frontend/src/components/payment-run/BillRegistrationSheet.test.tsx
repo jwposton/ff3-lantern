@@ -4,7 +4,10 @@ import type { ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { BillRegistrationSheet } from "./BillRegistrationSheet"
-import type { RegisterBillPayload } from "@/lib/paymentRunApi"
+import {
+  BillRegistrationApiError,
+  type RegisterBillPayload,
+} from "@/lib/paymentRunApi"
 
 vi.mock("@/lib/paymentRunApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/paymentRunApi")>()
@@ -14,6 +17,14 @@ vi.mock("@/lib/paymentRunApi", async (importOriginal) => {
     fetchBillGroups: vi.fn(),
   }
 })
+
+const toastError = vi.fn()
+vi.mock("sonner", () => ({
+  toast: {
+    error: (...args: unknown[]) => toastError(...args),
+    success: vi.fn(),
+  },
+}))
 
 import { fetchBillGroups, fetchBillRegistry } from "@/lib/paymentRunApi"
 
@@ -75,6 +86,7 @@ describe("BillRegistrationSheet", () => {
   })
 
   beforeEach(() => {
+    toastError.mockClear()
     vi.mocked(fetchBillGroups).mockResolvedValue({
       data: [
         {
@@ -361,5 +373,52 @@ describe("BillRegistrationSheet", () => {
         }),
       )
     })
+  })
+
+  it("shows prominent rule collision alert, toast, and Firefly link", async () => {
+    const onSubmit = vi.fn(async (_payload: RegisterBillPayload) => {
+      throw new BillRegistrationApiError(
+        'Failed to create link rule: A Firefly rule titled "Ulysses App" already exists (id 70).',
+        {
+          conflicting_rule_id: "70",
+        },
+      )
+    })
+
+    render(
+      <TestProviders>
+        <BillRegistrationSheet
+          {...BASE_PROPS}
+          fireflyBaseUrl="https://firefly.example"
+          onSubmit={onSubmit}
+        />
+      </TestProviders>,
+    )
+
+    fireEvent.change(screen.getByLabelText("Bill name"), {
+      target: { value: "Ulysses App" },
+    })
+    fireEvent.change(screen.getByLabelText("Amount min"), {
+      target: { value: "6.37" },
+    })
+    fireEvent.change(screen.getByLabelText(/Rule — payee contains/i), {
+      target: { value: "Apple Services" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Register bill" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeTruthy()
+      expect(screen.getByText(/Could not register bill/i)).toBeTruthy()
+      expect(screen.getByText(/already exists \(id 70\)/i)).toBeTruthy()
+    })
+    const link = screen.getByRole("link", { name: /Open rule in Firefly/i })
+    expect(link.getAttribute("href")).toBe("https://firefly.example/rules/edit/70")
+    expect(toastError).toHaveBeenCalledWith(
+      "Could not register bill",
+      expect.objectContaining({
+        action: expect.objectContaining({ label: "Open rule in Firefly" }),
+      }),
+    )
   })
 })

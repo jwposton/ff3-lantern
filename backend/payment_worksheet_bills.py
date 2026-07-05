@@ -22,10 +22,228 @@ _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 class BillRegistrationError(Exception):
-    def __init__(self, detail: str, status_code: int = 422) -> None:
+    def __init__(
+        self,
+        detail: str,
+        status_code: int = 422,
+        *,
+        conflicting_rule_id: str | None = None,
+        firefly_rule_url: str | None = None,
+        conflicting_bill_id: str | None = None,
+        firefly_bill_url: str | None = None,
+    ) -> None:
         self.detail = detail
         self.status_code = status_code
+        self.conflicting_rule_id = conflicting_rule_id
+        self.firefly_rule_url = firefly_rule_url
+        self.conflicting_bill_id = conflicting_bill_id
+        self.firefly_bill_url = firefly_bill_url
         super().__init__(detail)
+
+
+_FIREFLY_ERROR_STATUS_RE = re.compile(r"Firefly API error (\d+):")
+_NAME_COLLISION_MARKERS = ("this name is already in use", "unique_object_for_user")
+
+
+def bill_registration_http_detail(
+    exc: BillRegistrationError,
+) -> str | dict[str, Any]:
+    """Serialize registration errors for HTTP responses (string or structured dict)."""
+    if (
+        exc.conflicting_rule_id
+        or exc.firefly_rule_url
+        or exc.conflicting_bill_id
+        or exc.firefly_bill_url
+    ):
+        payload: dict[str, Any] = {"message": exc.detail}
+        if exc.conflicting_rule_id:
+            payload["conflicting_rule_id"] = exc.conflicting_rule_id
+        if exc.firefly_rule_url:
+            payload["firefly_rule_url"] = exc.firefly_rule_url
+        if exc.conflicting_bill_id:
+            payload["conflicting_bill_id"] = exc.conflicting_bill_id
+        if exc.firefly_bill_url:
+            payload["firefly_bill_url"] = exc.firefly_bill_url
+        return payload
+    return exc.detail
+
+
+def _firefly_base_url() -> str:
+    return os.environ.get("FIREFLY_BASE_URL", "").strip().rstrip("/")
+
+
+def _firefly_rule_edit_url(rule_id: str) -> str | None:
+    base = _firefly_base_url()
+    rid = str(rule_id).strip()
+    if not base or not rid:
+        return None
+    return f"{base}/rules/edit/{rid}"
+
+
+def _firefly_bill_show_url(bill_id: str) -> str | None:
+    base = _firefly_base_url()
+    bid = str(bill_id).strip()
+    if not base or not bid:
+        return None
+    return f"{base}/bills/show/{bid}"
+
+
+def _firefly_error_status(exc: BaseException) -> int | None:
+    match = _FIREFLY_ERROR_STATUS_RE.search(str(exc))
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _is_firefly_name_collision(message: str) -> bool:
+    lower = message.lower()
+    return any(marker in lower for marker in _NAME_COLLISION_MARKERS)
+
+
+def _firefly_step_status_code(exc: BaseException) -> int:
+    status = _firefly_error_status(exc)
+    if status is not None and 400 <= status < 500:
+        return status
+    return 502
+
+
+def _suggest_alternate_bill_name(name: str) -> str:
+    stripped = name.strip()
+    if not stripped:
+        return "Alternate name - 01"
+    return f"{stripped} - 01"
+
+
+async def _find_rule_by_title(
+    client: FireflyClient, title: str
+) -> dict[str, Any] | None:
+    normalized = title.strip().lower()
+    if not normalized:
+        return None
+    rules = await client.fetch_rules()
+    for rule in rules:
+        rule_title = str(rule.get("title") or "").strip()
+        if rule_title.lower() == normalized:
+            return rule
+    return None
+
+
+async def _find_bill_by_name(
+    client: FireflyClient, name: str
+) -> dict[str, Any] | None:
+    normalized = name.strip().lower()
+    if not normalized:
+        return None
+    bills = await client.fetch_bills()
+    for bill in bills:
+        bill_name = str(bill.get("name") or "").strip()
+        if bill_name.lower() == normalized:
+            return bill
+    return None
+
+
+def _rule_title_collision_error(
+    rule: dict[str, Any], bill_name: str, *, step_prefix: str = ""
+) -> BillRegistrationError:
+    rule_id = str(rule.get("id") or "").strip()
+    rule_title = str(rule.get("title") or "").strip() or bill_name.strip()
+    alternate = _suggest_alternate_bill_name(bill_name)
+    message = (
+        f'A Firefly rule titled "{rule_title}" already exists (id {rule_id}). '
+        "Review that rule in Firefly. You can add a subscription link that "
+        "connects imports to this bill manually if you want; categorization "
+        "rules and bill link rules are separate. "
+        f'Or choose a different bill name here (e.g. "{alternate}") so Lantern '
+        "can create a new link rule with a unique title."
+    )
+    if step_prefix:
+        message = f"{step_prefix}{message}"
+    return BillRegistrationError(
+        message,
+        status_code=422,
+        conflicting_rule_id=rule_id or None,
+        firefly_rule_url=_firefly_rule_edit_url(rule_id),
+    )
+
+
+def _bill_name_collision_error(
+    bill: dict[str, Any], bill_name: str, *, step_prefix: str = ""
+) -> BillRegistrationError:
+    bill_id = str(bill.get("id") or "").strip()
+    name = str(bill.get("name") or bill_name).strip()
+    alternate = _suggest_alternate_bill_name(bill_name)
+    message = (
+        f'A Firefly bill named "{name}" already exists (id {bill_id}). '
+        "Review that bill in Firefly, or use a different bill name in the "
+        f'registration sheet (e.g. "{alternate}").'
+    )
+    if step_prefix:
+        message = f"{step_prefix}{message}"
+    return BillRegistrationError(
+        message,
+        status_code=422,
+        conflicting_bill_id=bill_id or None,
+        firefly_bill_url=_firefly_bill_show_url(bill_id),
+    )
+
+
+def _wrap_firefly_step_error(step: str, exc: BaseException) -> BillRegistrationError:
+    return BillRegistrationError(
+        f"Failed to {step}: {exc}",
+        status_code=_firefly_step_status_code(exc),
+    )
+
+
+async def _raise_bill_create_error(
+    client: FireflyClient, exc: BaseException, bill_name: str
+) -> None:
+    raw = str(exc)
+    if _is_firefly_name_collision(raw):
+        existing = await _find_bill_by_name(client, bill_name)
+        if existing is not None:
+            raise _bill_name_collision_error(
+                existing, bill_name, step_prefix="Failed to create Firefly bill: "
+            ) from exc
+    raise _wrap_firefly_step_error("create Firefly bill", exc) from exc
+
+
+async def _raise_rule_create_error(
+    client: FireflyClient,
+    exc: BaseException,
+    *,
+    bill_name: str,
+    rule_title: str,
+) -> None:
+    raw = str(exc)
+    if _is_firefly_name_collision(raw):
+        existing = await _find_rule_by_title(client, rule_title)
+        if existing is not None:
+            raise _rule_title_collision_error(
+                existing,
+                bill_name,
+                step_prefix="Failed to create link rule: ",
+            ) from exc
+    raise _wrap_firefly_step_error("create link rule", exc) from exc
+
+
+async def _preflight_rule_title_collision(
+    client: FireflyClient, rule_title: str, bill_name: str
+) -> None:
+    existing_rule = await _find_rule_by_title(client, rule_title)
+    if existing_rule is not None:
+        raise _rule_title_collision_error(existing_rule, bill_name)
+
+
+async def _preflight_create_new_name_collisions(
+    client: FireflyClient, bill_name: str
+) -> None:
+    title = bill_name.strip()
+    if not title:
+        return
+    await _preflight_rule_title_collision(client, title, title)
+    existing_bill = await _find_bill_by_name(client, title)
+    if existing_bill is not None:
+        raise _bill_name_collision_error(existing_bill, title)
 
 
 class RegisterBillBody(BaseModel):
@@ -732,6 +950,7 @@ async def register_new_bill(
         body.show_in_group,
         body.worksheet_section,
     )
+    await _preflight_create_new_name_collisions(client, body.name)
     trigger_desc, trigger_payee, trigger_category = _validate_rule_triggers(
         body.description_contains, body.destination_account, body.category_name
     )
@@ -750,7 +969,9 @@ async def register_new_bill(
     try:
         created_bill = await client.create_bill(bill_body)
     except RuntimeError as exc:
-        raise BillRegistrationError(str(exc), status_code=502) from exc
+        await _raise_bill_create_error(client, exc, body.name)
+    except BillRegistrationError:
+        raise
     bill_id = str(created_bill["id"])
     amount_trigger = _rule_amount_trigger(
         body, amount_min=amount_min, amount_max=amount_max
@@ -773,7 +994,14 @@ async def register_new_bill(
             pass
         if isinstance(exc, BillRegistrationError):
             raise
-        raise BillRegistrationError(str(exc), status_code=502) from exc
+        if isinstance(exc, RuntimeError):
+            await _raise_rule_create_error(
+                client,
+                exc,
+                bill_name=body.name,
+                rule_title=body.name,
+            )
+        raise _wrap_firefly_step_error("create link rule", exc) from exc
     try:
         registry_id = await insert_worksheet_registry(
             firefly_bill_id=bill_id,
@@ -790,8 +1018,8 @@ async def register_new_bill(
         except RuntimeError:
             pass
         raise BillRegistrationError(
-            f"Registry insert failed after creating Firefly bill {bill_id} "
-            f"and rule {rule_id}.",
+            f"Failed to write worksheet registry: registry insert failed after "
+            f"creating Firefly bill {bill_id} and rule {rule_id}.",
             status_code=500,
         ) from exc
     await _trigger_bill_link_rule(client, rule_id)
@@ -828,16 +1056,29 @@ async def register_linked_bill(
     elif (body.description_contains or "").strip() or (
         body.destination_account or ""
     ).strip() or (body.category_name or "").strip():
-        rule_id = await _create_link_rule(
-            client,
-            bill_id=bill_id,
-            bill_name=bill_name,
-            title=body.name,
-            description_contains=body.description_contains,
-            destination_account=body.destination_account,
-            category_name=body.category_name,
-            amount_exactly=body.amount_exactly,
-        )
+        await _preflight_rule_title_collision(client, body.name, bill_name)
+        try:
+            rule_id = await _create_link_rule(
+                client,
+                bill_id=bill_id,
+                bill_name=bill_name,
+                title=body.name,
+                description_contains=body.description_contains,
+                destination_account=body.destination_account,
+                category_name=body.category_name,
+                amount_exactly=body.amount_exactly,
+            )
+        except BillRegistrationError:
+            raise
+        except RuntimeError as exc:
+            await _raise_rule_create_error(
+                client,
+                exc,
+                bill_name=bill_name,
+                rule_title=body.name,
+            )
+        except Exception as exc:
+            raise _wrap_firefly_step_error("create link rule", exc) from exc
         created_rule = True
     else:
         raise BillRegistrationError(
@@ -856,7 +1097,8 @@ async def register_linked_bill(
             except RuntimeError:
                 pass
         raise BillRegistrationError(
-            f"Registry insert failed for Firefly bill {bill_id} and rule {rule_id}.",
+            f"Failed to write worksheet registry: registry insert failed for "
+            f"Firefly bill {bill_id} and rule {rule_id}.",
             status_code=500,
         ) from exc
     if created_rule:

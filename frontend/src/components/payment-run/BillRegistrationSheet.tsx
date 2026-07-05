@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -19,6 +20,7 @@ import {
   fetchBillGroups,
   fetchBillLinkRules,
   fetchBillRegistry,
+  BillRegistrationApiError,
   type AvailableFireflyBill,
   type BillGroup,
   type BillLinkRule,
@@ -27,6 +29,10 @@ import {
   type FundingBucketRollup,
   type RegisterBillPayload,
 } from "@/lib/paymentRunApi"
+import {
+  buildFireflyBillUrl,
+  buildFireflyRuleUrl,
+} from "@/lib/fireflyLinks"
 
 const BILL_REPEAT_FREQ_OPTIONS = ["monthly", "weekly", "yearly"] as const
 
@@ -61,6 +67,14 @@ export type BillRegistrationEditTarget = {
   repeat_freq?: string | null
 }
 
+type RegistrationErrorState = {
+  message: string
+  conflictingRuleId?: string
+  conflictingBillId?: string
+  fireflyRuleUrl?: string
+  fireflyBillUrl?: string
+}
+
 type BillRegistrationSheetProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -70,6 +84,7 @@ type BillRegistrationSheetProps = {
   editTarget?: BillRegistrationEditTarget | null
   initialPrefill?: BillRegistrationPrefill | null
   paymentSourceHint?: string | null
+  fireflyBaseUrl?: string
   creditCards: CreditCardRow[]
   buckets: FundingBucketRollup[]
   availableBills: AvailableFireflyBill[]
@@ -141,6 +156,7 @@ export function BillRegistrationSheet({
   editTarget = null,
   initialPrefill = null,
   paymentSourceHint = null,
+  fireflyBaseUrl,
   creditCards,
   buckets,
   availableBills,
@@ -174,7 +190,7 @@ export function BillRegistrationSheet({
   const [useExistingRule, setUseExistingRule] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loadingEditDetails, setLoadingEditDetails] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<RegistrationErrorState | null>(null)
   const [suggestedFields, setSuggestedFields] = useState<Set<string>>(
     () => new Set(),
   )
@@ -354,9 +370,11 @@ export function BillRegistrationSheet({
       .catch((err: unknown) => {
         if (cancelled) return
         setError(
-          err instanceof Error
-            ? err.message
-            : "Could not load bill details for editing.",
+          registrationError(
+            err instanceof Error
+              ? err.message
+              : "Could not load bill details for editing.",
+          ),
         )
       })
       .finally(() => {
@@ -467,7 +485,7 @@ export function BillRegistrationSheet({
   async function handleCreateGroup() {
     const trimmedLabel = newGroupLabel.trim()
     if (!trimmedLabel) {
-      setError("Group label is required.")
+      setError(registrationError("Group label is required."))
       return
     }
     setCreatingGroup(true)
@@ -482,7 +500,9 @@ export function BillRegistrationSheet({
       setNewGroupLabel("")
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Could not create bill group.",
+        registrationError(
+          err instanceof Error ? err.message : "Could not create bill group.",
+        ),
       )
     } finally {
       setCreatingGroup(false)
@@ -492,7 +512,7 @@ export function BillRegistrationSheet({
   async function handleSubmit() {
     const trimmedName = name.trim()
     if (!trimmedName) {
-      setError("Bill name is required.")
+      setError(registrationError("Bill name is required."))
       return
     }
     const trimmedRule = descriptionContains.trim()
@@ -510,20 +530,26 @@ export function BillRegistrationSheet({
       !trimmedCategory
     ) {
       setError(
-        "Select or create a matching rule — at least payee, description, or category is required.",
+        registrationError(
+          "Select or create a matching rule — at least payee, description, or category is required.",
+        ),
       )
       return
     }
     if (mode === "link_existing" && !selectedBillId) {
-      setError("Select a Firefly bill to link.")
+      setError(registrationError("Select a Firefly bill to link."))
       return
     }
     if (paymentRail === "bank" && !fundingBucketKey) {
-      setError("Cash account is required when paid from a bank account.")
+      setError(
+        registrationError("Cash account is required when paid from a bank account."),
+      )
       return
     }
     if (paymentRail === "credit_card" && !creditCardAccountId) {
-      setError("Credit card is required when paid from a credit card.")
+      setError(
+        registrationError("Credit card is required when paid from a credit card."),
+      )
       return
     }
     const trimmedAmountMin = amountMin.trim()
@@ -533,11 +559,15 @@ export function BillRegistrationSheet({
       !trimmedAmountMin &&
       !trimmedAmountMax
     ) {
-      setError("Amount min or max is required for recurring bills.")
+      setError(
+        registrationError("Amount min or max is required for recurring bills."),
+      )
       return
     }
     if (showInGroup && !billGroupId) {
-      setError("show_in_group requires bill_group_id when set to true.")
+      setError(
+        registrationError("show_in_group requires bill_group_id when set to true."),
+      )
       return
     }
 
@@ -570,11 +600,27 @@ export function BillRegistrationSheet({
       await onSubmit(payload)
       onOpenChange(false)
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Could not register bill. Check Firefly connection and try again.",
-      )
+      if (err instanceof BillRegistrationApiError) {
+        reportRegistrationFailure(
+          {
+            message: err.message,
+            conflictingRuleId: err.conflictingRuleId,
+            conflictingBillId: err.conflictingBillId,
+            fireflyRuleUrl: err.fireflyRuleUrl,
+            fireflyBillUrl: err.fireflyBillUrl,
+          },
+          fireflyBaseUrl,
+          setError,
+        )
+      } else {
+        reportRegistrationFailure(
+          registrationError(
+            err instanceof Error ? err.message : "Could not register bill.",
+          ),
+          fireflyBaseUrl,
+          setError,
+        )
+      }
     } finally {
       setSaving(false)
     }
@@ -596,7 +642,7 @@ export function BillRegistrationSheet({
     >
       <SheetContent
         side="right"
-        className="w-full sm:max-w-lg"
+        className="flex w-full flex-col gap-0 sm:max-w-lg"
         onInteractOutside={(event) => {
           if (saving) event.preventDefault()
         }}
@@ -613,7 +659,11 @@ export function BillRegistrationSheet({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="space-y-4 overflow-y-auto px-4">
+        {error ? (
+          <RegistrationErrorAlert error={error} fireflyBaseUrl={fireflyBaseUrl} />
+        ) : null}
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4">
           {!isEditMode ? (
             <div className="flex gap-2">
               <Button
@@ -1141,8 +1191,6 @@ export function BillRegistrationSheet({
           {loadingEditDetails ? (
             <p className="text-muted-foreground text-sm">Loading bill details…</p>
           ) : null}
-
-          {error ? <p className="text-destructive text-sm">{error}</p> : null}
         </div>
 
         <SheetFooter className="flex flex-row flex-wrap items-center justify-end gap-2 border-t pt-3">
@@ -1168,6 +1216,106 @@ export function BillRegistrationSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  )
+}
+
+function registrationError(
+  message: string,
+  extras?: Omit<RegistrationErrorState, "message">,
+): RegistrationErrorState {
+  return { message, ...extras }
+}
+
+function resolveRegistrationFireflyUrls(
+  error: RegistrationErrorState,
+  fireflyBaseUrl?: string,
+): { ruleUrl: string | null; billUrl: string | null } {
+  return {
+    ruleUrl:
+      error.fireflyRuleUrl ??
+      buildFireflyRuleUrl(fireflyBaseUrl, error.conflictingRuleId) ??
+      null,
+    billUrl:
+      error.fireflyBillUrl ??
+      buildFireflyBillUrl(fireflyBaseUrl, error.conflictingBillId) ??
+      null,
+  }
+}
+
+function registrationErrorSummary(message: string): string {
+  const firstSentence = message.match(/^[^.!?]+[.!?]/)?.[0]?.trim()
+  return firstSentence && firstSentence.length < message.length
+    ? firstSentence
+    : message
+}
+
+function reportRegistrationFailure(
+  error: RegistrationErrorState,
+  fireflyBaseUrl: string | undefined,
+  setError: (error: RegistrationErrorState) => void,
+): void {
+  setError(error)
+  const { ruleUrl, billUrl } = resolveRegistrationFireflyUrls(
+    error,
+    fireflyBaseUrl,
+  )
+  const fireflyAction = ruleUrl
+    ? {
+        label: "Open rule in Firefly",
+        onClick: () => window.open(ruleUrl, "_blank", "noopener,noreferrer"),
+      }
+    : billUrl
+      ? {
+          label: "Open bill in Firefly",
+          onClick: () => window.open(billUrl, "_blank", "noopener,noreferrer"),
+        }
+      : undefined
+
+  toast.error("Could not register bill", {
+    description: registrationErrorSummary(error.message),
+    duration: 12_000,
+    action: fireflyAction,
+  })
+}
+
+function RegistrationErrorAlert({
+  error,
+  fireflyBaseUrl,
+}: {
+  error: RegistrationErrorState
+  fireflyBaseUrl?: string
+}) {
+  const { ruleUrl, billUrl } = resolveRegistrationFireflyUrls(
+    error,
+    fireflyBaseUrl,
+  )
+
+  return (
+    <div
+      role="alert"
+      className="border-destructive/50 bg-destructive/10 mx-4 shrink-0 space-y-3 rounded-md border px-3 py-3"
+    >
+      <p className="text-destructive text-sm font-medium">
+        Could not register bill
+      </p>
+      <p className="text-destructive/90 text-sm">{error.message}</p>
+      <div className="flex flex-wrap gap-2">
+        {ruleUrl ? (
+          <Button type="button" size="sm" variant="outline" asChild>
+            <a href={ruleUrl} target="_blank" rel="noopener noreferrer">
+              Open rule in Firefly
+            </a>
+          </Button>
+        ) : null}
+        {billUrl ? (
+          <Button type="button" size="sm" variant="outline" asChild>
+            <a href={billUrl} target="_blank" rel="noopener noreferrer">
+              Open bill in Firefly
+            </a>
+          </Button>
+        ) : null}
+      </div>
+    </div>
   )
 }
 

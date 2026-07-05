@@ -386,6 +386,7 @@ export function BillDiscoverPage() {
         buckets={worksheetData?.buckets ?? []}
         availableBills={availableBills}
         loadingAvailable={loadingAvailableBills}
+        fireflyBaseUrl={worksheetData?.firefly_base_url}
         onSubmit={handleAdoptSubmit}
       />
     </div>

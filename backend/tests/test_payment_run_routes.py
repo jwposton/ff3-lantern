@@ -26,6 +26,19 @@ def client(data_dir):
     return TestClient(app)
 
 
+def _preflight_list_response(request: httpx.Request) -> httpx.Response | None:
+    path = request.url.path
+    empty_page = {
+        "data": [],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+    if path == "/api/v1/rules" and request.method == "GET":
+        return httpx.Response(200, json=empty_page)
+    if path == "/api/v1/bills" and request.method == "GET":
+        return httpx.Response(200, json=empty_page)
+    return None
+
+
 def test_disabled_returns_404(monkeypatch, client):
     monkeypatch.delenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", raising=False)
     response = client.get("/api/payment-run")
@@ -720,6 +733,9 @@ def test_register_bill(monkeypatch, client, data_dir, payment_worksheet_env):
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
+        preflight = _preflight_list_response(request)
+        if preflight is not None:
+            return preflight
         if path == "/api/v1/rule-groups" and request.method == "GET":
             return httpx.Response(
                 200,
@@ -2709,6 +2725,9 @@ def test_registry_group_register_with_group(
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
+        preflight = _preflight_list_response(request)
+        if preflight is not None:
+            return preflight
         if path == "/api/v1/rule-groups" and request.method == "GET":
             return httpx.Response(
                 200,

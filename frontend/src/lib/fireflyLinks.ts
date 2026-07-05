@@ -72,3 +72,28 @@ export function buildFireflyBillUrl(
   const base = fireflyBaseUrl.replace(/\/+$/, "")
   return `${base}/bills/show/${id}`
 }
+
+/**
+ * Build Firefly III rule edit URL from API-provided base only.
+ * Returns null when base or rule id is invalid.
+ */
+export function buildFireflyRuleUrl(
+  fireflyBaseUrl: string | undefined | null,
+  ruleId: string | undefined | null,
+): string | null {
+  if (fireflyBaseUrl == null || fireflyBaseUrl.trim() === "") {
+    return null
+  }
+
+  if (ruleId == null || ruleId.trim() === "") {
+    return null
+  }
+
+  const id = ruleId.trim()
+  if (!/^\d+$/.test(id)) {
+    return null
+  }
+
+  const base = fireflyBaseUrl.replace(/\/+$/, "")
+  return `${base}/rules/edit/${id}`
+}

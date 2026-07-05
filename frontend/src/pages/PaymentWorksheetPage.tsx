@@ -633,6 +633,7 @@ export function PaymentWorksheetPage() {
         creditCards={data?.credit_cards ?? []}
         buckets={data?.buckets ?? []}
         availableBills={[]}
+        fireflyBaseUrl={data?.firefly_base_url}
         onSubmit={handleRegisterBill}
       />
 
