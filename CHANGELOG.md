@@ -7,21 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-07-05
+
 ### Added
 
-- **Bill groups hub** — manage groups and membership at /manage/payment-run/bill-groups
-- **Payment setup** — Bill groups card on setup landing
-- **Bill registration** — optional group picker and Show in group on Bills hub and Discover
+- **Bill groups hub** — manage groups and membership at /manage/payment-run/bill-groups (#45)
+- **Payment setup** — Bill groups card on setup landing (#45)
+- **Bill registration** — optional group picker and Show in group on Bills hub and Discover (#45)
 - **Expandable bill groups on worksheet** — Bills table shows collapsible group rollup rows with aggregated due/planned; members hidden from group stay in ungrouped section (#44)
 - **Worksheet bill groups metadata** — GET payment-run worksheet includes `bill_groups[]` and per-row `bill_group_id` / `show_in_group` for registry-backed bills and bill-liabilities (#43)
 - **Bill groups API** — CRUD at /payment-run/bill-groups with registry bill_group_id and show_in_group fields on bill register and update (#42)
 
 ### Changed
 
-- **Payment worksheet** — group parent rows link to Bill groups hub for structural edits
-- **Worksheet per-row Manage** — bill, card, and liability rows open that item's configuration (bill detail, card sheet, or liability sheet) instead of the section hub list
-- **Worksheet row actions** — per-row manage links use the pencil icon again instead of Manage text (restored from payment-setup hub demotion)
-- **Worksheet inline edit** — pencil opens registration or account sheets on the worksheet so you stay on the plan view after saving (hub deep links remain for setup pages)
+- **Payment worksheet** — group parent rows link to Bill groups hub for structural edits (#45)
+- **Worksheet inline edit** — pencil on bill, card, and liability rows opens that item's sheet on the worksheet so you stay on the plan view after saving (#74)
 - **Bill group assignment** — rejects members from a different worksheet section than existing group members (Bills vs Liabilities) (#43)
 
 ### Fixed
@@ -368,7 +368,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/jwposton/ff3-lantern/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/jwposton/ff3-lantern/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/jwposton/ff3-lantern/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/jwposton/ff3-lantern/compare/v1.2.0...v2.0.0
