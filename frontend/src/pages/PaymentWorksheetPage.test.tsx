@@ -24,6 +24,20 @@ const EMPTY_GRAND_TOTALS: GrandTotals = {
     owed: { liabilities: "0.00", revolving: "0.00" },
     due: { cash: "0.00", credit: "0.00" },
     planned: { cash: "0.00", credit: "0.00" },
+    due_planned: {
+      liabilities: {
+        cash: { due: "0.00", planned: "0.00" },
+        credit: { due: "0.00", planned: "0.00" },
+      },
+      bills: {
+        cash: { due: "0.00", planned: "0.00" },
+        credit: { due: "0.00", planned: "0.00" },
+      },
+      credit_card_pmts: {
+        cash: { due: "0.00", planned: "0.00" },
+        credit: { due: "0.00", planned: "0.00" },
+      },
+    },
   },
 }
 
@@ -262,6 +276,20 @@ const BILLS_LIABILITIES_ENVELOPE: PaymentWorksheetEnvelope = {
       owed: { liabilities: "262000.00", revolving: "2000.00" },
       due: { cash: "3850.00", credit: "0.00" },
       planned: { cash: "4750.00", credit: "0.00" },
+      due_planned: {
+        liabilities: {
+          cash: { due: "3650.00", planned: "3650.00" },
+          credit: { due: "0.00", planned: "0.00" },
+        },
+        bills: {
+          cash: { due: "200.00", planned: "200.00" },
+          credit: { due: "0.00", planned: "0.00" },
+        },
+        credit_card_pmts: {
+          cash: { due: "0.00", planned: "900.00" },
+          credit: { due: "0.00", planned: "0.00" },
+        },
+      },
     },
   },
 }
@@ -575,9 +603,15 @@ describe("PaymentWorksheetPage", () => {
       expect(screen.getByTestId("grand-total-planned").textContent).toBe(
         "4,750.00",
       )
-      expect(screen.getByTestId("grand-total-planned-cash").textContent).toBe(
-        "4,750.00",
-      )
+      expect(
+        screen.getByTestId("grand-total-bills-cash-planned").textContent,
+      ).toBe("200.00")
+      expect(
+        screen.getByTestId("grand-total-credit-card-pmts-cash-planned").textContent,
+      ).toBe("900.00")
+      expect(
+        screen.getByTestId("grand-total-liabilities-cash-planned").textContent,
+      ).toBe("3,650.00")
     })
   })
 

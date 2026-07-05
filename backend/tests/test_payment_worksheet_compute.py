@@ -352,6 +352,18 @@ def test_grand_totals_breakdown_due_and_planned_by_rail():
     assert result["planned_total"] == "875.00"
     assert result["breakdown"]["planned"]["cash"] == "800.00"
     assert result["breakdown"]["planned"]["credit"] == "75.00"
+    sections = result["breakdown"]["due_planned"]
+    assert sections["liabilities"]["cash"]["due"] == "500.00"
+    assert sections["liabilities"]["credit"]["due"] == "25.00"
+    assert sections["liabilities"]["cash"]["planned"] == "500.00"
+    assert sections["liabilities"]["credit"]["planned"] == "25.00"
+    assert sections["bills"]["cash"]["due"] == "100.00"
+    assert sections["bills"]["credit"]["due"] == "50.00"
+    assert sections["bills"]["cash"]["planned"] == "100.00"
+    assert sections["bills"]["credit"]["planned"] == "50.00"
+    assert sections["credit_card_pmts"]["cash"]["planned"] == "200.00"
+    assert sections["credit_card_pmts"]["cash"]["due"] == "0.00"
+    assert sections["credit_card_pmts"]["credit"]["planned"] == "0.00"
 
 
 def test_grand_totals_real_estate_vs_loans_split():
@@ -376,6 +388,20 @@ def test_grand_totals_real_estate_vs_loans_split():
     assert result["breakdown"]["owed"]["loans"] == "12000.00"
     assert "revolving" in result["breakdown"]["owed"]
     assert result["breakdown"]["owed"]["revolving"] == "0.00"
+
+
+def test_grand_totals_real_estate_from_account_type():
+    liabilities = [
+        {
+            "account_id": "mortgage-1",
+            "owed": "250000.00",
+            "amount_due": "1800.00",
+            "account_type": "Mortgage account",
+        },
+    ]
+    result = compute_grand_totals([], liabilities, [])
+    assert result["breakdown"]["owed"]["real_estate"] == "250000.00"
+    assert "loans" not in result["breakdown"]["owed"]
 
 
 def test_grand_totals_hides_zero_re_split_when_all_loans():

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { WorksheetGrandTotal } from "./WorksheetGrandTotal"
@@ -13,7 +13,7 @@ const BASE_TOTALS: GrandTotals = {
     owed: {
       liabilities: "50000.00",
       revolving: "2000.00",
-      real_estate: "250000.00",
+      real_estate: "25000.00",
       loans: "25000.00",
     },
     due: {
@@ -24,6 +24,20 @@ const BASE_TOTALS: GrandTotals = {
       cash: "800.00",
       credit: "75.00",
     },
+    due_planned: {
+      liabilities: {
+        cash: { due: "500.00", planned: "500.00" },
+        credit: { due: "25.00", planned: "25.00" },
+      },
+      bills: {
+        cash: { due: "100.00", planned: "100.00" },
+        credit: { due: "50.00", planned: "50.00" },
+      },
+      credit_card_pmts: {
+        cash: { due: "0.00", planned: "200.00" },
+        credit: { due: "0.00", planned: "0.00" },
+      },
+    },
   },
 }
 
@@ -32,36 +46,82 @@ describe("WorksheetGrandTotal", () => {
     cleanup()
   })
 
-  it("renders headline totals and sub-breakdown rows", () => {
+  it("renders headline totals", () => {
     render(<WorksheetGrandTotal grandTotals={BASE_TOTALS} />)
 
     expect(screen.getByTestId("grand-total-owed").textContent).toBe("52,000.00")
     expect(screen.getByTestId("grand-total-due").textContent).toBe("675.00")
     expect(screen.getByTestId("grand-total-planned").textContent).toBe("875.00")
-
-    expect(screen.getByTestId("grand-total-owed-liabilities").textContent).toBe(
-      "50,000.00",
-    )
-    expect(screen.getByTestId("grand-total-owed-real-estate").textContent).toBe(
-      "250,000.00",
-    )
-    expect(screen.getByTestId("grand-total-owed-loans").textContent).toBe(
-      "25,000.00",
-    )
-    expect(screen.getByTestId("grand-total-owed-revolving").textContent).toBe(
-      "2,000.00",
-    )
-    expect(screen.getByTestId("grand-total-due-cash").textContent).toBe("600.00")
-    expect(screen.getByTestId("grand-total-due-credit").textContent).toBe("75.00")
-    expect(screen.getByTestId("grand-total-planned-cash").textContent).toBe(
-      "800.00",
-    )
-    expect(screen.getByTestId("grand-total-planned-credit").textContent).toBe(
-      "75.00",
-    )
   })
 
-  it("omits optional real estate and loans sub-lines when absent", () => {
+  it("renders collapsible cash and credit groups with child rows", () => {
+    render(<WorksheetGrandTotal grandTotals={BASE_TOTALS} />)
+
+    expect(screen.getByTestId("grand-total-cash-due").textContent).toBe("600.00")
+    expect(screen.getByTestId("grand-total-credit-due").textContent).toBe("75.00")
+    expect(screen.getByTestId("grand-total-liabilities-cash-due").textContent).toBe(
+      "500.00",
+    )
+    expect(screen.getByTestId("grand-total-liabilities-credit-due").textContent).toBe(
+      "25.00",
+    )
+    expect(screen.getByTestId("grand-total-bills-cash-due").textContent).toBe(
+      "100.00",
+    )
+    expect(screen.getByTestId("grand-total-bills-credit-due").textContent).toBe(
+      "50.00",
+    )
+    expect(
+      screen.getByTestId("grand-total-credit-card-pmts-cash-planned").textContent,
+    ).toBe("200.00")
+  })
+
+  it("hides all-zero child rows and collapsible parent groups", () => {
+    const totals: GrandTotals = {
+      ...BASE_TOTALS,
+      due: "600.00",
+      planned_total: "800.00",
+      breakdown: {
+        ...BASE_TOTALS.breakdown,
+        due: { cash: "600.00", credit: "0.00" },
+        planned: { cash: "800.00", credit: "0.00" },
+        due_planned: {
+          liabilities: {
+            cash: { due: "500.00", planned: "500.00" },
+            credit: { due: "0.00", planned: "0.00" },
+          },
+          bills: {
+            cash: { due: "100.00", planned: "100.00" },
+            credit: { due: "0.00", planned: "0.00" },
+          },
+          credit_card_pmts: {
+            cash: { due: "0.00", planned: "200.00" },
+            credit: { due: "0.00", planned: "0.00" },
+          },
+        },
+      },
+    }
+
+    render(<WorksheetGrandTotal grandTotals={totals} />)
+
+    expect(screen.queryByTestId("grand-total-credit-due")).toBeNull()
+    expect(screen.queryByTestId("grand-total-liabilities-credit-due")).toBeNull()
+    expect(screen.queryByTestId("grand-total-bills-credit-due")).toBeNull()
+  })
+
+  it("collapses owed and due groups when toggled", () => {
+    render(<WorksheetGrandTotal grandTotals={BASE_TOTALS} />)
+
+    expect(screen.getByTestId("grand-total-real-estate-owed")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Liabilities" }))
+    expect(screen.queryByTestId("grand-total-real-estate-owed")).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Cash (bank)" }))
+    expect(screen.queryByTestId("grand-total-bills-cash-due")).toBeNull()
+  })
+
+  it("omits real estate row when absent from breakdown", () => {
     const totals: GrandTotals = {
       ...BASE_TOTALS,
       breakdown: {
@@ -76,8 +136,8 @@ describe("WorksheetGrandTotal", () => {
 
     render(<WorksheetGrandTotal grandTotals={totals} />)
 
-    expect(screen.queryByTestId("grand-total-owed-real-estate")).toBeNull()
-    expect(screen.getByTestId("grand-total-owed-loans").textContent).toBe(
+    expect(screen.queryByTestId("grand-total-real-estate-owed")).toBeNull()
+    expect(screen.getByTestId("grand-total-loans-owed").textContent).toBe(
       "5,000.00",
     )
   })

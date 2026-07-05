@@ -46,6 +46,20 @@ const EMPTY_WORKSHEET: PaymentWorksheetEnvelope = {
       owed: { liabilities: "0.00", revolving: "0.00" },
       due: { cash: "0.00", credit: "0.00" },
       planned: { cash: "0.00", credit: "0.00" },
+      due_planned: {
+        liabilities: {
+          cash: { due: "0.00", planned: "0.00" },
+          credit: { due: "0.00", planned: "0.00" },
+        },
+        bills: {
+          cash: { due: "0.00", planned: "0.00" },
+          credit: { due: "0.00", planned: "0.00" },
+        },
+        credit_card_pmts: {
+          cash: { due: "0.00", planned: "0.00" },
+          credit: { due: "0.00", planned: "0.00" },
+        },
+      },
     },
   },
   shortfall: false,

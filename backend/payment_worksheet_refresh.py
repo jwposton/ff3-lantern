@@ -390,6 +390,7 @@ async def run_refresh(
             "remaining_payments": display["remaining_payments"],
             "account_role": attrs.get("account_role"),
             "liability_type": attrs.get("liability_type"),
+            "account_type": attrs.get("type"),
             "has_escrow": has_escrow,
         }
 

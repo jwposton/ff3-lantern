@@ -234,6 +234,81 @@ def compute_section_subtotals(
     }
 
 
+def _accumulate_row_due_planned(
+    row: dict[str, Any],
+    due_cash: Decimal,
+    due_credit: Decimal,
+    planned_cash: Decimal,
+    planned_credit: Decimal,
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    amount_due = _decimal_amount(row.get("amount_due"))
+    if row.get("payment_rail") == "credit_card":
+        due_credit += amount_due
+    else:
+        due_cash += amount_due
+
+    planned = _decimal_amount(row.get("planned_amount"))
+    if row.get("account_id") or row.get("counts_toward_cash_plan"):
+        planned_cash += planned
+    else:
+        planned_credit += planned
+    return due_cash, due_credit, planned_cash, planned_credit
+
+
+def _format_due_planned_rail_pair(
+    due_cash: Decimal,
+    due_credit: Decimal,
+    planned_cash: Decimal,
+    planned_credit: Decimal,
+) -> dict[str, Any]:
+    return {
+        "cash": {
+            "due": _format_decimal(due_cash),
+            "planned": _format_decimal(planned_cash),
+        },
+        "credit": {
+            "due": _format_decimal(due_credit),
+            "planned": _format_decimal(planned_credit),
+        },
+    }
+
+
+def _compute_due_planned_sections(
+    bills: list[dict[str, Any]],
+    liabilities: list[dict[str, Any]],
+    credit_cards: list[dict[str, Any]],
+) -> dict[str, Any]:
+    liab_d_c = liab_d_cr = liab_p_c = liab_p_cr = Decimal("0")
+    bills_d_c = bills_d_cr = bills_p_c = bills_p_cr = Decimal("0")
+
+    for row in liabilities:
+        liab_d_c, liab_d_cr, liab_p_c, liab_p_cr = _accumulate_row_due_planned(
+            row, liab_d_c, liab_d_cr, liab_p_c, liab_p_cr
+        )
+
+    for row in bills:
+        bills_d_c, bills_d_cr, bills_p_c, bills_p_cr = _accumulate_row_due_planned(
+            row, bills_d_c, bills_d_cr, bills_p_c, bills_p_cr
+        )
+
+    cc_planned = sum(
+        (_decimal_amount(card.get("planned_amount")) for card in credit_cards),
+        Decimal("0"),
+    )
+
+    return {
+        "liabilities": _format_due_planned_rail_pair(
+            liab_d_c, liab_d_cr, liab_p_c, liab_p_cr
+        ),
+        "bills": _format_due_planned_rail_pair(
+            bills_d_c, bills_d_cr, bills_p_c, bills_p_cr
+        ),
+        "credit_card_pmts": _format_due_planned_rail_pair(
+            Decimal("0"), Decimal("0"), cc_planned, Decimal("0")
+        ),
+    }
+
+
 def _planned_credit_total(
     bills: list[dict[str, Any]],
     liabilities: list[dict[str, Any]],
@@ -312,6 +387,9 @@ def compute_grand_totals(
     )
     planned_credit = _planned_credit_total(bills, liabilities)
     planned_total = planned_cash + planned_credit
+    due_planned_sections = _compute_due_planned_sections(
+        bills, liabilities, credit_cards
+    )
 
     owed_breakdown: dict[str, str] = {
         "liabilities": _format_decimal(liabilities_owed),
@@ -337,6 +415,7 @@ def compute_grand_totals(
                 "cash": _format_decimal(planned_cash),
                 "credit": _format_decimal(planned_credit),
             },
+            "due_planned": due_planned_sections,
         },
     }
 
@@ -450,6 +529,7 @@ def _assemble_liability_accounts(
                 "remaining_payments": snapshot.get("remaining_payments"),
                 "account_role": snapshot.get("account_role"),
                 "liability_type": snapshot.get("liability_type"),
+                "account_type": snapshot.get("account_type"),
                 "has_escrow": bool(snapshot.get("has_escrow")),
                 "planned_amount": planned_amount,
                 "planned_amount_override": bool(state.get("planned_amount_override")),

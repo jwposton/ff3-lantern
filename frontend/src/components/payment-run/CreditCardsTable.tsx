@@ -715,10 +715,8 @@ export function CreditCardsTable({
             })}
             {rows.length > 0 ? (
               <TableRow className="bg-muted/40 font-semibold hover:bg-muted/40">
-                <TableCell className="xl:hidden">Subtotal</TableCell>
-                <TableCell colSpan={2} className="hidden xl:table-cell">
-                  Subtotal
-                </TableCell>
+                <TableCell className="max-w-[7rem]">Subtotal</TableCell>
+                <TableCell className={XL_COL} />
                 <TableCell className={cn("text-right tabular-nums", XL_COL)}>
                   {totals.credit_limit > 0
                     ? formatDisplayAmount(totals.credit_limit)

@@ -23,15 +23,23 @@ def is_liability_account(attrs: dict[str, Any]) -> bool:
     return raw_type in ("liabilities", "liability") or "liabilit" in raw_type
 
 
+def _classification_token(value: Any) -> str:
+    return str(value or "").replace("_", "").replace(" ", "").lower()
+
+
 def is_real_estate_liability(row: dict[str, Any]) -> bool:
     """Classify liability account owed as real estate (mortgage/escrow), not display names."""
-    role = (row.get("account_role") or "").replace("_", "").lower()
-    if role == "mortgage":
+    if row.get("has_escrow"):
         return True
-    liability_type = (row.get("liability_type") or "").lower()
-    if liability_type in ("mortgage", "realestate", "real_estate"):
-        return True
-    return bool(row.get("has_escrow"))
+    for field in ("account_role", "liability_type", "account_type"):
+        token = _classification_token(row.get(field))
+        if not token:
+            continue
+        if "mortgage" in token:
+            return True
+        if token in ("realestate", "realestateaccount"):
+            return True
+    return False
 
 
 def is_liability_summary(summary: dict[str, Any]) -> bool:
