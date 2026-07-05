@@ -239,7 +239,9 @@ async def validate_group_section_homogeneous(
             continue
         row = await sidecar_db.get_worksheet_registry(member["registry_id"])
         if row is None:
-            continue
+            raise BillRegistrationError(
+                f"Group member registry id {member['registry_id']} not found."
+            )
         if row["worksheet_section"] != bill_section:
             raise BillRegistrationError(
                 "Bill group members must belong to the same worksheet section "
