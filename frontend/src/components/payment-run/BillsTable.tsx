@@ -299,7 +299,14 @@ export function BillsTable({
                   <TableCell className="text-center tabular-nums text-muted-foreground">
                     {aggregate.paid}
                   </TableCell>
-                  <TableCell className={ACTIONS_CELL_CLASS}>—</TableCell>
+                  <TableCell className={ACTIONS_CELL_CLASS}>
+                    <Link
+                      to={`/manage/payment-run/bill-groups?group=${encodeURIComponent(group.id)}`}
+                      className="text-primary text-xs underline-offset-2 hover:underline"
+                    >
+                      Manage group
+                    </Link>
+                  </TableCell>
                 </TableRow>
                 {isExpanded
                   ? children.map((child) =>

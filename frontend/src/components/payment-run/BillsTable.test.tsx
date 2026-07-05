@@ -231,4 +231,13 @@ describe("BillsTable expandable bill groups", () => {
       JSON.parse(storage.get(STORAGE_KEY) ?? "[]"),
     ).toContain("utilities")
   })
+
+  it("links group parent Actions to bill groups hub (BGRP-18)", () => {
+    renderBillsTable()
+
+    const manageLink = screen.getByRole("link", { name: "Manage group" })
+    expect(manageLink.getAttribute("href")).toBe(
+      "/manage/payment-run/bill-groups?group=utilities",
+    )
+  })
 })

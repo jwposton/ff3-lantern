@@ -9,12 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bill groups hub** — manage groups and membership at /manage/payment-run/bill-groups
+- **Payment setup** — Bill groups card on setup landing
+- **Bill registration** — optional group picker and Show in group on Bills hub and Discover
 - **Expandable bill groups on worksheet** — Bills table shows collapsible group rollup rows with aggregated due/planned; members hidden from group stay in ungrouped section (#44)
 - **Worksheet bill groups metadata** — GET payment-run worksheet includes `bill_groups[]` and per-row `bill_group_id` / `show_in_group` for registry-backed bills and bill-liabilities (#43)
 - **Bill groups API** — CRUD at /payment-run/bill-groups with registry bill_group_id and show_in_group fields on bill register and update (#42)
 
 ### Changed
 
+- **Payment worksheet** — group parent rows link to Bill groups hub for structural edits
 - **Bill group assignment** — rejects members from a different worksheet section than existing group members (Bills vs Liabilities) (#43)
 
 ### Fixed
