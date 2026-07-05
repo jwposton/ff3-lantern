@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date, timedelta
+from datetime import date
 
 import httpx
 import pytest
@@ -64,7 +64,8 @@ def test_payment_worksheet_refresh_and_get():
     assert worksheet.status_code == 200
     envelope = worksheet.json()
     assert envelope.get("month") == month
-    assert "rows" in envelope
+    assert "credit_cards" in envelope
+    assert len(envelope["credit_cards"]) >= 1
 
 
 @pytest.mark.integration
