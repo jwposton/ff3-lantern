@@ -48,6 +48,8 @@ export type BillRow = PlannedAmountRow &
   credit_card_account_id: string | null
   amount_mode: string
   worksheet_section: string
+  bill_group_id?: string | null
+  show_in_group?: boolean
 }
 
 export type LiabilityRow = PlannedAmountRow &
@@ -67,6 +69,8 @@ export type LiabilityRow = PlannedAmountRow &
   counts_toward_cash_plan?: boolean
   credit_card_account_id?: string | null
   amount_mode?: string
+  bill_group_id?: string | null
+  show_in_group?: boolean
 }
 
 export type SectionSubtotals = {
@@ -177,6 +181,8 @@ export type RegisterBillPayload = {
   amount_exactly?: string | null
   firefly_bill_id?: string | null
   rule_id?: string | null
+  bill_group_id?: string | null
+  show_in_group?: boolean
 }
 
 export type UpdateBillRegistryPayload = {
@@ -189,7 +195,9 @@ export type UpdateBillRegistryPayload = {
   name?: string
   amount_min?: string
   amount_max?: string
-  repeat_freq?: string
+  repeat_freq?: string | null
+  bill_group_id?: string | null
+  show_in_group?: boolean
 }
 
 export type BillRegistryEditDetails = {
@@ -205,6 +213,8 @@ export type BillRegistryEditDetails = {
   amount_min: string | null
   amount_max: string | null
   repeat_freq: string | null
+  bill_group_id?: string | null
+  show_in_group?: boolean
 }
 
 export type CreditCardRow = PlannedAmountRow & {
@@ -233,6 +243,14 @@ export type ExcludedCreditCard = {
   name: string | null
 }
 
+export type WorksheetBillGroupSummary = {
+  id: string
+  label: string
+  sort_order: number
+  member_count: number
+  visible_count: number
+}
+
 export type PaymentWorksheetEnvelope = {
   month: string
   refreshed_at: string | null
@@ -242,6 +260,7 @@ export type PaymentWorksheetEnvelope = {
   bills: BillRow[]
   liabilities: LiabilityRow[]
   excluded_liabilities: ExcludedLiability[]
+  bill_groups: WorksheetBillGroupSummary[]
   section_subtotals: SectionSubtotals
   grand_totals: GrandTotals
   shortfall: boolean
@@ -265,6 +284,32 @@ export type FundingBucketInput = {
   label: string
   sort_order?: number
   firefly_account_ids: string[]
+}
+
+export type BillGroupMember = {
+  registry_id: number
+  row_label: string | null
+  show_in_group: boolean
+}
+
+export type BillGroup = {
+  id: string
+  label: string
+  sort_order: number
+  member_count: number
+  visible_count: number
+  members: BillGroupMember[]
+}
+
+export type BillGroupCreateInput = {
+  label: string
+  sort_order?: number
+}
+
+export type BillGroupPatchInput = {
+  label?: string
+  sort_order?: number
+  member_ids?: number[]
 }
 
 export type BillRegistrationPrefill = {
@@ -439,6 +484,56 @@ export async function deleteFundingBucket(bucketId: string): Promise<void> {
   })
   if (!res.ok) {
     await parseError(res, `Failed to delete funding bucket (${res.status})`)
+  }
+}
+
+export function billGroupsQueryKey() {
+  return ["paymentRun", "billGroups"] as const
+}
+
+export async function fetchBillGroups(): Promise<{ data: BillGroup[] }> {
+  const res = await fetch("/api/payment-run/bill-groups")
+  if (!res.ok) {
+    await parseError(res, `Failed to fetch bill groups (${res.status})`)
+  }
+  return (await res.json()) as { data: BillGroup[] }
+}
+
+export async function createBillGroup(
+  body: BillGroupCreateInput,
+): Promise<BillGroup> {
+  const res = await fetch("/api/payment-run/bill-groups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to create bill group (${res.status})`)
+  }
+  return (await res.json()) as BillGroup
+}
+
+export async function patchBillGroup(
+  groupId: string,
+  body: BillGroupPatchInput,
+): Promise<BillGroup> {
+  const res = await fetch(`/api/payment-run/bill-groups/${groupId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to update bill group (${res.status})`)
+  }
+  return (await res.json()) as BillGroup
+}
+
+export async function deleteBillGroup(groupId: string): Promise<void> {
+  const res = await fetch(`/api/payment-run/bill-groups/${groupId}`, {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to delete bill group (${res.status})`)
   }
 }
 

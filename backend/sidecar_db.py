@@ -17,10 +17,18 @@ from typing import Any
 
 import aiosqlite
 
+
+class ConflictError(Exception):
+    """Raised when an insert would conflict with an existing row."""
+
+
 __all__ = [
+    "ConflictError",
+    "delete_bill_group",
     "delete_funding_bucket",
     "delete_worksheet_registry",
     "delete_worksheet_state_for_row_key",
+    "get_bill_group",
     "get_bucket_balances_for_month",
     "get_data_dir",
     "get_db_path",
@@ -32,12 +40,18 @@ __all__ = [
     "init_db",
     "insert_worksheet_registry",
     "is_writable",
+    "list_bill_group_members",
+    "list_bill_groups",
     "list_funding_buckets",
     "list_worksheet_registry",
     "log_audit",
     "get_suggestion",
+    "insert_bill_group_if_absent",
+    "patch_bill_group",
+    "replace_bill_group_members",
     "update_discover_ignored_categories",
     "update_worksheet_registry",
+    "upsert_bill_group",
     "upsert_bucket_balance",
     "upsert_funding_bucket",
     "upsert_suggestion",
@@ -69,6 +83,12 @@ CREATE TABLE IF NOT EXISTS funding_buckets (
   firefly_account_ids_json TEXT NOT NULL DEFAULT '[]'
 );
 
+CREATE TABLE IF NOT EXISTS worksheet_bill_groups (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS worksheet_registry (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   firefly_bill_id TEXT,
@@ -79,7 +99,9 @@ CREATE TABLE IF NOT EXISTS worksheet_registry (
   payment_rail TEXT DEFAULT 'bank',
   counts_toward_cash_plan INTEGER DEFAULT 1,
   rule_id TEXT,
-  row_label TEXT
+  row_label TEXT,
+  bill_group_id TEXT REFERENCES worksheet_bill_groups(id) ON DELETE SET NULL,
+  show_in_group INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS worksheet_state (
@@ -213,6 +235,33 @@ async def init_db() -> None:
         try:
             await db.execute(
                 "ALTER TABLE discover_settings ADD COLUMN defaults_version INTEGER NOT NULL DEFAULT 0"
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS worksheet_bill_groups (
+                  id TEXT PRIMARY KEY,
+                  label TEXT NOT NULL,
+                  sort_order INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                """
+                ALTER TABLE worksheet_registry ADD COLUMN bill_group_id TEXT
+                REFERENCES worksheet_bill_groups(id) ON DELETE SET NULL
+                """
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                "ALTER TABLE worksheet_registry ADD COLUMN show_in_group INTEGER NOT NULL DEFAULT 0"
             )
         except aiosqlite.OperationalError:
             pass
@@ -387,6 +436,201 @@ async def delete_funding_bucket(bucket_id: str) -> None:
         await db.commit()
 
 
+def _row_to_bill_group(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "label": row["label"],
+        "sort_order": row["sort_order"],
+    }
+
+
+async def list_bill_groups() -> list[dict[str, Any]]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, label, sort_order
+            FROM worksheet_bill_groups
+            ORDER BY sort_order ASC, label ASC
+            """
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_bill_group(row) for row in rows]
+
+
+async def get_bill_group(group_id: str) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, label, sort_order
+            FROM worksheet_bill_groups
+            WHERE id = ?
+            """,
+            (group_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_bill_group(row) if row else None
+
+
+async def upsert_bill_group(
+    *,
+    id: str,
+    label: str,
+    sort_order: int,
+) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await _upsert_bill_group_conn(db, id=id, label=label, sort_order=sort_order)
+        await db.commit()
+
+
+async def _upsert_bill_group_conn(
+    db: aiosqlite.Connection,
+    *,
+    id: str,
+    label: str,
+    sort_order: int,
+) -> None:
+    await db.execute(
+        """
+        INSERT INTO worksheet_bill_groups (id, label, sort_order)
+        VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          label = excluded.label,
+          sort_order = excluded.sort_order
+        """,
+        (id, label, sort_order),
+    )
+
+
+async def insert_bill_group_if_absent(
+    *,
+    id: str,
+    label: str,
+    sort_order: int,
+) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        try:
+            await db.execute(
+                """
+                INSERT INTO worksheet_bill_groups (id, label, sort_order)
+                VALUES (?, ?, ?)
+                """,
+                (id, label, sort_order),
+            )
+            await db.commit()
+        except aiosqlite.IntegrityError as exc:
+            raise ConflictError(f"Bill group id already exists: {id}") from exc
+
+
+async def patch_bill_group(
+    group_id: str,
+    *,
+    label: str,
+    sort_order: int,
+    member_ids: list[int] | None = None,
+) -> None:
+    """Atomically update group metadata and optionally replace members."""
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        if member_ids is not None:
+            await _replace_bill_group_members_conn(db, group_id, member_ids)
+        await _upsert_bill_group_conn(
+            db, id=group_id, label=label, sort_order=sort_order
+        )
+        await db.commit()
+
+
+async def list_bill_group_members(group_id: str) -> list[dict[str, Any]]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, row_label, show_in_group
+            FROM worksheet_registry
+            WHERE bill_group_id = ?
+            ORDER BY row_label ASC
+            """,
+            (group_id,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "registry_id": row["id"],
+                "row_label": row["row_label"],
+                "show_in_group": bool(row["show_in_group"]),
+            }
+            for row in rows
+        ]
+
+
+async def _replace_bill_group_members_conn(
+    db: aiosqlite.Connection,
+    group_id: str,
+    member_ids: list[int],
+) -> None:
+    if member_ids:
+        placeholders = ", ".join("?" for _ in member_ids)
+        await db.execute(
+            f"""
+            UPDATE worksheet_registry
+            SET bill_group_id = NULL
+            WHERE bill_group_id = ? AND id NOT IN ({placeholders})
+            """,
+            (group_id, *member_ids),
+        )
+        for member_id in member_ids:
+            await db.execute(
+                """
+                UPDATE worksheet_registry
+                SET bill_group_id = ?
+                WHERE id = ?
+                """,
+                (group_id, member_id),
+            )
+    else:
+        await db.execute(
+            """
+            UPDATE worksheet_registry
+            SET bill_group_id = NULL
+            WHERE bill_group_id = ?
+            """,
+            (group_id,),
+        )
+
+
+async def replace_bill_group_members(
+    group_id: str, member_ids: list[int]
+) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await _replace_bill_group_members_conn(db, group_id, member_ids)
+        await db.commit()
+
+
+async def delete_bill_group(group_id: str) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            UPDATE worksheet_registry
+            SET bill_group_id = NULL
+            WHERE bill_group_id = ?
+            """,
+            (group_id,),
+        )
+        await db.execute(
+            "DELETE FROM worksheet_bill_groups WHERE id = ?",
+            (group_id,),
+        )
+        await db.commit()
+
+
 def _counts_toward_cash_plan(payment_rail: str | None) -> int:
     return 0 if (payment_rail or "").strip().lower() == "credit_card" else 1
 
@@ -404,13 +648,15 @@ def _row_to_worksheet_registry(row: aiosqlite.Row) -> dict[str, Any]:
         "rule_id": row["rule_id"],
         "row_label": row["row_label"],
         "credit_card_account_id": row["credit_card_account_id"],
+        "bill_group_id": row["bill_group_id"],
+        "show_in_group": bool(row["show_in_group"]),
     }
 
 
 _REGISTRY_SELECT = """
     SELECT id, firefly_bill_id, worksheet_section, funding_bucket_key,
            amount_mode, planned_sync, payment_rail, counts_toward_cash_plan,
-           rule_id, row_label, credit_card_account_id
+           rule_id, row_label, credit_card_account_id, bill_group_id, show_in_group
     FROM worksheet_registry
 """
 
@@ -442,15 +688,16 @@ async def insert_worksheet_registry(data: dict[str, Any]) -> int:
     await init_db()
     payment_rail = data.get("payment_rail") or "bank"
     counts = _counts_toward_cash_plan(payment_rail)
+    show_in_group = 1 if data.get("show_in_group") else 0
     async with aiosqlite.connect(get_db_path()) as db:
         cursor = await db.execute(
             """
             INSERT INTO worksheet_registry (
               firefly_bill_id, worksheet_section, funding_bucket_key,
               amount_mode, planned_sync, payment_rail, counts_toward_cash_plan,
-              rule_id, row_label, credit_card_account_id
+              rule_id, row_label, credit_card_account_id, bill_group_id, show_in_group
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data.get("firefly_bill_id"),
@@ -463,6 +710,8 @@ async def insert_worksheet_registry(data: dict[str, Any]) -> int:
                 data.get("rule_id"),
                 data.get("row_label"),
                 data.get("credit_card_account_id"),
+                data.get("bill_group_id"),
+                show_in_group,
             ),
         )
         await db.commit()
@@ -477,6 +726,7 @@ async def update_worksheet_registry(registry_id: int, data: dict[str, Any]) -> N
     merged = {**existing, **data, "id": registry_id}
     payment_rail = merged.get("payment_rail") or "bank"
     counts = _counts_toward_cash_plan(payment_rail)
+    show_in_group = 1 if merged.get("show_in_group") else 0
     async with aiosqlite.connect(get_db_path()) as db:
         await db.execute(
             """
@@ -490,7 +740,9 @@ async def update_worksheet_registry(registry_id: int, data: dict[str, Any]) -> N
               counts_toward_cash_plan = ?,
               rule_id = ?,
               row_label = ?,
-              credit_card_account_id = ?
+              credit_card_account_id = ?,
+              bill_group_id = ?,
+              show_in_group = ?
             WHERE id = ?
             """,
             (
@@ -504,6 +756,8 @@ async def update_worksheet_registry(registry_id: int, data: dict[str, Any]) -> N
                 merged.get("rule_id"),
                 merged.get("row_label"),
                 merged.get("credit_card_account_id"),
+                merged.get("bill_group_id"),
+                show_in_group,
                 registry_id,
             ),
         )

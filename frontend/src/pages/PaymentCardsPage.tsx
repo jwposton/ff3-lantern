@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { Link, Navigate } from "react-router-dom"
+import { useEffect, useRef, useState } from "react"
+import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { CreditCardSheet } from "@/components/payment-run/CreditCardSheet"
@@ -22,6 +22,8 @@ import {
 export function PaymentCardsPage() {
   const month = currentMonthKey()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const deepLinkHandled = useRef(false)
   const { data: health, isPending: healthPending } = useHealth()
   const { data, isPending } = usePaymentWorksheet(month)
   const [cardSheetOpen, setCardSheetOpen] = useState(false)
@@ -90,6 +92,15 @@ export function PaymentCardsPage() {
 
   const creditCards = data?.credit_cards ?? []
   const excludedCount = data?.excluded_credit_cards.length ?? 0
+
+  useEffect(() => {
+    const accountParam = searchParams.get("account")
+    if (!accountParam || deepLinkHandled.current || creditCards.length === 0) return
+    const match = creditCards.find((row) => row.account_id === accountParam)
+    if (!match) return
+    deepLinkHandled.current = true
+    openCardDetails(match)
+  }, [creditCards, searchParams])
 
   return (
     <div className="space-y-6">

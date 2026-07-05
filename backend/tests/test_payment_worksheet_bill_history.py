@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from payment_worksheet_bill_history import (
     bill_history_date_window,
     bill_history_stats_month_range,
     compute_bill_history_stats,
+    compute_trailing_monthly_average,
     rows_have_current_month_payment,
 )
 
@@ -150,3 +152,23 @@ def test_empty_history():
     assert stats["active_month_average"] == "0.00"
     assert stats["active_month_count"] == 0
     assert stats["monthly_totals"] == []
+
+
+def test_compute_trailing_monthly_average_multi_charge_months():
+    rows = [
+        {"date": "2026-05-12", "amount": "1.00"},
+        {"date": "2026-05-19", "amount": "2.00"},
+        {"date": "2026-06-12", "amount": "3.00"},
+        {"date": "2026-06-19", "amount": "4.00"},
+        {"date": "2026-07-12", "amount": "5.00"},
+        {"date": "2026-07-19", "amount": "6.00"},
+    ]
+    assert compute_trailing_monthly_average(rows, months=3) == Decimal("7.00")
+
+
+def test_compute_trailing_monthly_average_fewer_than_three_months():
+    rows = [
+        {"date": "2026-06-01", "amount": "20.00"},
+        {"date": "2026-07-01", "amount": "40.00"},
+    ]
+    assert compute_trailing_monthly_average(rows, months=3) == Decimal("30.00")

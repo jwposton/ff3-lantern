@@ -18,6 +18,7 @@ import { LoanSplitsQueuePage } from "@/pages/LoanSplitsQueuePage"
 import { AboutPage } from "@/pages/AboutPage"
 import { PaymentWorksheetPage } from "@/pages/PaymentWorksheetPage"
 import { PaymentSetupPage } from "@/pages/PaymentSetupPage"
+import { BillGroupsPage } from "@/pages/BillGroupsPage"
 import { PaymentBucketsPage } from "@/pages/PaymentBucketsPage"
 import { PaymentCardsPage } from "@/pages/PaymentCardsPage"
 import { LiabilitiesHubPage } from "@/pages/LiabilitiesHubPage"
@@ -61,6 +62,10 @@ export const router = createBrowserRouter([
       {
         path: "manage/payment-run/buckets",
         element: <PaymentBucketsPage />,
+      },
+      {
+        path: "manage/payment-run/bill-groups",
+        element: <BillGroupsPage />,
       },
       {
         path: "manage/payment-run/cards",

@@ -26,6 +26,7 @@ const EMPTY_ENVELOPE: PaymentWorksheetEnvelope = {
   bills: [],
   liabilities: [],
   excluded_liabilities: [],
+  bill_groups: [],
   section_subtotals: EMPTY_SECTION_SUBTOTALS,
   grand_totals: EMPTY_GRAND_TOTALS,
   shortfall: false,
@@ -129,6 +130,7 @@ const WORKSHEET_ENVELOPE: PaymentWorksheetEnvelope = {
   bills: [],
   liabilities: [],
   excluded_liabilities: [],
+  bill_groups: [],
   section_subtotals: EMPTY_SECTION_SUBTOTALS,
   grand_totals: EMPTY_GRAND_TOTALS,
   firefly_base_url: "https://ff.example",
@@ -175,6 +177,8 @@ function makeBillRow(
     credit_card_account_id: null,
     amount_mode: "recurring",
     worksheet_section: "bills",
+    bill_group_id: null,
+    show_in_group: true,
   }
 }
 
@@ -243,6 +247,36 @@ const BILLS_LIABILITIES_ENVELOPE: PaymentWorksheetEnvelope = {
     owed: "264000.00",
     due: "3850.00",
     planned_cash: "4750.00",
+  },
+}
+
+const GROUPED_BILLS_ENVELOPE: PaymentWorksheetEnvelope = {
+  ...WORKSHEET_ENVELOPE,
+  bills: [
+    makeBillRow(1, "Electric", false),
+    {
+      ...makeBillRow(2, "Water", true),
+      bill_group_id: "utilities",
+      show_in_group: true,
+    },
+    {
+      ...makeBillRow(3, "Gas", false),
+      bill_group_id: "utilities",
+      show_in_group: true,
+    },
+  ],
+  bill_groups: [
+    {
+      id: "utilities",
+      label: "Utilities",
+      sort_order: 0,
+      member_count: 2,
+      visible_count: 2,
+    },
+  ],
+  section_subtotals: {
+    ...EMPTY_SECTION_SUBTOTALS,
+    bills: { owed: "0.00", due: "150.00", planned_cash: "150.00" },
   },
 }
 
@@ -490,6 +524,23 @@ describe("PaymentWorksheetPage", () => {
       expect(screen.getByText("Electric")).toBeTruthy()
       expect(screen.getByText("Mortgage")).toBeTruthy()
       expect(screen.getByText("Rent")).toBeTruthy()
+    })
+  })
+
+  it("renders expandable bill group parent from bill_groups envelope", async () => {
+    mockPaymentFetch({ envelope: GROUPED_BILLS_ENVELOPE })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Expand Utilities bills" }),
+      ).toBeTruthy()
+      expect(screen.getByText("Utilities")).toBeTruthy()
     })
   })
 

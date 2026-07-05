@@ -31,6 +31,7 @@ import {
 } from "@/lib/fireflyLinks"
 import { formatDisplayAmount, formatDisplayDate } from "@/lib/formatDisplay"
 import {
+  billGroupsQueryKey,
   currentMonthKey,
   fetchAvailableBills,
   registerBill,
@@ -502,9 +503,12 @@ export function BillsDetailPage() {
         amount_min: payload.amount_min,
         amount_max: payload.amount_max,
         repeat_freq: payload.repeat_freq,
+        bill_group_id: payload.bill_group_id,
+        show_in_group: payload.show_in_group,
       })
       await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
       await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
+      await queryClient.invalidateQueries({ queryKey: billGroupsQueryKey() })
       setBillRegistrationOpen(false)
       setEditTarget(null)
       toast.success(`${payload.name} updated`, { duration: 4000 })
@@ -515,6 +519,7 @@ export function BillsDetailPage() {
     const result = await registerBill(payload)
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
     await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
+    await queryClient.invalidateQueries({ queryKey: billGroupsQueryKey() })
     setBillRegistrationOpen(false)
     toast.success(`${payload.name} registered`, { duration: 4000 })
     if (result.id) {

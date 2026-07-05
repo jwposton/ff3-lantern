@@ -1,4 +1,5 @@
-import { Pencil } from "lucide-react"
+import { ChevronDown, ChevronRight, Pencil } from "lucide-react"
+import { Fragment, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 
 import { AmountDueInput } from "@/components/payment-run/AmountDueInput"
@@ -28,7 +29,16 @@ import type {
   CreditCardRow,
   FundingBucketRollup,
   SectionSubtotals,
+  WorksheetBillGroupSummary,
 } from "@/lib/paymentRunApi"
+import {
+  readExpandedBillGroups,
+  writeExpandedBillGroups,
+} from "@/lib/worksheetBillGroupExpand"
+import {
+  aggregateGroupParent,
+  deriveWorksheetBillRows,
+} from "@/lib/worksheetBillGroups"
 import { cn } from "@/lib/utils"
 
 export { COMPACT_TABLE }
@@ -55,8 +65,22 @@ function isMutedIntermittent(row: BillRow): boolean {
   )
 }
 
+function formatAggregateRail(rail: string): string {
+  if (rail === "Mixed") return "Mixed"
+  return rail === "credit_card" ? "Card" : "Bank"
+}
+
+function formatAggregateBucket(
+  buckets: FundingBucketRollup[],
+  bucketKey: string,
+): string {
+  if (bucketKey === "Mixed") return "Mixed"
+  return bucketLabel(buckets, bucketKey)
+}
+
 type BillsTableProps = {
   rows: BillRow[]
+  billGroups?: WorksheetBillGroupSummary[]
   buckets: FundingBucketRollup[]
   creditCards: CreditCardRow[]
   subtotals: SectionSubtotals["bills"]
@@ -73,8 +97,13 @@ type BillsTableProps = {
   onEditRegistration?: (row: BillRow) => void
 }
 
+type RenderBillRowOptions = {
+  indent?: boolean
+}
+
 export function BillsTable({
   rows,
+  billGroups = [],
   buckets,
   creditCards,
   subtotals,
@@ -85,6 +114,123 @@ export function BillsTable({
   onEditRegistration,
 }: BillsTableProps) {
   const paidCount = countPaidRows(rows)
+  const derivedRows = useMemo(
+    () => deriveWorksheetBillRows("bills", rows, billGroups ?? []),
+    [rows, billGroups],
+  )
+  const [expandedGroupIds, setExpandedGroupIds] = useState(() =>
+    readExpandedBillGroups(),
+  )
+
+  function toggleGroup(groupId: string) {
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+      }
+      writeExpandedBillGroups(next)
+      return next
+    })
+  }
+
+  function renderBillRow(row: BillRow, options: RenderBillRowOptions = {}) {
+    const { indent = false } = options
+    const isPaid = Boolean(row.paid_at)
+    const billName = row.row_label ?? `Bill ${row.registry_id}`
+    const muted = isMutedIntermittent(row)
+    const isCcRail = row.payment_rail === "credit_card"
+    const viaCard = cardName(creditCards, row.credit_card_account_id)
+    const fireflyBillUrl = buildFireflyBillUrl(
+      fireflyBaseUrl,
+      row.firefly_bill_id,
+    )
+
+    return (
+      <TableRow
+        key={row.row_key}
+        data-state={
+          muted ? "muted-intermittent" : isPaid ? "paid" : undefined
+        }
+        className={cn(
+          muted && "opacity-70",
+          isPaid &&
+            "!bg-emerald-50/80 hover:!bg-emerald-50/70 dark:!bg-emerald-950/25",
+        )}
+      >
+        <TableCell className={cn("min-w-[8.75rem]", indent && "pl-6")}>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <WorksheetNameLink
+              href={fireflyBillUrl}
+              muted={muted}
+              paid={isPaid}
+            >
+              {billName}
+            </WorksheetNameLink>
+            {isCcRail && viaCard ? (
+              <Badge
+                variant="outline"
+                className="text-muted-foreground shrink-0 text-[10px]"
+              >
+                Via {viaCard}
+              </Badge>
+            ) : null}
+          </div>
+        </TableCell>
+        <TableCell className="text-muted-foreground">
+          {formatPmtSrcRail(row)}
+        </TableCell>
+        <TableCell className="max-w-[6rem] truncate text-muted-foreground">
+          {isCcRail ? "—" : bucketLabel(buckets, row.funding_bucket_key)}
+        </TableCell>
+        <TableCell className="text-right">
+          <AmountDueInput
+            row={row}
+            isPaid={isPaid}
+            onCommit={onAmountDueBlur}
+          />
+        </TableCell>
+        <TableCell className="text-right">
+          <PlannedAmountInput
+            row={row}
+            isPaid={isPaid}
+            onCommit={onPlannedBlur}
+          />
+        </TableCell>
+        <TableCell className="text-center">
+          <input
+            type="checkbox"
+            role="checkbox"
+            className="size-3.5"
+            aria-label={`Mark ${billName} paid`}
+            checked={isPaid}
+            onChange={(event) => void onPaidChange(row, event.target.checked)}
+          />
+        </TableCell>
+        <TableCell className={ACTIONS_CELL_CLASS}>
+          {onEditRegistration ? (
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground rounded p-0.5"
+              aria-label={`Edit ${billName} registration`}
+              onClick={() => onEditRegistration(row)}
+            >
+              <Pencil className="size-3" aria-hidden />
+            </button>
+          ) : row.registry_id ? (
+            <Link
+              to={`/manage/bills/${row.registry_id}`}
+              className="text-muted-foreground hover:text-foreground inline-flex rounded p-0.5"
+              aria-label={`Manage ${billName}`}
+            >
+              <Pencil className="size-3" aria-hidden />
+            </Link>
+          ) : null}
+        </TableCell>
+      </TableRow>
+    )
+  }
 
   return (
     <div className="overflow-x-auto rounded-md border">
@@ -101,102 +247,73 @@ export function BillsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => {
-            const isPaid = Boolean(row.paid_at)
-            const billName = row.row_label ?? `Bill ${row.registry_id}`
-            const muted = isMutedIntermittent(row)
-            const isCcRail = row.payment_rail === "credit_card"
-            const viaCard = cardName(creditCards, row.credit_card_account_id)
-            const fireflyBillUrl = buildFireflyBillUrl(
-              fireflyBaseUrl,
-              row.firefly_bill_id,
-            )
+          {derivedRows.map((item) => {
+            if (item.kind === "individual") {
+              return renderBillRow(item.row)
+            }
+
+            if (item.kind === "group_child") {
+              return null
+            }
+
+            const { group, children } = item
+            const isExpanded = expandedGroupIds.has(group.id)
+            const aggregate = aggregateGroupParent(children)
+
             return (
-              <TableRow
-                key={row.row_key}
-                data-state={
-                  muted ? "muted-intermittent" : isPaid ? "paid" : undefined
-                }
-                className={cn(
-                  muted && "opacity-70",
-                  isPaid &&
-                    "!bg-emerald-50/80 hover:!bg-emerald-50/70 dark:!bg-emerald-950/25",
-                )}
-              >
-                <TableCell className="min-w-[8.75rem]">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                    <WorksheetNameLink
-                      href={fireflyBillUrl}
-                      muted={muted}
-                      paid={isPaid}
-                    >
-                      {billName}
-                    </WorksheetNameLink>
-                    {isCcRail && viaCard ? (
-                      <Badge
-                        variant="outline"
-                        className="text-muted-foreground shrink-0 text-[10px]"
+              <Fragment key={`group:${group.id}`}>
+                <TableRow>
+                  <TableCell className="min-w-[8.75rem]">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground shrink-0 rounded p-0.5"
+                        aria-expanded={isExpanded}
+                        aria-label={`${isExpanded ? "Collapse" : "Expand"} ${group.label} bills`}
+                        onClick={() => toggleGroup(group.id)}
                       >
-                        Via {viaCard}
-                      </Badge>
-                    ) : null}
-                  </div>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {formatPmtSrcRail(row)}
-                </TableCell>
-                <TableCell className="max-w-[6rem] truncate text-muted-foreground">
-                  {isCcRail
-                    ? "—"
-                    : bucketLabel(buckets, row.funding_bucket_key)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <AmountDueInput
-                    row={row}
-                    isPaid={isPaid}
-                    onCommit={onAmountDueBlur}
-                  />
-                </TableCell>
-                <TableCell className="text-right">
-                  <PlannedAmountInput
-                    row={row}
-                    isPaid={isPaid}
-                    onCommit={onPlannedBlur}
-                  />
-                </TableCell>
-                <TableCell className="text-center">
-                  <input
-                    type="checkbox"
-                    role="checkbox"
-                    className="size-3.5"
-                    aria-label={`Mark ${billName} paid`}
-                    checked={isPaid}
-                    onChange={(event) =>
-                      void onPaidChange(row, event.target.checked)
-                    }
-                  />
-                </TableCell>
-                <TableCell className={ACTIONS_CELL_CLASS}>
-                  {onEditRegistration ? (
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-foreground rounded p-0.5"
-                      aria-label={`Edit ${billName} registration`}
-                      onClick={() => onEditRegistration(row)}
-                    >
-                      <Pencil className="size-3" aria-hidden />
-                    </button>
-                  ) : row.registry_id ? (
+                        {isExpanded ? (
+                          <ChevronDown className="size-3.5" aria-hidden />
+                        ) : (
+                          <ChevronRight className="size-3.5" aria-hidden />
+                        )}
+                      </button>
+                      <span className="font-medium">{group.label}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatAggregateRail(aggregate.payment_rail)}
+                  </TableCell>
+                  <TableCell className="max-w-[6rem] truncate text-muted-foreground">
+                    {formatAggregateBucket(
+                      buckets,
+                      aggregate.funding_bucket_key,
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatDisplayAmount(aggregate.amount_due)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatDisplayAmount(aggregate.planned_amount)}
+                  </TableCell>
+                  <TableCell className="text-center tabular-nums text-muted-foreground">
+                    {aggregate.paid}
+                  </TableCell>
+                  <TableCell className={ACTIONS_CELL_CLASS}>
                     <Link
-                      to={`/manage/bills/${row.registry_id}`}
-                      className="text-muted-foreground hover:text-foreground text-xs font-medium"
-                      aria-label={`Manage ${billName}`}
+                      to={`/manage/payment-run/bill-groups?group=${encodeURIComponent(group.id)}`}
+                      className="text-primary text-xs underline-offset-2 hover:underline"
                     >
-                      Manage
+                      Manage group
                     </Link>
-                  ) : null}
-                </TableCell>
-              </TableRow>
+                  </TableCell>
+                </TableRow>
+                {isExpanded
+                  ? children.map((child) =>
+                      renderBillRow(child, { indent: true }),
+                    )
+                  : null}
+              </Fragment>
             )
           })}
           {rows.length > 0 ? (

@@ -12,6 +12,7 @@ from typing import Any, Iterator, Literal, NamedTuple
 
 import sidecar_db
 from firefly_client import FireflyClient
+from payment_worksheet_bill_history import compute_trailing_monthly_average
 from payment_worksheet_liabilities import is_liability_summary
 from payment_worksheet_profiles import is_credit_card_asset
 from transaction_normalization import description_fingerprint
@@ -846,6 +847,10 @@ def _analyze_group(key: str, txns: list[dict[str, Any]]) -> dict[str, Any] | Non
     })
 
     freq = _classify_freq(avg_gap_days)
+    if _has_billing_anchor_cyclicality(txns):
+        # Semi-monthly billing (e.g. Backblaze ~12 + ~19) averages ~14d gaps but
+        # repeats on stable monthly anchors — not true biweekly cadence.
+        freq = "monthly"
 
     return {
         "occurrences": len(unique_dates),
@@ -1358,10 +1363,11 @@ def _is_opaque_payee_cluster(txns: list[dict[str, Any]]) -> bool:
 
 
 def _freq_to_repeat_freq(freq: str) -> str | None:
+    """Map engine freq labels to Firefly bill repeat_freq enum values."""
     mapping: dict[str, str | None] = {
         "monthly": "monthly",
-        "biweekly": "every 2 weeks",
-        "quarterly": "every 3 months",
+        "biweekly": "weekly",
+        "quarterly": "quarterly",
         "annual": "yearly",
         "irregular": None,
     }
@@ -1377,14 +1383,25 @@ def _build_register_prefill(
     is_opaque: bool = False,
 ) -> dict[str, Any]:
     friendly = _friendly_merchant_name(raw_payee)
-    amount_min, amount_max = _pad_amounts(metrics["amount_min"], metrics["amount_max"])
     freq = metrics["freq"]
     if freq == "irregular":
         amount_mode: Literal["recurring", "intermittent"] = "intermittent"
         repeat_freq = None
+        amount_min, amount_max = _pad_amounts(metrics["amount_min"], metrics["amount_max"])
     else:
         amount_mode = _recommend_amount_mode(metrics)
         repeat_freq = _freq_to_repeat_freq(freq)
+        if amount_mode == "recurring" and freq == "monthly":
+            monthly_avg = compute_trailing_monthly_average(txns, months=3)
+            if monthly_avg is not None:
+                avg_text = _format_decimal(monthly_avg)
+                amount_min = amount_max = avg_text
+            else:
+                amount_min, amount_max = _pad_amounts(
+                    metrics["amount_min"], metrics["amount_max"]
+                )
+        else:
+            amount_min, amount_max = _pad_amounts(metrics["amount_min"], metrics["amount_max"])
     return {
         "mode": "create_new",
         "name": friendly,

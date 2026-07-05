@@ -59,6 +59,15 @@ function mockSetupFetch() {
             { registry_id: 5, account_id: null },
           ],
           excluded_liabilities: [{ account_id: "11", name: "Old loan" }],
+          bill_groups: [
+            {
+              id: "utilities",
+              label: "Utilities",
+              sort_order: 1,
+              member_count: 2,
+              visible_count: 2,
+            },
+          ],
         }),
         { status: 200 },
       )
@@ -91,6 +100,7 @@ describe("PaymentSetupPage", () => {
       expect(screen.getByText("1 funding bucket")).toBeTruthy()
       expect(screen.getByText("1 on worksheet · 1 excluded")).toBeTruthy()
       expect(screen.getByText("1 accounts · 1 excluded")).toBeTruthy()
+      expect(screen.getByText("1 bill group")).toBeTruthy()
     })
 
     const manageLinks = screen.getAllByRole("link", { name: /Manage/i })
@@ -98,6 +108,11 @@ describe("PaymentSetupPage", () => {
     expect(manageLinks[1].getAttribute("href")).toBe("/manage/payment-run/buckets")
     expect(manageLinks[2].getAttribute("href")).toBe("/manage/payment-run/cards")
     expect(manageLinks[3].getAttribute("href")).toBe("/manage/liabilities")
+    expect(
+      manageLinks.find(
+        (link) => link.getAttribute("href") === "/manage/payment-run/bill-groups",
+      ),
+    ).toBeTruthy()
     expect(screen.getByRole("link", { name: "Find bills" }).getAttribute("href")).toBe(
       "/manage/payment-run/discover",
     )

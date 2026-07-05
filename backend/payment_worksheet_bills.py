@@ -11,7 +11,11 @@ from typing import Any, Literal
 
 import sidecar_db
 from firefly_client import FireflyClient
-from payment_worksheet_bill_history import bill_history_date_window
+from payment_worksheet_bill_history import (
+    bill_amount_due_fetch_window,
+    bill_history_date_window,
+    compute_trailing_monthly_average,
+)
 from pydantic import BaseModel, field_validator
 
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
@@ -42,6 +46,8 @@ class RegisterBillBody(BaseModel):
     amount_exactly: str | None = None
     firefly_bill_id: str | None = None
     rule_id: str | None = None
+    bill_group_id: str | None = None
+    show_in_group: bool = False
 
     @field_validator("name")
     @classmethod
@@ -71,6 +77,27 @@ def _default_bill_date() -> str:
     today = datetime.now(UTC)
     first = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return first.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+
+_FIREFLY_REPEAT_FREQS = frozenset(
+    {"weekly", "monthly", "quarterly", "half-year", "yearly"}
+)
+
+_LEGACY_REPEAT_FREQ = {
+    "every 2 weeks": "weekly",
+    "every 3 months": "quarterly",
+    "every 6 months": "half-year",
+    "annually": "yearly",
+    "annual": "yearly",
+}
+
+
+def _normalize_firefly_repeat_freq(value: str | None, *, default: str = "monthly") -> str:
+    """Coerce repeat_freq to values accepted by Firefly BillStore."""
+    raw = (value or default).strip().lower() or default
+    if raw in _FIREFLY_REPEAT_FREQS:
+        return raw
+    return _LEGACY_REPEAT_FREQ.get(raw, default)
 
 
 def _sanitize_optional_trigger_text(value: str, *, field_name: str) -> str:
@@ -167,6 +194,22 @@ def compute_bill_owed_from_firefly(
     return compute_recurring_bill_owed(amount_min, amount_max)
 
 
+def compute_bill_owed_from_linked_payments(
+    rows: list[dict[str, Any]],
+    *,
+    ff_bill: dict[str, Any],
+    amount_mode: str,
+    months: int = 3,
+) -> str:
+    """Worksheet amount due: trailing monthly average, else Firefly min/max midpoint."""
+    if amount_mode == "intermittent":
+        return "0.00"
+    average = compute_trailing_monthly_average(rows, months=months)
+    if average is not None:
+        return f"{average}"
+    return compute_bill_owed_from_firefly(ff_bill, amount_mode=amount_mode)
+
+
 def _firefly_bill_amounts(body: RegisterBillBody) -> tuple[str, str]:
     return _resolve_firefly_bill_amounts(body)
 
@@ -204,6 +247,104 @@ async def _validate_bucket_exists(bucket_key: str) -> None:
     bucket = await sidecar_db.get_funding_bucket(bucket_key)
     if bucket is None:
         raise BillRegistrationError(f"Unknown funding bucket: {bucket_key}")
+
+
+BILL_GROUP_SECTIONS = frozenset({"bills", "liabilities"})
+
+
+def normalize_bill_group_id(bill_group_id: str | None) -> str | None:
+    if bill_group_id is None:
+        return None
+    bill_group_id = bill_group_id.strip()
+    return bill_group_id or None
+
+
+async def _validate_bill_group_exists(group_id: str) -> None:
+    group = await sidecar_db.get_bill_group(group_id)
+    if group is None:
+        raise BillRegistrationError("Group not found")
+
+
+async def validate_group_section_homogeneous(
+    group_id: str,
+    bill_section: str,
+    *,
+    exclude_registry_id: int | None = None,
+) -> None:
+    members = await sidecar_db.list_bill_group_members(group_id)
+    for member in members:
+        if (
+            exclude_registry_id is not None
+            and member["registry_id"] == exclude_registry_id
+        ):
+            continue
+        row = await sidecar_db.get_worksheet_registry(member["registry_id"])
+        if row is None:
+            raise BillRegistrationError(
+                f"Group member registry id {member['registry_id']} not found."
+            )
+        if row["worksheet_section"] != bill_section:
+            raise BillRegistrationError(
+                "Bill group members must belong to the same worksheet section "
+                "(Bills or Liabilities)."
+            )
+
+
+async def _validate_bill_group_fields(
+    bill_group_id: str | None,
+    show_in_group: bool,
+    worksheet_section: str,
+) -> None:
+    bill_group_id = normalize_bill_group_id(bill_group_id)
+    if show_in_group and not bill_group_id:
+        raise BillRegistrationError(
+            "show_in_group requires bill_group_id when set to true."
+        )
+    if bill_group_id:
+        await _validate_bill_group_exists(bill_group_id)
+        if worksheet_section not in BILL_GROUP_SECTIONS:
+            raise BillRegistrationError(
+                "Bill group assignment requires worksheet_section bills or liabilities."
+            )
+        await validate_group_section_homogeneous(bill_group_id, worksheet_section)
+
+
+async def validate_registry_bill_group_update(
+    updates: dict[str, Any],
+    merged: dict[str, Any],
+) -> None:
+    """Validate bill group fields for registry PUT (request-aware, not merged-state)."""
+    if "bill_group_id" in merged:
+        merged["bill_group_id"] = normalize_bill_group_id(merged.get("bill_group_id"))
+
+    if "show_in_group" in updates and updates["show_in_group"]:
+        if not merged.get("bill_group_id"):
+            raise BillRegistrationError(
+                "show_in_group requires bill_group_id when set to true."
+            )
+
+    if "bill_group_id" in updates:
+        if normalize_bill_group_id(updates.get("bill_group_id")) is None:
+            if merged.get("show_in_group") and (
+                "show_in_group" not in updates or updates.get("show_in_group")
+            ):
+                raise BillRegistrationError(
+                    "Clear show_in_group or assign a bill_group_id before removing group membership."
+                )
+
+    if merged.get("bill_group_id"):
+        await _validate_bill_group_exists(str(merged["bill_group_id"]))
+        worksheet_section = str(merged.get("worksheet_section") or "")
+        if worksheet_section not in BILL_GROUP_SECTIONS:
+            raise BillRegistrationError(
+                "Bill group assignment requires worksheet_section bills or liabilities."
+            )
+        exclude_id = merged.get("id")
+        await validate_group_section_homogeneous(
+            str(merged["bill_group_id"]),
+            worksheet_section,
+            exclude_registry_id=int(exclude_id) if exclude_id is not None else None,
+        )
 
 
 async def _registered_bill_ids() -> set[str]:
@@ -434,6 +575,11 @@ async def register_new_bill(
     _validate_rail_fields(body)
     if body.payment_rail == "bank":
         await _validate_bucket_exists(str(body.funding_bucket_key))
+    await _validate_bill_group_fields(
+        body.bill_group_id,
+        body.show_in_group,
+        body.worksheet_section,
+    )
     trigger_desc, trigger_payee, trigger_category = _validate_rule_triggers(
         body.description_contains, body.destination_account, body.category_name
     )
@@ -443,7 +589,7 @@ async def register_new_bill(
         "amount_min": amount_min,
         "amount_max": amount_max,
         "date": _default_bill_date(),
-        "repeat_freq": (body.repeat_freq or "monthly").strip() or "monthly",
+        "repeat_freq": _normalize_firefly_repeat_freq(body.repeat_freq),
         "active": True,
     }
     group_title = _bill_object_group_title()
@@ -509,6 +655,11 @@ async def register_linked_bill(
     _validate_rail_fields(body)
     if body.payment_rail == "bank":
         await _validate_bucket_exists(str(body.funding_bucket_key))
+    await _validate_bill_group_fields(
+        body.bill_group_id,
+        body.show_in_group,
+        body.worksheet_section,
+    )
     if bill_id in await _registered_bill_ids():
         raise BillRegistrationError("Bill is already registered on the worksheet.")
     try:
@@ -579,6 +730,8 @@ async def insert_worksheet_registry(
             "rule_id": rule_id,
             "row_label": body.name,
             "credit_card_account_id": body.credit_card_account_id,
+            "bill_group_id": normalize_bill_group_id(body.bill_group_id),
+            "show_in_group": body.show_in_group,
         }
     )
     await sidecar_db.log_audit(
@@ -676,9 +829,8 @@ async def update_linked_firefly_bill(
         "amount_min": resolved_min,
         "amount_max": resolved_max,
         "date": _default_bill_date(),
-        "repeat_freq": (
-            (repeat_freq or current.get("repeat_freq") or "monthly").strip()
-            or "monthly"
+        "repeat_freq": _normalize_firefly_repeat_freq(
+            repeat_freq or current.get("repeat_freq"),
         ),
         "active": True,
     }
@@ -708,4 +860,6 @@ def serialize_bill_registry_for_edit(
         "amount_min": firefly_bill.get("amount_min"),
         "amount_max": firefly_bill.get("amount_max"),
         "repeat_freq": firefly_bill.get("repeat_freq"),
+        "bill_group_id": registry.get("bill_group_id"),
+        "show_in_group": registry.get("show_in_group"),
     }

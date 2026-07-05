@@ -1775,3 +1775,903 @@ def test_suggestion_transactions_firefly_error_502(
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 
+
+def test_bill_groups_crud(monkeypatch, client, data_dir):
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+    import asyncio
+
+    async def _seed_registry() -> tuple[int, int, int]:
+        await sidecar_db.init_db()
+        electric_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "501",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "firefly",
+                "payment_rail": "bank",
+                "rule_id": "99",
+                "row_label": "Electric",
+                "show_in_group": True,
+            }
+        )
+        water_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "502",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "firefly",
+                "payment_rail": "bank",
+                "rule_id": "100",
+                "row_label": "Water",
+                "show_in_group": False,
+            }
+        )
+        credit_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "503",
+                "worksheet_section": "credit",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "firefly",
+                "payment_rail": "bank",
+                "rule_id": "101",
+                "row_label": "Card Payment",
+            }
+        )
+        return electric_id, water_id, credit_id
+
+    electric_id, water_id, credit_id = asyncio.run(_seed_registry())
+
+    create = client.post(
+        "/api/payment-run/bill-groups",
+        json={"label": "Mobile Apps!", "sort_order": 0},
+    )
+    assert create.status_code == 200
+    body = create.json()
+    assert body["id"] == "mobile-apps"
+    assert body["label"] == "Mobile Apps!"
+    assert body["member_count"] == 0
+    assert body["visible_count"] == 0
+    assert body["members"] == []
+
+    collision = client.post(
+        "/api/payment-run/bill-groups",
+        json={"label": "Mobile Apps!", "sort_order": 1},
+    )
+    assert collision.status_code == 200
+    assert collision.json()["id"] == "mobile-apps-2"
+
+    listed = client.get("/api/payment-run/bill-groups")
+    assert listed.status_code == 200
+    groups = listed.json()["data"]
+    assert [group["id"] for group in groups] == ["mobile-apps", "mobile-apps-2"]
+    assert all("member_count" in group for group in groups)
+    assert all("visible_count" in group for group in groups)
+    assert all("members" in group for group in groups)
+
+    assigned = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps",
+        json={"member_ids": [electric_id, water_id]},
+    )
+    assert assigned.status_code == 200
+    assigned_body = assigned.json()
+    assert assigned_body["member_count"] == 2
+    assert assigned_body["visible_count"] == 1
+    member_ids = {member["registry_id"] for member in assigned_body["members"]}
+    assert member_ids == {electric_id, water_id}
+    members_by_id = {
+        member["registry_id"]: member for member in assigned_body["members"]
+    }
+    assert members_by_id[electric_id]["show_in_group"] is True
+    assert members_by_id[water_id]["show_in_group"] is False
+
+    replace_one = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps",
+        json={"member_ids": [electric_id]},
+    )
+    assert replace_one.status_code == 200
+    assert replace_one.json()["member_count"] == 1
+    unlinked = asyncio.run(sidecar_db.get_worksheet_registry(water_id))
+    assert unlinked is not None
+    assert unlinked["bill_group_id"] is None
+    assert unlinked["show_in_group"] is False
+
+    clear_all = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps",
+        json={"member_ids": []},
+    )
+    assert clear_all.status_code == 200
+    assert clear_all.json()["member_count"] == 0
+    cleared_electric = asyncio.run(sidecar_db.get_worksheet_registry(electric_id))
+    assert cleared_electric is not None
+    assert cleared_electric["bill_group_id"] is None
+    assert cleared_electric["show_in_group"] is True
+
+    reassigned = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps",
+        json={"member_ids": [electric_id, water_id]},
+    )
+    assert reassigned.status_code == 200
+
+    deleted = client.delete("/api/payment-run/bill-groups/mobile-apps")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"ok": True}
+
+    after_delete_electric = asyncio.run(sidecar_db.get_worksheet_registry(electric_id))
+    after_delete_water = asyncio.run(sidecar_db.get_worksheet_registry(water_id))
+    assert after_delete_electric is not None
+    assert after_delete_water is not None
+    assert after_delete_electric["bill_group_id"] is None
+    assert after_delete_water["bill_group_id"] is None
+
+    remaining = client.get("/api/payment-run/bill-groups")
+    assert len(remaining.json()["data"]) == 1
+    assert remaining.json()["data"][0]["id"] == "mobile-apps-2"
+
+    invalid_section = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps-2",
+        json={"member_ids": [credit_id]},
+    )
+    assert invalid_section.status_code == 422
+
+    renamed = client.patch(
+        "/api/payment-run/bill-groups/mobile-apps-2",
+        json={"label": "Subscriptions", "sort_order": 5},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["label"] == "Subscriptions"
+    assert renamed.json()["sort_order"] == 5
+    assert renamed.json()["id"] == "mobile-apps-2"
+
+
+def test_bill_group_patch_member_ids_null_422(monkeypatch, client, data_dir):
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+
+    create = client.post(
+        "/api/payment-run/bill-groups",
+        json={"label": "Null Members", "sort_order": 0},
+    )
+    assert create.status_code == 200
+    group_id = create.json()["id"]
+
+    response = client.patch(
+        f"/api/payment-run/bill-groups/{group_id}",
+        json={"member_ids": None},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "member_ids must be an array when provided."
+
+
+def test_registry_group_empty_bill_group_id_normalized(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-grp-empty",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-grp-empty",
+                "row_label": "Gas",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"bill_group_id": ""},
+    )
+    assert response.status_code == 200
+    assert response.json()["bill_group_id"] is None
+
+    row = asyncio.run(sidecar_db.get_worksheet_registry(reg_id))
+    assert row is not None
+    assert row["bill_group_id"] is None
+
+
+def test_registry_group_show_in_group_requires_group(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-grp-show",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-grp-show",
+                "row_label": "Electric",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"show_in_group": True},
+    )
+    assert response.status_code == 422
+
+
+def test_registry_group_unknown_group_422(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-grp-unknown",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-grp-unknown",
+                "row_label": "Water",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"bill_group_id": "missing-group"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Group not found"
+
+
+def test_registry_group_section_guard_422(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    async def _seed() -> int:
+        await sidecar_db.init_db()
+        await sidecar_db.upsert_bill_group(
+            id="utilities",
+            label="Utilities",
+            sort_order=0,
+        )
+        return await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-grp-credit",
+                "worksheet_section": "credit",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-grp-credit",
+                "row_label": "Card Payment",
+            }
+        )
+
+    reg_id = asyncio.run(_seed())
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"bill_group_id": "utilities"},
+    )
+    assert response.status_code == 422
+
+
+async def _seed_cross_section_group_fixture() -> tuple[int, int]:
+    """Bills + liabilities registry rows; liabilities row assigned to liabilities-group."""
+    await sidecar_db.init_db()
+    await sidecar_db.upsert_bill_group(
+        id="bills-group",
+        label="Bills Group",
+        sort_order=0,
+    )
+    await sidecar_db.upsert_bill_group(
+        id="liabilities-group",
+        label="Liabilities Group",
+        sort_order=1,
+    )
+    bills_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "cross-bills",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "recurring",
+            "planned_sync": "fixed",
+            "payment_rail": "bank",
+            "rule_id": "rule-cross-bills",
+            "row_label": "Electric",
+        }
+    )
+    liabilities_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "cross-liab",
+            "worksheet_section": "liabilities",
+            "funding_bucket_key": "checking",
+            "amount_mode": "recurring",
+            "planned_sync": "fixed",
+            "payment_rail": "bank",
+            "rule_id": "rule-cross-liab",
+            "row_label": "Car loan",
+        }
+    )
+    await sidecar_db.patch_bill_group(
+        "liabilities-group",
+        label="Liabilities Group",
+        sort_order=1,
+        member_ids=[liabilities_id],
+    )
+    return bills_id, liabilities_id
+
+
+def test_registry_assign_cross_section_group_422(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    bills_id, _ = asyncio.run(_seed_cross_section_group_fixture())
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{bills_id}",
+        json={"bill_group_id": "liabilities-group"},
+    )
+    assert response.status_code == 422
+    assert "worksheet section" in response.json()["detail"].casefold()
+
+
+def test_register_cross_section_group_422(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    asyncio.run(_seed_cross_section_group_fixture())
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/rule-groups" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "rule-groups",
+                            "id": "1",
+                            "attributes": {"title": "Payment worksheet"},
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "POST":
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "bill-cross-reg",
+                        "attributes": {"name": "Water"},
+                    }
+                },
+            )
+        if path == "/api/v1/rules" and request.method == "POST":
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "rule-cross-reg",
+                        "attributes": {"title": "Water"},
+                    }
+                },
+            )
+        if path.startswith("/api/v1/rules/") and path.endswith("/trigger"):
+            return httpx.Response(204)
+        return httpx.Response(404)
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    monkeypatch.setenv(
+        "FF3LANTERN_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+    )
+
+    try:
+        response = client.post(
+            "/api/payment-run/bills/register",
+            json={
+                "mode": "create_new",
+                "name": "Water",
+                "amount": "50.00",
+                "amount_mode": "recurring",
+                "repeat_freq": "monthly",
+                "worksheet_section": "bills",
+                "payment_rail": "bank",
+                "funding_bucket_key": "checking",
+                "description_contains": "WATER CO",
+                "bill_group_id": "liabilities-group",
+            },
+        )
+        assert response.status_code == 422
+        assert "worksheet section" in response.json()["detail"].casefold()
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_patch_member_ids_cross_section_422(monkeypatch, client, data_dir):
+    import asyncio
+
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+    bills_id, liabilities_id = asyncio.run(_seed_cross_section_group_fixture())
+
+    response = client.patch(
+        "/api/payment-run/bill-groups/bills-group",
+        json={"member_ids": [bills_id, liabilities_id]},
+    )
+    assert response.status_code == 422
+    assert "worksheet section" in response.json()["detail"].casefold()
+
+
+def test_patch_member_ids_cross_section_existing_group_422(
+    monkeypatch, client, data_dir
+):
+    import asyncio
+
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+    bills_id, liabilities_id = asyncio.run(_seed_cross_section_group_fixture())
+
+    assigned = client.patch(
+        "/api/payment-run/bill-groups/bills-group",
+        json={"member_ids": [bills_id]},
+    )
+    assert assigned.status_code == 200
+
+    mixed = client.patch(
+        "/api/payment-run/bill-groups/bills-group",
+        json={"member_ids": [bills_id, liabilities_id]},
+    )
+    assert mixed.status_code == 422
+    assert "worksheet section" in mixed.json()["detail"].casefold()
+
+
+def test_registry_group_register_with_group(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/rule-groups" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "rule-groups",
+                            "id": "1",
+                            "attributes": {"title": "Payment worksheet"},
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "POST":
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "bill-reg-grp",
+                        "attributes": {"name": "Electric"},
+                    }
+                },
+            )
+        if path == "/api/v1/rules" and request.method == "POST":
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "rule-reg-grp",
+                        "attributes": {"title": "Electric"},
+                    }
+                },
+            )
+        if path.startswith("/api/v1/rules/") and path.endswith("/trigger"):
+            return httpx.Response(204)
+        return httpx.Response(404)
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_bill_group(
+            id="utilities",
+            label="Utilities",
+            sort_order=0,
+        )
+    )
+    monkeypatch.setenv(
+        "FF3LANTERN_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+    )
+
+    try:
+        response = client.post(
+            "/api/payment-run/bills/register",
+            json={
+                "mode": "create_new",
+                "name": "Electric",
+                "amount": "99.00",
+                "amount_mode": "recurring",
+                "repeat_freq": "monthly",
+                "worksheet_section": "bills",
+                "payment_rail": "bank",
+                "funding_bucket_key": "checking",
+                "description_contains": "POWER CO",
+                "bill_group_id": "utilities",
+                "show_in_group": True,
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["bill_group_id"] == "utilities"
+        assert body["show_in_group"] is True
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_registry_group_put_toggles_show_in_group(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    async def _seed() -> int:
+        await sidecar_db.upsert_bill_group(
+            id="subscriptions",
+            label="Subscriptions",
+            sort_order=0,
+        )
+        return await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-toggle",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-toggle",
+                "row_label": "Netflix",
+                "bill_group_id": "subscriptions",
+                "show_in_group": False,
+            }
+        )
+
+    reg_id = asyncio.run(_seed())
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"show_in_group": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["show_in_group"] is True
+
+    toggled_off = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"show_in_group": False},
+    )
+    assert toggled_off.status_code == 200
+    assert toggled_off.json()["show_in_group"] is False
+
+
+def test_registry_group_liabilities_section_assignment(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    async def _seed() -> int:
+        await sidecar_db.upsert_bill_group(
+            id="loans",
+            label="Loans",
+            sort_order=0,
+        )
+        return await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-liab",
+                "worksheet_section": "liabilities",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-liab",
+                "row_label": "Car loan",
+            }
+        )
+
+    reg_id = asyncio.run(_seed())
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"bill_group_id": "loans", "show_in_group": True},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["bill_group_id"] == "loans"
+    assert body["show_in_group"] is True
+    assert body["worksheet_section"] == "liabilities"
+
+
+def test_registry_group_at_most_one_group_via_put(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    async def _seed() -> int:
+        await sidecar_db.upsert_bill_group(
+            id="group-a",
+            label="Group A",
+            sort_order=0,
+        )
+        await sidecar_db.upsert_bill_group(
+            id="group-b",
+            label="Group B",
+            sort_order=1,
+        )
+        return await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-move",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-move",
+                "row_label": "Internet",
+                "bill_group_id": "group-a",
+                "show_in_group": True,
+            }
+        )
+
+    reg_id = asyncio.run(_seed())
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    moved = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"bill_group_id": "group-b"},
+    )
+    assert moved.status_code == 200
+    body = moved.json()
+    assert body["bill_group_id"] == "group-b"
+    assert body["show_in_group"] is True
+
+    row = asyncio.run(sidecar_db.get_worksheet_registry(reg_id))
+    assert row is not None
+    assert row["bill_group_id"] == "group-b"
+
+
+def test_registry_put_after_group_delete_allows_unrelated_update(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    async def _seed() -> int:
+        await sidecar_db.init_db()
+        await sidecar_db.upsert_bill_group(
+            id="utilities",
+            label="Utilities",
+            sort_order=0,
+        )
+        reg_id = await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-dormant-show",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-dormant-show",
+                "row_label": "Electric",
+                "bill_group_id": "utilities",
+                "show_in_group": True,
+            }
+        )
+        await sidecar_db.replace_bill_group_members("utilities", [reg_id])
+        await sidecar_db.delete_bill_group("utilities")
+        return reg_id
+
+    reg_id = asyncio.run(_seed())
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    row = asyncio.run(sidecar_db.get_worksheet_registry(reg_id))
+    assert row is not None
+    assert row["bill_group_id"] is None
+    assert row["show_in_group"] is True
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"row_label": "Electric (updated)"},
+    )
+    assert response.status_code == 200
+    assert response.json()["row_label"] == "Electric (updated)"
+
+
+def test_registry_put_unlink_requires_clearing_show_in_group(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    async def _seed() -> int:
+        await sidecar_db.init_db()
+        await sidecar_db.upsert_bill_group(
+            id="utilities",
+            label="Utilities",
+            sort_order=0,
+        )
+        return await sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-unlink-put",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-unlink-put",
+                "row_label": "Water",
+                "bill_group_id": "utilities",
+                "show_in_group": True,
+            }
+        )
+
+    reg_id = asyncio.run(_seed())
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    blocked = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"bill_group_id": None},
+    )
+    assert blocked.status_code == 422
+    assert "show_in_group" in blocked.json()["detail"]
+
+    allowed = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"bill_group_id": None, "show_in_group": False},
+    )
+    assert allowed.status_code == 200
+    body = allowed.json()
+    assert body["bill_group_id"] is None
+    assert body["show_in_group"] is False
+
+
+def test_bill_groups_disabled_returns_404(monkeypatch, client):
+    monkeypatch.delenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", raising=False)
+
+    get_resp = client.get("/api/payment-run/bill-groups")
+    assert get_resp.status_code == 404
+    assert get_resp.json()["detail"] == "Payment worksheet is not enabled."
+
+    post_resp = client.post(
+        "/api/payment-run/bill-groups",
+        json={"label": "Test"},
+    )
+    assert post_resp.status_code == 404
+    assert post_resp.json()["detail"] == "Payment worksheet is not enabled."
+
+    patch_resp = client.patch(
+        "/api/payment-run/bill-groups/test",
+        json={"label": "Test"},
+    )
+    assert patch_resp.status_code == 404
+    assert patch_resp.json()["detail"] == "Payment worksheet is not enabled."
+
+    delete_resp = client.delete("/api/payment-run/bill-groups/test")
+    assert delete_resp.status_code == 404
+    assert delete_resp.json()["detail"] == "Payment worksheet is not enabled."
+

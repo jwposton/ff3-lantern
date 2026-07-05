@@ -7,8 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-07-05
+
+### Added
+
+- **Bill groups hub** — manage groups and membership at /manage/payment-run/bill-groups (#45)
+- **Payment setup** — Bill groups card on setup landing (#45)
+- **Bill registration** — optional group picker and Show in group on Bills hub and Discover (#45)
+- **Expandable bill groups on worksheet** — Bills table shows collapsible group rollup rows with aggregated due/planned; members hidden from group stay in ungrouped section (#44)
+- **Worksheet bill groups metadata** — GET payment-run worksheet includes `bill_groups[]` and per-row `bill_group_id` / `show_in_group` for registry-backed bills and bill-liabilities (#43)
+- **Bill groups API** — CRUD at /payment-run/bill-groups with registry bill_group_id and show_in_group fields on bill register and update (#42)
+
+### Changed
+
+- **Payment worksheet** — group parent rows link to Bill groups hub for structural edits (#45)
+- **Worksheet inline edit** — pencil on bill, card, and liability rows opens that item's sheet on the worksheet so you stay on the plan view after saving (#74)
+- **Bill group assignment** — rejects members from a different worksheet section than existing group members (Bills vs Liabilities) (#43)
+
 ### Fixed
 
+- **Bill discover adopt** — semi-monthly usage billing (e.g. Backblaze) no longer prefills invalid repeat frequencies that Firefly rejects with 422
+- **Bill discover monthly prefill** — recurring monthly suggestions pre-fill equal min/max from the trailing 3-month average of total cluster spend per month (#73)
+- **Worksheet bill amount due** — recurring bills use the same trailing 3-month average of linked payments on refresh; falls back to Firefly min/max when no history exists (#73)
+- **Bill group validation** — fails when a group member references a missing registry row (#43)
+- **Bill groups PATCH** — explicit `member_ids: null` returns 422 instead of HTTP 500 (#42)
+- **Bill group assignment** — empty `bill_group_id` strings are cleared instead of stored as invalid references (#42)
+- **Bill registry update** — bills with dormant `show_in_group` after group removal or delete can be edited again without clearing the visibility flag (#42)
 - **Budget vs 12-month average tile** — credit card charges (interest, purchases) now count toward the bar chart using the same spending definition as the pie chart (#57)
 - **Variance detail table** — sticky budget column stays opaque and matches row striping while scrolling horizontally (#56)
 - **Transaction Explorer filters** — filter panel scrolls with the page instead of staying pinned (#38)
@@ -344,7 +368,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/jwposton/ff3-lantern/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/jwposton/ff3-lantern/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/jwposton/ff3-lantern/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/jwposton/ff3-lantern/compare/v1.2.0...v2.0.0

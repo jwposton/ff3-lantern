@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -32,11 +33,13 @@ from payment_worksheet_bill_suggestions import (
     fetch_bill_suggestions,
 )
 from payment_worksheet_bills import (
+    BILL_GROUP_SECTIONS,
     BillRegistrationError,
     RegisterBillBody,
     register_bill,
     serialize_bill_registry_for_edit,
     update_linked_firefly_bill,
+    validate_registry_bill_group_update,
 )
 from payment_worksheet_bill_history import (
     bill_history_date_window,
@@ -120,6 +123,50 @@ class FundingBucketRow(BaseModel):
     firefly_account_ids: list[str]
 
 
+class BillGroupCreateBody(BaseModel):
+    label: str
+    sort_order: int = 0
+
+    @field_validator("label")
+    @classmethod
+    def label_non_empty(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("label must be non-empty")
+        return stripped
+
+
+class BillGroupPatchBody(BaseModel):
+    label: str | None = None
+    sort_order: int | None = None
+    member_ids: list[int] | None = None
+
+    @field_validator("label")
+    @classmethod
+    def label_non_empty_when_set(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("label must be non-empty")
+        return stripped
+
+
+class BillGroupMemberRow(BaseModel):
+    registry_id: int
+    row_label: str | None
+    show_in_group: bool
+
+
+class BillGroupRow(BaseModel):
+    id: str
+    label: str
+    sort_order: int
+    member_count: int
+    visible_count: int
+    members: list[BillGroupMemberRow]
+
+
 class PaymentWorksheetBody(BaseModel):
     included: bool | None = None
     worksheet_section: str | None = None
@@ -182,6 +229,8 @@ class UpdateBillRegistryBody(BaseModel):
     amount_min: str | None = None
     amount_max: str | None = None
     repeat_freq: str | None = None
+    bill_group_id: str | None = None
+    show_in_group: bool | None = None
 
 
 def _validate_month(month: str) -> str:
@@ -205,6 +254,92 @@ def _row_from_db(row: dict) -> FundingBucketRow:
         sort_order=row["sort_order"],
         firefly_account_ids=row["firefly_account_ids"],
     )
+
+
+def _slugify_label(label: str) -> str:
+    text = label.strip().lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    return text.strip("-")[:64].strip("-")
+
+
+async def _allocate_bill_group_id(label: str, sort_order: int) -> str:
+    base = _slugify_label(label) or "group"
+    for attempt in range(100):
+        candidate = base if attempt == 0 else f"{base}-{attempt + 1}"
+        try:
+            await sidecar_db.insert_bill_group_if_absent(
+                id=candidate,
+                label=label,
+                sort_order=sort_order,
+            )
+            return candidate
+        except sidecar_db.ConflictError:
+            continue
+    raise HTTPException(status_code=500, detail="Failed to allocate group id.")
+
+
+async def _enrich_bill_group(row: dict) -> BillGroupRow:
+    members_raw = await sidecar_db.list_bill_group_members(row["id"])
+    members = [BillGroupMemberRow(**member) for member in members_raw]
+    return BillGroupRow(
+        id=row["id"],
+        label=row["label"],
+        sort_order=row["sort_order"],
+        member_count=len(members),
+        visible_count=sum(1 for member in members if member.show_in_group),
+        members=members,
+    )
+
+
+async def _validate_bill_group_member_ids(
+    member_ids: list[int],
+    group_id: str,
+) -> None:
+    if not member_ids:
+        return
+
+    sections: list[str] = []
+    for registry_id in member_ids:
+        row = await sidecar_db.get_worksheet_registry(registry_id)
+        if row is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown registry id: {registry_id}",
+            )
+        section = row.get("worksheet_section")
+        if section not in BILL_GROUP_SECTIONS:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Registry row {registry_id} cannot join a bill group "
+                    f"(worksheet_section must be bills or liabilities)."
+                ),
+            )
+        sections.append(str(section))
+
+    if len(set(sections)) > 1:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "All bill group members must belong to the same worksheet section "
+                "(Bills or Liabilities)."
+            ),
+        )
+
+    required_section = sections[0]
+
+    for registry_id in member_ids:
+        row = await sidecar_db.get_worksheet_registry(registry_id)
+        if row is None:
+            continue
+        if str(row.get("worksheet_section") or "") != required_section:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "All bill group members must belong to the same worksheet section "
+                    "(Bills or Liabilities)."
+                ),
+            )
 
 
 @router.get("/payment-run")
@@ -393,6 +528,70 @@ async def delete_bucket(
     return {"ok": True}
 
 
+@router.get("/payment-run/bill-groups")
+async def list_bill_groups_route(_: None = Depends(require_payment_worksheet)):
+    rows = await sidecar_db.list_bill_groups()
+    enriched = [await _enrich_bill_group(row) for row in rows]
+    return {"data": [row.model_dump() for row in enriched]}
+
+
+@router.post("/payment-run/bill-groups")
+async def create_bill_group(
+    body: BillGroupCreateBody,
+    _: None = Depends(require_payment_worksheet),
+):
+    group_id = await _allocate_bill_group_id(body.label, body.sort_order)
+    row = await sidecar_db.get_bill_group(group_id)
+    if row is None:
+        raise HTTPException(status_code=500, detail="Failed to create group.")
+    return (await _enrich_bill_group(row)).model_dump()
+
+
+@router.patch("/payment-run/bill-groups/{group_id}")
+async def patch_bill_group(
+    group_id: str,
+    body: BillGroupPatchBody,
+    _: None = Depends(require_payment_worksheet),
+):
+    existing = await sidecar_db.get_bill_group(group_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Group not found.")
+    updates = body.model_dump(exclude_unset=True)
+    member_ids_update: list[int] | None = None
+    if "member_ids" in updates:
+        member_ids = updates.pop("member_ids")
+        if member_ids is None:
+            raise HTTPException(
+                status_code=422,
+                detail="member_ids must be an array when provided.",
+            )
+        await _validate_bill_group_member_ids(member_ids, group_id)
+        member_ids_update = member_ids
+    if member_ids_update is not None or updates:
+        await sidecar_db.patch_bill_group(
+            group_id,
+            label=updates.get("label", existing["label"]),
+            sort_order=updates.get("sort_order", existing["sort_order"]),
+            member_ids=member_ids_update,
+        )
+    row = await sidecar_db.get_bill_group(group_id)
+    if row is None:
+        raise HTTPException(status_code=500, detail="Failed to update group.")
+    return (await _enrich_bill_group(row)).model_dump()
+
+
+@router.delete("/payment-run/bill-groups/{group_id}")
+async def delete_bill_group_route(
+    group_id: str,
+    _: None = Depends(require_payment_worksheet),
+):
+    existing = await sidecar_db.get_bill_group(group_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Group not found.")
+    await sidecar_db.delete_bill_group(group_id)
+    return {"ok": True}
+
+
 @router.put("/payment-run/accounts/{account_id}/worksheet")
 async def update_account_worksheet(
     account_id: str,
@@ -567,6 +766,11 @@ async def update_bill_registry(
     amount_mode = merged.get("amount_mode") or existing.get("amount_mode")
     if amount_mode:
         merged["planned_sync"] = _planned_sync_for_amount_mode(str(amount_mode))
+
+    try:
+        await validate_registry_bill_group_update(updates, merged)
+    except BillRegistrationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     firefly_bill_id = existing.get("firefly_bill_id")
     if firefly_bill_id and any(

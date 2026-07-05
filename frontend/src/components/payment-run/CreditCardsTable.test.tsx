@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { MemoryRouter } from "react-router-dom"
 
 import { CreditCardsTable } from "./CreditCardsTable"
 import type { CreditCardRow } from "@/lib/paymentRunApi"
@@ -216,5 +217,24 @@ describe("CreditCardsTable", () => {
     )
 
     expect(descriptions).toEqual(["Late Fee", "Interest", "Grocery Store"])
+  })
+
+  it("links per-row Manage to card detail deep link, not cards hub", () => {
+    render(
+      <MemoryRouter>
+        <CreditCardsTable
+          rows={[BASE_ROW]}
+          buckets={[]}
+          month="2026-07"
+          onPlannedBlur={async () => {}}
+          onPaidChange={async () => {}}
+        />
+      </MemoryRouter>,
+    )
+
+    const manageLink = screen.getByRole("link", { name: "Manage Chase VISA" })
+    expect(manageLink.getAttribute("href")).toBe(
+      "/manage/payment-run/cards?account=42",
+    )
   })
 })

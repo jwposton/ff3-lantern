@@ -1053,6 +1053,42 @@ def test_spotify_prefill_rail_and_amount_mode():
     assert prefill["amount_mode"] == "recurring"
     assert prefill["name"] == "Spotify"
     assert prefill["destination_account"] == "Spotify USA Inc"
+    assert prefill["amount_min"] == "22.15"
+    assert prefill["amount_max"] == "22.15"
+
+
+def test_monthly_recurring_prefill_uses_three_month_average():
+    from payment_worksheet_bill_history import compute_trailing_monthly_average
+
+    txns = [
+        {"date": "2026-01-12", "amount": "10.00"},
+        {"date": "2026-01-19", "amount": "5.00"},
+        {"date": "2026-02-12", "amount": "12.00"},
+        {"date": "2026-02-19", "amount": "6.00"},
+        {"date": "2026-03-12", "amount": "8.00"},
+        {"date": "2026-03-19", "amount": "4.00"},
+    ]
+    assert compute_trailing_monthly_average(txns, months=3) == Decimal("15.00")
+
+
+def test_monthly_cluster_average_uses_available_months_when_under_three():
+    from payment_worksheet_bill_history import compute_trailing_monthly_average
+
+    txns = [
+        {"date": "2026-02-01", "amount": "20.00"},
+        {"date": "2026-03-01", "amount": "40.00"},
+    ]
+    assert compute_trailing_monthly_average(txns, months=3) == Decimal("30.00")
+
+
+def test_backblaze_intermittent_prefill_keeps_padded_min_max():
+    from tests.test_bill_discover_recurrence_matrix import backblaze_usage_billing
+
+    result = build_bill_suggestions(backblaze_usage_billing(), **_engine_kwargs())
+    assert result["data"]
+    prefill = result["data"][0]["register_prefill"]
+    assert prefill["amount_mode"] == "intermittent"
+    assert prefill["amount_min"] != prefill["amount_max"]
 
 
 def test_spotify_category_field():

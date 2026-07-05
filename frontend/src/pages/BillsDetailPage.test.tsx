@@ -31,6 +31,7 @@ const EMPTY_WORKSHEET: PaymentWorksheetEnvelope = {
   bills: [],
   liabilities: [],
   excluded_liabilities: [],
+  bill_groups: [],
   section_subtotals: {
     bills: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
     liabilities: { owed: "0.00", due: "0.00", planned_cash: "0.00" },

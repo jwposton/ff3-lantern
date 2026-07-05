@@ -12,7 +12,11 @@ from typing import Any
 import sidecar_db
 from firefly_client import FireflyClient
 from loan_profiles import parse_loan_profile_from_notes
-from payment_worksheet_bills import compute_bill_owed_from_firefly
+from payment_worksheet_bills import (
+    compute_bill_owed_from_firefly,
+    compute_bill_owed_from_linked_payments,
+)
+from payment_worksheet_bill_history import bill_amount_due_fetch_window
 from payment_worksheet_cc import classify_cc_activity_category, is_credit_card_payment_flow
 from payment_worksheet_liabilities import (
     compute_liability_display_fields,
@@ -420,8 +424,22 @@ async def run_refresh(
         if reg.get("amount_mode") == "intermittent":
             owed = "0.00"
         else:
-            owed = compute_bill_owed_from_firefly(
-                ff_bill, amount_mode=str(reg.get("amount_mode") or "recurring")
+            start, end = bill_amount_due_fetch_window()
+            try:
+                linked_rows = await client.fetch_bill_transactions(
+                    str(bill_id), start, end
+                )
+            except RuntimeError as exc:
+                logger.warning(
+                    "Bill %s linked payments unavailable for amount due: %s",
+                    bill_id,
+                    exc,
+                )
+                linked_rows = []
+            owed = compute_bill_owed_from_linked_payments(
+                linked_rows,
+                ff_bill=ff_bill,
+                amount_mode=str(reg.get("amount_mode") or "recurring"),
             )
         balances["bills"][reg_id] = {
             "owed": owed,
