@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Firefly integration CI** — GitHub Actions workflow runs Lantern against a disposable Firefly III container with a minimal seeded dataset; PRs use pinned `version-6.6.3`, nightly matrix covers supported minors and `latest` (#103)
 - **Health `firefly_version`** — `GET /health` reports the connected Firefly III version from `/api/v1/about` when credentials are configured (#103)
 
+### Changed
+
+- **GitHub Releases** — pushing a `v*` tag now creates a GitHub Release with notes from `CHANGELOG.md`; use `scripts/backfill-github-releases.sh` for tags published before this automation
+
 ## [2.4.3] - 2026-07-05
 
 ### Changed
