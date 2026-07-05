@@ -65,6 +65,7 @@ export function PaymentSetupPage() {
   const registeredCount = registeredData?.data.length ?? 0
   const availableCount = availableData?.length ?? 0
   const bucketCount = worksheetData?.buckets.length ?? 0
+  const groupCount = worksheetData?.bill_groups.length ?? 0
   const cardCount = worksheetData?.credit_cards.length ?? 0
   const excludedCardCount = worksheetData?.excluded_credit_cards.length ?? 0
   const liabilityAccounts =
@@ -145,6 +146,14 @@ export function PaymentSetupPage() {
               : `${liabilityAccounts.length} liability accounts`
           }
           manageHref="/manage/liabilities"
+        />
+        <SetupCard
+          title="Bill groups"
+          loading={countsLoading}
+          description={
+            groupCount === 1 ? "1 bill group" : `${groupCount} bill groups`
+          }
+          manageHref="/manage/payment-run/bill-groups"
         />
       </div>
 
