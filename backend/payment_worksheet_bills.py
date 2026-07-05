@@ -224,6 +224,29 @@ async def _validate_bill_group_exists(group_id: str) -> None:
         raise BillRegistrationError("Group not found")
 
 
+async def validate_group_section_homogeneous(
+    group_id: str,
+    bill_section: str,
+    *,
+    exclude_registry_id: int | None = None,
+) -> None:
+    members = await sidecar_db.list_bill_group_members(group_id)
+    for member in members:
+        if (
+            exclude_registry_id is not None
+            and member["registry_id"] == exclude_registry_id
+        ):
+            continue
+        row = await sidecar_db.get_worksheet_registry(member["registry_id"])
+        if row is None:
+            continue
+        if row["worksheet_section"] != bill_section:
+            raise BillRegistrationError(
+                "Bill group members must belong to the same worksheet section "
+                "(Bills or Liabilities)."
+            )
+
+
 async def _validate_bill_group_fields(
     bill_group_id: str | None,
     show_in_group: bool,
@@ -240,6 +263,7 @@ async def _validate_bill_group_fields(
             raise BillRegistrationError(
                 "Bill group assignment requires worksheet_section bills or liabilities."
             )
+        await validate_group_section_homogeneous(bill_group_id, worksheet_section)
 
 
 async def validate_registry_bill_group_update(
@@ -272,6 +296,12 @@ async def validate_registry_bill_group_update(
             raise BillRegistrationError(
                 "Bill group assignment requires worksheet_section bills or liabilities."
             )
+        exclude_id = merged.get("id")
+        await validate_group_section_homogeneous(
+            str(merged["bill_group_id"]),
+            worksheet_section,
+            exclude_registry_id=int(exclude_id) if exclude_id is not None else None,
+        )
 
 
 async def _registered_bill_ids() -> set[str]:
