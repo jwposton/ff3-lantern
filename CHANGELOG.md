@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Worksheet grand total breakdowns** — footer uses two cards: **Balances owed** (liabilities with real estate/loans, revolving CC) and **Due & planned** with collapsible **Cash (bank)** and **Credit card** groups; each group shows liabilities, bills, and credit card pmts on the same rail (#76)
+
 ### Changed
 
+- **Worksheet grand total footer** — collapsible parent rows; all-zero child lines hidden (#76)
 - **Bill registration (Link existing)** — empty state no longer shows redundant helper text above the “no bills found” message (#46)
 - **Payment worksheet copy** — renamed Payment rail → Paid from, Pmt Src → Pay from, and Bucket/Funding bucket → Cash account / Account across worksheet surfaces (#47)
 

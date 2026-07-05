@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 import sidecar_db
-from payment_worksheet_liabilities import liability_row_key
+from payment_worksheet_liabilities import is_real_estate_liability, liability_row_key
 
 
 def cc_row_key(account_id: str) -> str:
@@ -234,31 +234,189 @@ def compute_section_subtotals(
     }
 
 
-def compute_grand_totals(
+def _accumulate_row_due_planned(
+    row: dict[str, Any],
+    due_cash: Decimal,
+    due_credit: Decimal,
+    planned_cash: Decimal,
+    planned_credit: Decimal,
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    amount_due = _decimal_amount(row.get("amount_due"))
+    if row.get("payment_rail") == "credit_card":
+        due_credit += amount_due
+    else:
+        due_cash += amount_due
+
+    planned = _decimal_amount(row.get("planned_amount"))
+    if row.get("account_id") or row.get("counts_toward_cash_plan"):
+        planned_cash += planned
+    else:
+        planned_credit += planned
+    return due_cash, due_credit, planned_cash, planned_credit
+
+
+def _format_due_planned_rail_pair(
+    due_cash: Decimal,
+    due_credit: Decimal,
+    planned_cash: Decimal,
+    planned_credit: Decimal,
+) -> dict[str, Any]:
+    return {
+        "cash": {
+            "due": _format_decimal(due_cash),
+            "planned": _format_decimal(planned_cash),
+        },
+        "credit": {
+            "due": _format_decimal(due_credit),
+            "planned": _format_decimal(planned_credit),
+        },
+    }
+
+
+def _compute_due_planned_sections(
+    bills: list[dict[str, Any]],
+    liabilities: list[dict[str, Any]],
     credit_cards: list[dict[str, Any]],
-    section_subtotals: dict[str, Any],
-) -> dict[str, str]:
+) -> dict[str, Any]:
+    liab_d_c = liab_d_cr = liab_p_c = liab_p_cr = Decimal("0")
+    bills_d_c = bills_d_cr = bills_p_c = bills_p_cr = Decimal("0")
+
+    for row in liabilities:
+        liab_d_c, liab_d_cr, liab_p_c, liab_p_cr = _accumulate_row_due_planned(
+            row, liab_d_c, liab_d_cr, liab_p_c, liab_p_cr
+        )
+
+    for row in bills:
+        bills_d_c, bills_d_cr, bills_p_c, bills_p_cr = _accumulate_row_due_planned(
+            row, bills_d_c, bills_d_cr, bills_p_c, bills_p_cr
+        )
+
+    cc_planned = sum(
+        (_decimal_amount(card.get("planned_amount")) for card in credit_cards),
+        Decimal("0"),
+    )
+
+    return {
+        "liabilities": _format_due_planned_rail_pair(
+            liab_d_c, liab_d_cr, liab_p_c, liab_p_cr
+        ),
+        "bills": _format_due_planned_rail_pair(
+            bills_d_c, bills_d_cr, bills_p_c, bills_p_cr
+        ),
+        "credit_card_pmts": _format_due_planned_rail_pair(
+            Decimal("0"), Decimal("0"), cc_planned, Decimal("0")
+        ),
+    }
+
+
+def _planned_credit_total(
+    bills: list[dict[str, Any]],
+    liabilities: list[dict[str, Any]],
+) -> Decimal:
+    total = Decimal("0")
+    for row in bills:
+        if not row.get("counts_toward_cash_plan"):
+            total += _decimal_amount(row.get("planned_amount"))
+    for row in liabilities:
+        if row.get("account_id"):
+            continue
+        if not row.get("counts_toward_cash_plan"):
+            total += _decimal_amount(row.get("planned_amount"))
+    return total
+
+
+def _due_by_rail(
+    bills: list[dict[str, Any]],
+    liabilities: list[dict[str, Any]],
+) -> tuple[Decimal, Decimal]:
+    due_cash = Decimal("0")
+    due_credit = Decimal("0")
+    for row in bills:
+        amount_due = _decimal_amount(row.get("amount_due"))
+        if row.get("payment_rail") == "credit_card":
+            due_credit += amount_due
+        else:
+            due_cash += amount_due
+    for row in liabilities:
+        amount_due = _decimal_amount(row.get("amount_due"))
+        if row.get("payment_rail") == "credit_card":
+            due_credit += amount_due
+        else:
+            due_cash += amount_due
+    return due_cash, due_credit
+
+
+def _liability_owed_breakdown(
+    liabilities: list[dict[str, Any]],
+) -> tuple[Decimal, Decimal, Decimal]:
+    total = Decimal("0")
+    real_estate = Decimal("0")
+    loans = Decimal("0")
+    for row in liabilities:
+        if not row.get("account_id"):
+            continue
+        owed = _decimal_amount(row.get("owed"))
+        total += owed
+        if is_real_estate_liability(row):
+            real_estate += owed
+        else:
+            loans += owed
+    return total, real_estate, loans
+
+
+def compute_grand_totals(
+    bills: list[dict[str, Any]],
+    liabilities: list[dict[str, Any]],
+    credit_cards: list[dict[str, Any]],
+) -> dict[str, Any]:
+    section_subtotals = compute_section_subtotals(bills, liabilities, credit_cards)
     cc_owed = sum(
         (_decimal_amount(card.get("owed")) for card in credit_cards),
         Decimal("0"),
     )
-    owed = (
-        cc_owed
-        + _decimal_amount(section_subtotals["liabilities"]["owed"])
+    liabilities_owed, real_estate_owed, loans_owed = _liability_owed_breakdown(
+        liabilities
     )
-    due = (
-        _decimal_amount(section_subtotals["bills"]["due"])
-        + _decimal_amount(section_subtotals["liabilities"]["due"])
-    )
+    owed = cc_owed + liabilities_owed
+    due_cash, due_credit = _due_by_rail(bills, liabilities)
+    due = due_cash + due_credit
     planned_cash = (
         _decimal_amount(section_subtotals["credit_cards"]["planned_cash"])
         + _decimal_amount(section_subtotals["bills"]["planned_cash"])
         + _decimal_amount(section_subtotals["liabilities"]["planned_cash"])
     )
+    planned_credit = _planned_credit_total(bills, liabilities)
+    planned_total = planned_cash + planned_credit
+    due_planned_sections = _compute_due_planned_sections(
+        bills, liabilities, credit_cards
+    )
+
+    owed_breakdown: dict[str, str] = {
+        "liabilities": _format_decimal(liabilities_owed),
+        "revolving": _format_decimal(cc_owed),
+    }
+    if real_estate_owed > 0:
+        owed_breakdown["real_estate"] = _format_decimal(real_estate_owed)
+    if loans_owed > 0:
+        owed_breakdown["loans"] = _format_decimal(loans_owed)
+
     return {
         "owed": _format_decimal(owed),
         "due": _format_decimal(due),
         "planned_cash": _format_decimal(planned_cash),
+        "planned_total": _format_decimal(planned_total),
+        "breakdown": {
+            "owed": owed_breakdown,
+            "due": {
+                "cash": _format_decimal(due_cash),
+                "credit": _format_decimal(due_credit),
+            },
+            "planned": {
+                "cash": _format_decimal(planned_cash),
+                "credit": _format_decimal(planned_credit),
+            },
+            "due_planned": due_planned_sections,
+        },
     }
 
 
@@ -369,6 +527,10 @@ def _assemble_liability_accounts(
                 "amount_due_override": amount_due_override,
                 "est_interest": snapshot.get("est_interest"),
                 "remaining_payments": snapshot.get("remaining_payments"),
+                "account_role": snapshot.get("account_role"),
+                "liability_type": snapshot.get("liability_type"),
+                "account_type": snapshot.get("account_type"),
+                "has_escrow": bool(snapshot.get("has_escrow")),
                 "planned_amount": planned_amount,
                 "planned_amount_override": bool(state.get("planned_amount_override")),
                 "paid_at": state.get("paid_at"),
@@ -477,7 +639,7 @@ async def build_worksheet_envelope(month: str) -> dict[str, Any]:
         worksheet_state,
     )
     section_subtotals = compute_section_subtotals(bills, liabilities, credit_cards)
-    grand_totals = compute_grand_totals(credit_cards, section_subtotals)
+    grand_totals = compute_grand_totals(bills, liabilities, credit_cards)
     bill_groups = await _slim_bill_groups_for_worksheet()
 
     return {

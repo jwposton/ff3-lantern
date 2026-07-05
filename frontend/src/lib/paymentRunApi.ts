@@ -90,10 +90,39 @@ export type SectionSubtotals = {
   }
 }
 
+export type GrandTotalsBreakdown = {
+  owed: {
+    liabilities: string
+    revolving: string
+    real_estate?: string
+    loans?: string
+  }
+  due: {
+    cash: string
+    credit: string
+  }
+  planned: {
+    cash: string
+    credit: string
+  }
+  due_planned: {
+    liabilities: DuePlannedRailSection
+    bills: DuePlannedRailSection
+    credit_card_pmts: DuePlannedRailSection
+  }
+}
+
+export type DuePlannedRailSection = {
+  cash: { due: string; planned: string }
+  credit: { due: string; planned: string }
+}
+
 export type GrandTotals = {
   owed: string
   due: string
   planned_cash: string
+  planned_total: string
+  breakdown: GrandTotalsBreakdown
 }
 
 export type ExcludedLiability = {

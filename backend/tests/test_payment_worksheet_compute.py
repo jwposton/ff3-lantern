@@ -292,15 +292,131 @@ def test_grand_totals_includes_cc_owed():
         {"owed": "1200.00", "planned_amount": "400.00"},
         {"owed": "800.00", "planned_amount": "200.00"},
     ]
-    section_subtotals = {
-        "bills": {"owed": "0.00", "due": "150.00", "planned_cash": "80.00"},
-        "liabilities": {"owed": "50000.00", "due": "627.18", "planned_cash": "427.18"},
-        "credit_cards": {"planned_cash": "600.00"},
-    }
-    result = compute_grand_totals(credit_cards, section_subtotals)
+    bills = [{"amount_due": "150.00", "planned_amount": "80.00", "payment_rail": "bank", "counts_toward_cash_plan": True}]
+    liabilities = [
+        {
+            "account_id": "m1",
+            "owed": "50000.00",
+            "amount_due": "627.18",
+            "planned_amount": "427.18",
+        }
+    ]
+    result = compute_grand_totals(bills, liabilities, credit_cards)
     assert result["owed"] == "52000.00"
     assert result["due"] == "777.18"
     assert result["planned_cash"] == "1107.18"
+    assert result["planned_total"] == "1107.18"
+    assert result["breakdown"]["owed"]["liabilities"] == "50000.00"
+    assert result["breakdown"]["owed"]["revolving"] == "2000.00"
+    assert result["breakdown"]["due"]["cash"] == "777.18"
+    assert result["breakdown"]["due"]["credit"] == "0.00"
+    assert result["breakdown"]["planned"]["cash"] == "1107.18"
+    assert result["breakdown"]["planned"]["credit"] == "0.00"
+
+
+def test_grand_totals_breakdown_due_and_planned_by_rail():
+    bills = [
+        {
+            "amount_due": "100.00",
+            "planned_amount": "100.00",
+            "payment_rail": "bank",
+            "counts_toward_cash_plan": True,
+        },
+        {
+            "amount_due": "50.00",
+            "planned_amount": "50.00",
+            "payment_rail": "credit_card",
+            "counts_toward_cash_plan": False,
+        },
+    ]
+    liabilities = [
+        {
+            "amount_due": "25.00",
+            "planned_amount": "25.00",
+            "payment_rail": "credit_card",
+            "counts_toward_cash_plan": False,
+        },
+        {
+            "account_id": "loan-1",
+            "owed": "10000.00",
+            "amount_due": "500.00",
+            "planned_amount": "500.00",
+        },
+    ]
+    credit_cards = [{"owed": "300.00", "planned_amount": "200.00"}]
+    result = compute_grand_totals(bills, liabilities, credit_cards)
+    assert result["due"] == "675.00"
+    assert result["breakdown"]["due"]["cash"] == "600.00"
+    assert result["breakdown"]["due"]["credit"] == "75.00"
+    assert result["planned_cash"] == "800.00"
+    assert result["planned_total"] == "875.00"
+    assert result["breakdown"]["planned"]["cash"] == "800.00"
+    assert result["breakdown"]["planned"]["credit"] == "75.00"
+    sections = result["breakdown"]["due_planned"]
+    assert sections["liabilities"]["cash"]["due"] == "500.00"
+    assert sections["liabilities"]["credit"]["due"] == "25.00"
+    assert sections["liabilities"]["cash"]["planned"] == "500.00"
+    assert sections["liabilities"]["credit"]["planned"] == "25.00"
+    assert sections["bills"]["cash"]["due"] == "100.00"
+    assert sections["bills"]["credit"]["due"] == "50.00"
+    assert sections["bills"]["cash"]["planned"] == "100.00"
+    assert sections["bills"]["credit"]["planned"] == "50.00"
+    assert sections["credit_card_pmts"]["cash"]["planned"] == "200.00"
+    assert sections["credit_card_pmts"]["cash"]["due"] == "0.00"
+    assert sections["credit_card_pmts"]["credit"]["planned"] == "0.00"
+
+
+def test_grand_totals_real_estate_vs_loans_split():
+    liabilities = [
+        {
+            "account_id": "mortgage-1",
+            "owed": "250000.00",
+            "amount_due": "1800.00",
+            "account_role": "mortgage",
+        },
+        {
+            "account_id": "car-1",
+            "owed": "12000.00",
+            "amount_due": "350.00",
+            "account_role": "debt",
+        },
+    ]
+    result = compute_grand_totals([], liabilities, [])
+    assert result["owed"] == "262000.00"
+    assert result["breakdown"]["owed"]["liabilities"] == "262000.00"
+    assert result["breakdown"]["owed"]["real_estate"] == "250000.00"
+    assert result["breakdown"]["owed"]["loans"] == "12000.00"
+    assert "revolving" in result["breakdown"]["owed"]
+    assert result["breakdown"]["owed"]["revolving"] == "0.00"
+
+
+def test_grand_totals_real_estate_from_account_type():
+    liabilities = [
+        {
+            "account_id": "mortgage-1",
+            "owed": "250000.00",
+            "amount_due": "1800.00",
+            "account_type": "Mortgage account",
+        },
+    ]
+    result = compute_grand_totals([], liabilities, [])
+    assert result["breakdown"]["owed"]["real_estate"] == "250000.00"
+    assert "loans" not in result["breakdown"]["owed"]
+
+
+def test_grand_totals_hides_zero_re_split_when_all_loans():
+    liabilities = [
+        {
+            "account_id": "car-1",
+            "owed": "5000.00",
+            "amount_due": "200.00",
+            "account_role": "debt",
+        },
+    ]
+    result = compute_grand_totals([], liabilities, [])
+    owed_breakdown = result["breakdown"]["owed"]
+    assert owed_breakdown["loans"] == "5000.00"
+    assert "real_estate" not in owed_breakdown
 
 
 @pytest.mark.asyncio
@@ -764,7 +880,20 @@ async def test_section_subtotals_unchanged_with_grouped_bills(data_dir):
         ],
         [],
     )
-    expected_grand = compute_grand_totals([], expected_section)
+    expected_grand = compute_grand_totals(flat_rows, [
+            {
+                "account_id": "loan-1",
+                "owed": "250000.00",
+                "amount_due": "1800.00",
+                "planned_amount": "1800.00",
+            },
+            {
+                "amount_due": "200.00",
+                "planned_amount": "200.00",
+                "counts_toward_cash_plan": True,
+                "payment_rail": "bank",
+            },
+        ], [])
 
     envelope = await build_worksheet_envelope("2026-07")
     assert envelope["section_subtotals"]["bills"] == expected_section["bills"]

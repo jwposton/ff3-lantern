@@ -8,6 +8,7 @@ from loan_profiles import serialize_loan_profile_to_notes
 from payment_worksheet_liabilities import (
     compute_liability_display_fields,
     is_liability_account,
+    is_real_estate_liability,
     liability_row_key,
 )
 
@@ -41,6 +42,17 @@ def test_is_liability_account_types():
     assert is_liability_account({"type": "Liability account", "account_role": "mortgage"})
     assert is_liability_account({"type": "asset", "account_role": "debt"})
     assert not is_liability_account({"type": "asset", "account_role": "creditCard"})
+
+
+def test_is_real_estate_liability_classification():
+    assert is_real_estate_liability({"account_role": "Mortgage account"})
+    assert is_real_estate_liability({"account_role": "mortgage"})
+    assert is_real_estate_liability({"account_type": "mortgage"})
+    assert is_real_estate_liability({"liability_type": "Mortgage"})
+    assert is_real_estate_liability({"has_escrow": True})
+    assert not is_real_estate_liability(
+        {"account_role": "debt", "account_type": "liabilities"}
+    )
 
 
 def test_compute_liability_display_fields_with_profile():
