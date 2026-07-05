@@ -291,7 +291,14 @@ async def _enrich_bill_group(row: dict) -> BillGroupRow:
     )
 
 
-async def _validate_bill_group_member_ids(member_ids: list[int]) -> None:
+async def _validate_bill_group_member_ids(
+    member_ids: list[int],
+    group_id: str,
+) -> None:
+    if not member_ids:
+        return
+
+    sections: list[str] = []
     for registry_id in member_ids:
         row = await sidecar_db.get_worksheet_registry(registry_id)
         if row is None:
@@ -306,6 +313,42 @@ async def _validate_bill_group_member_ids(member_ids: list[int]) -> None:
                 detail=(
                     f"Registry row {registry_id} cannot join a bill group "
                     f"(worksheet_section must be bills or liabilities)."
+                ),
+            )
+        sections.append(str(section))
+
+    if len(set(sections)) > 1:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "All bill group members must belong to the same worksheet section "
+                "(Bills or Liabilities)."
+            ),
+        )
+
+    required_section = sections[0]
+    existing_members = await sidecar_db.list_bill_group_members(group_id)
+    for member in existing_members:
+        if member["registry_id"] in member_ids:
+            continue
+        row = await sidecar_db.get_worksheet_registry(member["registry_id"])
+        if row is None:
+            continue
+        existing_section = row.get("worksheet_section")
+        if existing_section in BILL_GROUP_SECTIONS:
+            required_section = str(existing_section)
+            break
+
+    for registry_id in member_ids:
+        row = await sidecar_db.get_worksheet_registry(registry_id)
+        if row is None:
+            continue
+        if str(row.get("worksheet_section") or "") != required_section:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "All bill group members must belong to the same worksheet section "
+                    "(Bills or Liabilities)."
                 ),
             )
 
@@ -533,7 +576,7 @@ async def patch_bill_group(
                 status_code=422,
                 detail="member_ids must be an array when provided.",
             )
-        await _validate_bill_group_member_ids(member_ids)
+        await _validate_bill_group_member_ids(member_ids, group_id)
         member_ids_update = member_ids
     if member_ids_update is not None or updates:
         await sidecar_db.patch_bill_group(
