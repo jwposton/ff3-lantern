@@ -387,6 +387,7 @@ export function PaymentWorksheetPage() {
                   {data.bills.length > 0 ? (
                     <BillsTable
                       rows={data.bills}
+                      billGroups={data.bill_groups}
                       buckets={data.buckets}
                       creditCards={data.credit_cards}
                       subtotals={data.section_subtotals.bills}
