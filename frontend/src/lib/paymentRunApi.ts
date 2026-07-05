@@ -194,6 +194,8 @@ export type UpdateBillRegistryPayload = {
   amount_min?: string
   amount_max?: string
   repeat_freq?: string | null
+  bill_group_id?: string | null
+  show_in_group?: boolean
 }
 
 export type BillRegistryEditDetails = {
