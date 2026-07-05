@@ -460,7 +460,7 @@ export function CreditCardsTable({
                 className="max-w-[7rem]"
               />
               <SortableHead
-                label="Bucket"
+                label="Account"
                 columnKey="bucket"
                 activeKey={sortKey}
                 direction={sortDir}

@@ -238,8 +238,8 @@ export function BillsTable({
         <TableHeader>
           <TableRow>
             <TableHead className="min-w-[8.75rem]">Bill</TableHead>
-            <TableHead className="w-[5.5rem]">Pmt Src</TableHead>
-            <TableHead className="w-[6rem]">Bucket</TableHead>
+            <TableHead className="w-[5.5rem]">Pay from</TableHead>
+            <TableHead className="w-[6rem]">Account</TableHead>
             <TableHead className="w-[6rem] text-right">Amt. Due</TableHead>
             <TableHead className="w-[7rem] text-right">Planned</TableHead>
             <TableHead className="w-[4.5rem] text-center">Paid</TableHead>

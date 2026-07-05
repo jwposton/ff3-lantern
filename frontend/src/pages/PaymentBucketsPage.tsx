@@ -93,10 +93,10 @@ export function PaymentBucketsPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Cash buckets
+            Cash accounts
           </h1>
           <p className="text-muted-foreground text-sm">
-            Link Firefly cash accounts to funding buckets. Set user balances on
+            Link Firefly cash accounts to cash accounts. Set user balances on
             the{" "}
             <Link
               to="/manage/payment-run"
@@ -109,7 +109,7 @@ export function PaymentBucketsPage() {
         </div>
         <Button type="button" onClick={openAddBucket}>
           <Plus className="mr-2 size-4" />
-          Add bucket
+          Add cash account
         </Button>
       </div>
 
@@ -119,8 +119,8 @@ export function PaymentBucketsPage() {
         <Card>
           <CardContent className="py-8 text-center">
             <p className="text-muted-foreground text-sm">
-              No funding buckets yet. Click{" "}
-              <span className="font-medium text-foreground">Add bucket</span>{" "}
+              No cash accounts yet. Click{" "}
+              <span className="font-medium text-foreground">Add cash account</span>{" "}
               to create one.
             </p>
           </CardContent>

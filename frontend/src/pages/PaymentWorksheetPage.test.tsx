@@ -381,7 +381,7 @@ describe("PaymentWorksheetPage", () => {
     expect(getCalls.length).toBeGreaterThan(0)
   })
 
-  it("empty-bucket state points to Cash buckets hub", async () => {
+  it("empty-bucket state points to Cash accounts hub", async () => {
     mockPaymentFetch({ envelope: EMPTY_ENVELOPE })
 
     render(
@@ -392,12 +392,12 @@ describe("PaymentWorksheetPage", () => {
 
     await waitFor(() => {
       const bar = screen.getByTestId("funding-bucket-bar")
-      expect(bar.textContent).toMatch(/No funding buckets — add them in/i)
+      expect(bar.textContent).toMatch(/No cash accounts — add them in/i)
       expect(
         bar.querySelector('a[href="/manage/payment-run/buckets"]'),
       ).toBeTruthy()
     })
-    expect(screen.queryByRole("button", { name: "Add bucket" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Add cash account" })).toBeNull()
   })
 
   it("renders bucket bar and credit card rows from mock envelope", async () => {
@@ -447,7 +447,7 @@ describe("PaymentWorksheetPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("Shortfall in funding buckets")).toBeTruthy()
+      expect(screen.getByText("Shortfall in cash accounts")).toBeTruthy()
     })
   })
 
@@ -575,7 +575,7 @@ describe("PaymentWorksheetPage", () => {
 
     await waitFor(() => {
       const grandTotal = screen.getByTestId("worksheet-grand-total")
-      const shortfall = screen.getByText("Shortfall in funding buckets")
+      const shortfall = screen.getByText("Shortfall in cash accounts")
       expect(
         grandTotal.compareDocumentPosition(shortfall) &
           Node.DOCUMENT_POSITION_FOLLOWING,

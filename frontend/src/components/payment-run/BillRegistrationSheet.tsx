@@ -519,11 +519,11 @@ export function BillRegistrationSheet({
       return
     }
     if (paymentRail === "bank" && !fundingBucketKey) {
-      setError("Funding bucket is required for bank account payments.")
+      setError("Cash account is required when paid from a bank account.")
       return
     }
     if (paymentRail === "credit_card" && !creditCardAccountId) {
-      setError("Credit card is required when payment rail is credit card.")
+      setError("Credit card is required when paid from a credit card.")
       return
     }
     const trimmedAmountMin = amountMin.trim()
@@ -642,10 +642,6 @@ export function BillRegistrationSheet({
               <label className="text-sm font-medium" htmlFor="ff-bill">
                 Firefly bill
               </label>
-              <p className="text-muted-foreground text-xs">
-                Only subscriptions not already on this worksheet. Cache clear does
-                not affect this list — it loads live from Firefly.
-              </p>
               {loadingAvailable ? (
                 <p className="text-muted-foreground text-sm">Loading bills…</p>
               ) : availableBills.length === 0 ? (
@@ -881,7 +877,7 @@ export function BillRegistrationSheet({
               fieldKey="payment_rail"
               suggestedFields={suggestedFields}
             >
-              Payment rail
+              Paid from
             </FieldLabelWithSuggested>
             <div className="flex gap-2">
               <Button
@@ -906,7 +902,7 @@ export function BillRegistrationSheet({
             {paymentRail === "credit_card" ? (
               <p className="text-muted-foreground text-xs">
                 Charge lands on the card; plan paydown in Credit cards. This row
-                won&apos;t count toward bucket cash.
+                won&apos;t count toward cash account balances.
               </p>
             ) : null}
           </div>
@@ -914,7 +910,7 @@ export function BillRegistrationSheet({
           {paymentRail === "bank" ? (
             <div className="space-y-1">
               <label className="text-sm font-medium" htmlFor="bill-bucket">
-                Funding bucket
+                Cash account
               </label>
               <select
                 id="bill-bucket"
@@ -922,7 +918,7 @@ export function BillRegistrationSheet({
                 value={fundingBucketKey}
                 onChange={(event) => setFundingBucketKey(event.target.value)}
               >
-                <option value="">Select bucket…</option>
+                <option value="">Select account…</option>
                 {buckets.map((bucket) => (
                   <option key={bucket.id} value={bucket.id}>
                     {bucket.label}
