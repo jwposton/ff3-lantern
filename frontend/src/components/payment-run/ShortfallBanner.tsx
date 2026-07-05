@@ -21,9 +21,9 @@ export function ShortfallBanner({ buckets }: ShortfallBannerProps) {
       <div className="flex gap-3">
         <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
         <div className="space-y-2">
-          <p className="font-medium text-destructive">Shortfall in funding buckets</p>
+          <p className="font-medium text-destructive">Shortfall in cash accounts</p>
           <p className="text-sm">
-            One or more buckets have negative remaining after planned outflows.
+            One or more cash accounts have negative remaining after planned outflows.
             Adjust planned payments or user balances before you pay.
           </p>
           {negativeBuckets.length > 0 ? (

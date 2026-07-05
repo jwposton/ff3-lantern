@@ -110,7 +110,7 @@ export function PaymentCardsPage() {
             Credit cards
           </h1>
           <p className="text-muted-foreground text-sm">
-            Edit bucket, limits, and defaults for cards on the worksheet.
+            Edit cash account, limits, and defaults for cards on the worksheet.
             Planned amounts and paid status stay on the{" "}
             <Link
               to="/manage/payment-run"

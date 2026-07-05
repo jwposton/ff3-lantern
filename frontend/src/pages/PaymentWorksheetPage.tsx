@@ -108,7 +108,7 @@ export function PaymentWorksheetPage() {
       if (!data.refreshed_at) {
         return (
           "Credit cards load from Firefly when you click Refresh balances — " +
-          "there is no separate add step. Add funding buckets first if needed."
+          "there is no separate add step. Add cash accounts first if needed."
         )
       }
       return (
@@ -120,7 +120,7 @@ export function PaymentWorksheetPage() {
       (row) => !row.funding_bucket_key,
     )
     if (unassigned) {
-      return "Map cards to funding buckets to see planned outflows"
+      return "Map cards to cash accounts to see planned outflows"
     }
     return null
   }, [data])
@@ -488,12 +488,12 @@ export function PaymentWorksheetPage() {
                           Firefly credit card accounts appear here automatically
                           when you click{" "}
                           <span className="font-medium">Refresh balances</span>.
-                          Add funding buckets in{" "}
+                          Add cash accounts in{" "}
                           <Link
                             to="/manage/payment-run/buckets"
                             className="font-medium text-primary underline-offset-2 hover:underline"
                           >
-                            Cash buckets
+                            Cash accounts
                           </Link>{" "}
                           first if you want to map cards to cash pools.
                         </p>

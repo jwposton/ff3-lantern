@@ -64,7 +64,7 @@ export function BucketSheet({
   async function handleSave() {
     const trimmed = label.trim()
     if (!trimmed) {
-      setError("Bucket label is required.")
+      setError("Cash account label is required.")
       return
     }
     setSaving(true)
@@ -95,7 +95,7 @@ export function BucketSheet({
       onOpenChange(false)
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Could not delete bucket. Try again.",
+        err instanceof Error ? err.message : "Could not delete cash account. Try again.",
       )
     } finally {
       setDeleting(false)
@@ -108,7 +108,7 @@ export function BucketSheet({
       <SheetContent side="right" className="sm:max-w-md">
         <SheetHeader>
           <SheetTitle>
-            {bucket ? "Edit funding bucket" : "Add funding bucket"}
+            {bucket ? "Edit cash account" : "Add cash account"}
           </SheetTitle>
           <SheetDescription>
             Link checking or savings accounts in Firefly to this cash pool.
@@ -168,8 +168,8 @@ export function BucketSheet({
             <div className="border-destructive/40 bg-destructive/5 space-y-3 rounded-md border p-3">
               <p className="text-sm">
                 Delete <span className="font-medium">{bucket.label}</span>? Cards
-                mapped to this bucket will show as unassigned until you pick
-                another bucket.
+                mapped to this account will show as unassigned until you pick
+                another cash account.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button

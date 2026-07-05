@@ -97,7 +97,7 @@ describe("PaymentSetupPage", () => {
         screen.getByRole("heading", { name: "Payment setup" }),
       ).toBeTruthy()
       expect(screen.getByText("1 registered · 1 available to link")).toBeTruthy()
-      expect(screen.getByText("1 funding bucket")).toBeTruthy()
+      expect(screen.getByText("1 cash account")).toBeTruthy()
       expect(screen.getByText("1 on worksheet · 1 excluded")).toBeTruthy()
       expect(screen.getByText("1 accounts · 1 excluded")).toBeTruthy()
       expect(screen.getByText("1 bill group")).toBeTruthy()

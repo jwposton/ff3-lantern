@@ -118,12 +118,12 @@ export function PaymentSetupPage() {
           manageHref="/manage/bills"
         />
         <SetupCard
-          title="Cash buckets"
+          title="Cash accounts"
           loading={countsLoading}
           description={
             bucketCount === 1
-              ? "1 funding bucket"
-              : `${bucketCount} funding buckets`
+              ? "1 cash account"
+              : `${bucketCount} cash accounts`
           }
           manageHref="/manage/payment-run/buckets"
         />

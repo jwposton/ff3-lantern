@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Bill registration (Link existing)** — empty state no longer shows redundant helper text above the “no bills found” message (#46)
+- **Payment worksheet copy** — renamed Payment rail → Paid from, Pmt Src → Pay from, and Bucket/Funding bucket → Cash account / Account across worksheet surfaces (#47)
+
 ## [2.2.0] - 2026-07-05
 
 ### Added

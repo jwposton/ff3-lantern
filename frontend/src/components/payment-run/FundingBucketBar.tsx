@@ -79,12 +79,12 @@ export function FundingBucketBar({
         className="text-muted-foreground rounded-md border border-dashed bg-muted/30 px-4 py-3 text-center text-sm"
         data-testid="funding-bucket-bar"
       >
-        No funding buckets — add them in{" "}
+        No cash accounts — add them in{" "}
         <Link
           to="/manage/payment-run/buckets"
           className="font-medium text-foreground underline-offset-2 hover:underline"
         >
-          Cash buckets
+          Cash accounts
         </Link>
         .
       </div>
@@ -97,7 +97,7 @@ export function FundingBucketBar({
           <Table className={COMPACT_TABLE}>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[8rem]">Bucket</TableHead>
+                <TableHead className="min-w-[8rem]">Account</TableHead>
                 <TableHead className="text-right">Balance</TableHead>
                 <TableHead className="text-right">User balance</TableHead>
                 <TableHead className="text-right">Planned outflow</TableHead>

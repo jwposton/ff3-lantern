@@ -141,7 +141,7 @@ export function CreditCardSheet({
         <div className="space-y-4 px-4">
           <div className="space-y-1">
             <label className="text-sm font-medium" htmlFor="cc-bucket">
-              Funding bucket
+              Cash account
             </label>
             <select
               id="cc-bucket"

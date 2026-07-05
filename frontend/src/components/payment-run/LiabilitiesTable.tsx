@@ -105,7 +105,7 @@ export function LiabilitiesTable({
         <TableHeader>
           <TableRow>
             <TableHead className="min-w-[8.75rem]">Name</TableHead>
-            <TableHead className="w-[6.5rem]">Pmt Src</TableHead>
+            <TableHead className="w-[6.5rem]">Pay from</TableHead>
             <TableHead className="w-[6rem] text-right">Owed</TableHead>
             <TableHead className="w-[5.5rem] text-right">Remaining pmt</TableHead>
             <TableHead className="w-[6rem] text-right">Est. interest</TableHead>
