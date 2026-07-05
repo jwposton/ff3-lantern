@@ -48,6 +48,8 @@ export type BillRow = PlannedAmountRow &
   credit_card_account_id: string | null
   amount_mode: string
   worksheet_section: string
+  bill_group_id?: string | null
+  show_in_group?: boolean
 }
 
 export type LiabilityRow = PlannedAmountRow &
@@ -67,6 +69,8 @@ export type LiabilityRow = PlannedAmountRow &
   counts_toward_cash_plan?: boolean
   credit_card_account_id?: string | null
   amount_mode?: string
+  bill_group_id?: string | null
+  show_in_group?: boolean
 }
 
 export type SectionSubtotals = {
@@ -189,7 +193,7 @@ export type UpdateBillRegistryPayload = {
   name?: string
   amount_min?: string
   amount_max?: string
-  repeat_freq?: string
+  repeat_freq?: string | null
 }
 
 export type BillRegistryEditDetails = {
@@ -233,6 +237,14 @@ export type ExcludedCreditCard = {
   name: string | null
 }
 
+export type WorksheetBillGroupSummary = {
+  id: string
+  label: string
+  sort_order: number
+  member_count: number
+  visible_count: number
+}
+
 export type PaymentWorksheetEnvelope = {
   month: string
   refreshed_at: string | null
@@ -242,6 +254,7 @@ export type PaymentWorksheetEnvelope = {
   bills: BillRow[]
   liabilities: LiabilityRow[]
   excluded_liabilities: ExcludedLiability[]
+  bill_groups: WorksheetBillGroupSummary[]
   section_subtotals: SectionSubtotals
   grand_totals: GrandTotals
   shortfall: boolean
