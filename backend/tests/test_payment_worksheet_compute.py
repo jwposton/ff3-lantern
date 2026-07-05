@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from decimal import Decimal
 
 import pytest
 
@@ -364,6 +365,114 @@ def test_grand_totals_breakdown_due_and_planned_by_rail():
     assert sections["credit_card_pmts"]["cash"]["planned"] == "200.00"
     assert sections["credit_card_pmts"]["cash"]["due"] == "0.00"
     assert sections["credit_card_pmts"]["credit"]["planned"] == "0.00"
+
+
+def test_grand_totals_by_credit_card_breakdown():
+    bills = [
+        {
+            "amount_due": "50.00",
+            "planned_amount": "50.00",
+            "payment_rail": "credit_card",
+            "counts_toward_cash_plan": False,
+            "credit_card_account_id": "cc-chase",
+        },
+        {
+            "amount_due": "10.00",
+            "planned_amount": "10.00",
+            "payment_rail": "credit_card",
+            "counts_toward_cash_plan": False,
+            "credit_card_account_id": None,
+        },
+    ]
+    liabilities = [
+        {
+            "amount_due": "25.00",
+            "planned_amount": "25.00",
+            "payment_rail": "credit_card",
+            "counts_toward_cash_plan": False,
+            "credit_card_account_id": "cc-amex",
+        },
+    ]
+    credit_cards = [
+        {
+            "account_id": "cc-chase",
+            "name": "Chase VISA",
+            "sort_order": 1,
+            "owed": "300.00",
+            "planned_amount": "200.00",
+        },
+        {
+            "account_id": "cc-amex",
+            "name": "Amex",
+            "sort_order": 2,
+            "owed": "100.00",
+            "planned_amount": "0.00",
+        },
+    ]
+    result = compute_grand_totals(bills, liabilities, credit_cards)
+    sections = result["breakdown"]["due_planned"]
+    bill_cards = sections["bills"]["by_credit_card"]
+    liab_cards = sections["liabilities"]["by_credit_card"]
+    assert len(bill_cards) == 2
+    assert bill_cards[0] == {
+        "account_id": "cc-chase",
+        "name": "Chase VISA",
+        "due": "50.00",
+        "planned": "50.00",
+    }
+    assert bill_cards[1] == {
+        "account_id": None,
+        "name": "Unassigned",
+        "due": "10.00",
+        "planned": "10.00",
+    }
+    assert len(liab_cards) == 1
+    assert liab_cards[0] == {
+        "account_id": "cc-amex",
+        "name": "Amex",
+        "due": "25.00",
+        "planned": "25.00",
+    }
+    bill_due = sum(Decimal(c["due"]) for c in bill_cards)
+    bill_planned = sum(Decimal(c["planned"]) for c in bill_cards)
+    assert bill_due == Decimal(sections["bills"]["credit"]["due"])
+    assert bill_planned == Decimal(sections["bills"]["credit"]["planned"])
+    liab_due = sum(Decimal(c["due"]) for c in liab_cards)
+    liab_planned = sum(Decimal(c["planned"]) for c in liab_cards)
+    assert liab_due == Decimal(sections["liabilities"]["credit"]["due"])
+    assert liab_planned == Decimal(sections["liabilities"]["credit"]["planned"])
+
+
+def test_grand_totals_by_credit_card_hides_zero_activity():
+    bills = [
+        {
+            "amount_due": "50.00",
+            "planned_amount": "50.00",
+            "payment_rail": "credit_card",
+            "counts_toward_cash_plan": False,
+            "credit_card_account_id": "cc-chase",
+        },
+    ]
+    credit_cards = [
+        {
+            "account_id": "cc-chase",
+            "name": "Chase VISA",
+            "sort_order": 1,
+            "owed": "300.00",
+            "planned_amount": "200.00",
+        },
+        {
+            "account_id": "cc-amex",
+            "name": "Amex",
+            "sort_order": 2,
+            "owed": "100.00",
+            "planned_amount": "0.00",
+        },
+    ]
+    result = compute_grand_totals(bills, [], credit_cards)
+    cards = result["breakdown"]["due_planned"]["bills"]["by_credit_card"]
+    assert len(cards) == 1
+    assert cards[0]["account_id"] == "cc-chase"
 
 
 def test_grand_totals_real_estate_vs_loans_split():

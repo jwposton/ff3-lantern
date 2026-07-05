@@ -3,7 +3,11 @@ import { useMemo, useState } from "react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatDisplayAmount } from "@/lib/formatDisplay"
-import type { DuePlannedRailSection, GrandTotals } from "@/lib/paymentRunApi"
+import type {
+  CreditCardDuePlannedRow,
+  DuePlannedRailSection,
+  GrandTotals,
+} from "@/lib/paymentRunApi"
 import { cn } from "@/lib/utils"
 
 type WorksheetGrandTotalProps = {
@@ -168,6 +172,7 @@ type MonthChildRow = {
   planned: string
   dueTestId: string
   plannedTestId: string
+  children?: MonthChildRow[]
 }
 
 type MonthGroup = {
@@ -184,22 +189,25 @@ type DuePlannedSections = GrandTotals["breakdown"]["due_planned"]
 type DuePlannedRail = keyof DuePlannedRailSection
 
 const DUE_PLANNED_CHILD_SPECS: {
-  sectionKey: keyof DuePlannedSections
+  sectionKey: "liabilities" | "bills" | "credit_card_pmts"
   key: string
   label: string
   testIdPrefix: string
+  cardBreakdown?: boolean
 }[] = [
   {
     sectionKey: "liabilities",
     key: "liabilities",
     label: "Liabilities",
     testIdPrefix: "liabilities",
+    cardBreakdown: true,
   },
   {
     sectionKey: "bills",
     key: "bills",
     label: "Bills",
     testIdPrefix: "bills",
+    cardBreakdown: true,
   },
   {
     sectionKey: "credit_card_pmts",
@@ -209,16 +217,43 @@ const DUE_PLANNED_CHILD_SPECS: {
   },
 ]
 
+function buildCreditCardBreakdownChildren(
+  cards: CreditCardDuePlannedRow[],
+  testIdPrefix: string,
+): MonthChildRow[] {
+  return cards
+    .filter((card) => !isAllZero(card.due, card.planned))
+    .map((card) => {
+      const key = card.account_id ?? "unassigned"
+      return {
+        key: `card-${key}`,
+        label: card.name,
+        due: card.due,
+        planned: card.planned,
+        dueTestId: `grand-total-${testIdPrefix}-card-${key}-due`,
+        plannedTestId: `grand-total-${testIdPrefix}-card-${key}-planned`,
+      }
+    })
+}
+
 function buildDuePlannedRailChildren(
   sections: DuePlannedSections,
   rail: DuePlannedRail,
 ): MonthChildRow[] {
   const children: MonthChildRow[] = []
   for (const spec of DUE_PLANNED_CHILD_SPECS) {
-    const { due, planned } = sections[spec.sectionKey][rail]
+    const section = sections[spec.sectionKey]
+    const { due, planned } = section[rail]
     if (isAllZero(due, planned)) {
       continue
     }
+    const cardChildren =
+      rail === "credit" && spec.cardBreakdown
+        ? buildCreditCardBreakdownChildren(
+            section.by_credit_card ?? [],
+            spec.testIdPrefix,
+          )
+        : []
     children.push({
       key: spec.key,
       label: spec.label,
@@ -226,6 +261,7 @@ function buildDuePlannedRailChildren(
       planned,
       dueTestId: `grand-total-${spec.testIdPrefix}-${rail}-due`,
       plannedTestId: `grand-total-${spec.testIdPrefix}-${rail}-planned`,
+      children: cardChildren.length > 0 ? cardChildren : undefined,
     })
   }
   return children
@@ -418,23 +454,68 @@ function MonthCard({ grandTotals }: { grandTotals: GrandTotals }) {
                 </div>
                 {collapsible && expanded ? (
                   <ul className="border-t">
-                    {group.children.map((child) => (
-                      <li
-                        key={child.key}
-                        className="grid grid-cols-[1fr_6.5rem_6.5rem] items-baseline gap-x-3 py-2 pr-4 pl-10 text-xs"
-                      >
-                        <span className="text-muted-foreground">{child.label}</span>
-                        <span className="text-right">
-                          <Amount value={child.due} testId={child.dueTestId} />
-                        </span>
-                        <span className="text-right">
-                          <Amount
-                            value={child.planned}
-                            testId={child.plannedTestId}
-                          />
-                        </span>
-                      </li>
-                    ))}
+                    {group.children.map((child) => {
+                      const childKey = `${group.key}-${child.key}`
+                      const childExpanded = isExpanded(childKey)
+                      const childCollapsible = (child.children?.length ?? 0) > 0
+                      return (
+                        <li key={child.key}>
+                          <div
+                            className={cn(
+                              "grid grid-cols-[1fr_6.5rem_6.5rem] items-baseline gap-x-3 py-2 pr-4 pl-10 text-xs",
+                              childCollapsible && "text-muted-foreground",
+                            )}
+                          >
+                            {childCollapsible ? (
+                              <CollapseToggle
+                                label={child.label}
+                                expanded={childExpanded}
+                                onToggle={() => toggle(childKey)}
+                              />
+                            ) : (
+                              <span className="text-muted-foreground">
+                                {child.label}
+                              </span>
+                            )}
+                            <span className="text-right">
+                              <Amount value={child.due} testId={child.dueTestId} />
+                            </span>
+                            <span className="text-right">
+                              <Amount
+                                value={child.planned}
+                                testId={child.plannedTestId}
+                              />
+                            </span>
+                          </div>
+                          {childCollapsible && childExpanded ? (
+                            <ul className="border-t">
+                              {child.children!.map((grandchild) => (
+                                <li
+                                  key={grandchild.key}
+                                  className="grid grid-cols-[1fr_6.5rem_6.5rem] items-baseline gap-x-3 py-2 pr-4 pl-16 text-xs"
+                                >
+                                  <span className="text-muted-foreground">
+                                    {grandchild.label}
+                                  </span>
+                                  <span className="text-right">
+                                    <Amount
+                                      value={grandchild.due}
+                                      testId={grandchild.dueTestId}
+                                    />
+                                  </span>
+                                  <span className="text-right">
+                                    <Amount
+                                      value={grandchild.planned}
+                                      testId={grandchild.plannedTestId}
+                                    />
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </li>
+                      )
+                    })}
                   </ul>
                 ) : null}
               </li>
