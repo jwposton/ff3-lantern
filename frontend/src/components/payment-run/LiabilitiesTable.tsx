@@ -219,11 +219,11 @@ export function LiabilitiesTable({
                     </button>
                   ) : isAccount ? (
                     <Link
-                      to="/manage/liabilities"
-                      className="text-muted-foreground hover:text-foreground text-xs font-medium"
+                      to={`/manage/liabilities?account=${encodeURIComponent(row.account_id!)}`}
+                      className="text-muted-foreground hover:text-foreground inline-flex rounded p-0.5"
                       aria-label={`Manage ${name}`}
                     >
-                      Manage
+                      <Pencil className="size-3" aria-hidden />
                     </Link>
                   ) : onEditRegistration ? (
                     <button
@@ -237,10 +237,10 @@ export function LiabilitiesTable({
                   ) : row.registry_id ? (
                     <Link
                       to={`/manage/bills/${row.registry_id}`}
-                      className="text-muted-foreground hover:text-foreground text-xs font-medium"
+                      className="text-muted-foreground hover:text-foreground inline-flex rounded p-0.5"
                       aria-label={`Manage ${name}`}
                     >
-                      Manage
+                      <Pencil className="size-3" aria-hidden />
                     </Link>
                   ) : null}
                 </TableCell>

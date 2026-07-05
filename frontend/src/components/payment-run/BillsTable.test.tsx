@@ -240,4 +240,19 @@ describe("BillsTable expandable bill groups", () => {
       "/manage/payment-run/bill-groups?group=utilities",
     )
   })
+
+  it("links per-row Manage to bill detail, not Bills hub", async () => {
+    renderBillsTable()
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand Utilities bills" }),
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Electric")).toBeTruthy()
+    })
+
+    const manageLink = screen.getByRole("link", { name: "Manage Electric" })
+    expect(manageLink.getAttribute("href")).toBe("/manage/bills/1")
+  })
 })

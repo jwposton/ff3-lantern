@@ -3,8 +3,18 @@ import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { CircleHelp, RefreshCw, Settings2 } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
+import {
+  BillRegistrationSheet,
+  type BillRegistrationEditTarget,
+} from "@/components/payment-run/BillRegistrationSheet"
 import { BillsTable, countPaidRows } from "@/components/payment-run/BillsTable"
+import { CreditCardSheet } from "@/components/payment-run/CreditCardSheet"
+import type { CreditCardDetailsInput } from "@/components/payment-run/CreditCardSheet"
 import { CreditCardsTable } from "@/components/payment-run/CreditCardsTable"
+import {
+  LiabilityAccountSheet,
+  type LiabilityAccountDetailsInput,
+} from "@/components/payment-run/LiabilityAccountSheet"
 import { LiabilitiesTable } from "@/components/payment-run/LiabilitiesTable"
 import { FundingBucketBar } from "@/components/payment-run/FundingBucketBar"
 import { ShortfallBanner } from "@/components/payment-run/ShortfallBanner"
@@ -18,20 +28,25 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useHealth } from "@/hooks/useHealth"
+import { registeredBillsQueryKey } from "@/hooks/useBillHistory"
 import {
   paymentRunQueryKey,
   usePaymentWorksheet,
 } from "@/hooks/usePaymentWorksheet"
-import { useLoanMeta } from "@/hooks/useLoans"
+import { useLoanMeta, useLoans } from "@/hooks/useLoans"
 import {
+  billGroupsQueryKey,
   currentMonthKey,
   formatMonthLabel,
+  putAccountWorksheet,
   putBucketBalance,
   putRowState,
   refreshPaymentWorksheet,
+  updateBillRegistry,
   type BillRow,
   type CreditCardRow,
   type LiabilityRow,
+  type RegisterBillPayload,
 } from "@/lib/paymentRunApi"
 
 function formatRefreshedAt(value: string | null | undefined): string {
@@ -48,8 +63,22 @@ export function PaymentWorksheetPage() {
   const { data: health, isPending: healthPending } = useHealth()
   const { data, isPending, isError, refetch } = usePaymentWorksheet(month)
   const { data: loanMeta } = useLoanMeta()
+  const { data: loansData } = useLoans()
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [ccActionError, setCcActionError] = useState<string | null>(null)
+  const [cardSheetOpen, setCardSheetOpen] = useState(false)
+  const [editingCard, setEditingCard] = useState<CreditCardRow | null>(null)
+  const [liabilitySheetOpen, setLiabilitySheetOpen] = useState(false)
+  const [editingLiability, setEditingLiability] = useState<LiabilityRow | null>(
+    null,
+  )
+  const [billRegistrationOpen, setBillRegistrationOpen] = useState(false)
+  const [billRegistrationSection, setBillRegistrationSection] = useState<
+    "bills" | "liabilities"
+  >("bills")
+  const [billEditTarget, setBillEditTarget] =
+    useState<BillRegistrationEditTarget | null>(null)
 
   const accountNameById = useMemo(() => {
     const map = new Map<string, string>()
@@ -58,6 +87,20 @@ export function PaymentWorksheetPage() {
     }
     return map
   }, [loanMeta])
+
+  const loanByAccountId = useMemo(() => {
+    const map = new Map<
+      string,
+      { configured: boolean; expectedAmount: string | null }
+    >()
+    for (const loan of loansData?.data ?? []) {
+      map.set(loan.account_id, {
+        configured: loan.configured,
+        expectedAmount: loan.profile?.match.expected_amount ?? null,
+      })
+    }
+    return map
+  }, [loansData])
 
   const ccGuidance = useMemo(() => {
     if (!data) return null
@@ -162,6 +205,106 @@ export function PaymentWorksheetPage() {
     await handlePaidChange(row.row_key, paid)
   }
 
+  async function handleCardDetailsSave(
+    accountId: string,
+    values: CreditCardDetailsInput,
+  ) {
+    setCcActionError(null)
+    try {
+      await putAccountWorksheet(accountId, month, values)
+      await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    } catch (err) {
+      setCcActionError(
+        err instanceof Error ? err.message : "Could not save card details.",
+      )
+      throw err
+    }
+  }
+
+  function openCardDetails(row: CreditCardRow) {
+    setEditingCard(row)
+    setCardSheetOpen(true)
+  }
+
+  async function handleExcludeCard(row: CreditCardRow) {
+    setCcActionError(null)
+    try {
+      await putAccountWorksheet(row.account_id, month, { included: false })
+      await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    } catch (err) {
+      setCcActionError(
+        err instanceof Error ? err.message : "Could not exclude card.",
+      )
+    }
+  }
+
+  async function handleLiabilityAccountSave(
+    accountId: string,
+    values: LiabilityAccountDetailsInput,
+  ) {
+    await putAccountWorksheet(accountId, month, values)
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
+  async function handleExcludeLiability(row: LiabilityRow) {
+    if (!row.account_id) return
+    await putAccountWorksheet(row.account_id, month, { included: false })
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+  }
+
+  function openLiabilityAccount(row: LiabilityRow) {
+    setEditingLiability(row)
+    setLiabilitySheetOpen(true)
+  }
+
+  function openEditBillRegistration(row: BillRow | LiabilityRow) {
+    if (!row.registry_id) return
+    const name =
+      row.row_label ??
+      ("name" in row ? row.name : null) ??
+      `Bill ${row.registry_id}`
+    const worksheetSection =
+      "worksheet_section" in row && row.worksheet_section
+        ? row.worksheet_section
+        : "bills"
+    setBillEditTarget({
+      registryId: row.registry_id,
+      row_label: name,
+      worksheet_section: worksheetSection,
+      payment_rail: row.payment_rail ?? "bank",
+      funding_bucket_key: row.funding_bucket_key ?? null,
+      credit_card_account_id: row.credit_card_account_id ?? null,
+      amount_mode: row.amount_mode ?? "recurring",
+    })
+    setBillRegistrationSection(
+      worksheetSection === "liabilities" ? "liabilities" : "bills",
+    )
+    setBillRegistrationOpen(true)
+  }
+
+  async function handleRegisterBill(payload: RegisterBillPayload) {
+    if (!billEditTarget) return
+    await updateBillRegistry(billEditTarget.registryId, {
+      name: payload.name,
+      row_label: payload.name,
+      amount_mode: payload.amount_mode,
+      worksheet_section: payload.worksheet_section,
+      payment_rail: payload.payment_rail,
+      funding_bucket_key: payload.funding_bucket_key,
+      credit_card_account_id: payload.credit_card_account_id,
+      amount_min: payload.amount_min,
+      amount_max: payload.amount_max,
+      repeat_freq: payload.repeat_freq,
+      bill_group_id: payload.bill_group_id,
+      show_in_group: payload.show_in_group,
+    })
+    await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
+    await queryClient.invalidateQueries({ queryKey: billGroupsQueryKey() })
+    setBillRegistrationOpen(false)
+    setBillEditTarget(null)
+  }
+
   const paidCount = data?.credit_cards.filter((row) => row.paid_at).length ?? 0
   const ccCount = data?.credit_cards.length ?? 0
   const excludedCount = data?.excluded_credit_cards.length ?? 0
@@ -241,6 +384,10 @@ export function PaymentWorksheetPage() {
             <p className="text-destructive text-sm">{refreshError}</p>
           ) : null}
 
+          {ccActionError ? (
+            <p className="text-destructive text-sm">{ccActionError}</p>
+          ) : null}
+
           {isPending || healthPending ? (
             <div className="space-y-4">
               <Skeleton className="h-32 w-full" />
@@ -300,9 +447,9 @@ export function PaymentWorksheetPage() {
                           </button>
                         </TooltipTrigger>
                         <TooltipContent side="bottom" className="max-w-xs">
-                          Card names open Firefly. Use Manage to edit bucket and
-                          limits on the Credit cards hub. Only Planned and Paid
-                          edit inline.
+                          Card names open Firefly. Use Manage to edit that
+                          card's bucket and limits. Only Planned and Paid edit
+                          inline.
                         </TooltipContent>
                       </Tooltip>
                     </div>
@@ -328,6 +475,7 @@ export function PaymentWorksheetPage() {
                       fireflyBaseUrl={data.firefly_base_url}
                       onPlannedBlur={handlePlannedBlur}
                       onPaidChange={handleCardPaidChange}
+                      onEditDetails={openCardDetails}
                     />
                   ) : null}
                   {data.credit_cards.length === 0 && !data.refreshed_at ? (
@@ -395,6 +543,7 @@ export function PaymentWorksheetPage() {
                       onPlannedBlur={handlePlannedBlur}
                       onAmountDueBlur={handleAmountDueBlur}
                       onPaidChange={handleBillPaidChange}
+                      onEditRegistration={openEditBillRegistration}
                     />
                   ) : (
                     <Card>
@@ -441,6 +590,8 @@ export function PaymentWorksheetPage() {
                       onPlannedBlur={handlePlannedBlur}
                       onAmountDueBlur={handleAmountDueBlur}
                       onPaidChange={handleLiabilityPaidChange}
+                      onEditRegistration={openEditBillRegistration}
+                      onEditAccount={openLiabilityAccount}
                     />
                   ) : (
                     <Card>
@@ -469,6 +620,50 @@ export function PaymentWorksheetPage() {
           ) : null}
         </div>
       </div>
+
+      <BillRegistrationSheet
+        open={billRegistrationOpen}
+        onOpenChange={(open) => {
+          setBillRegistrationOpen(open)
+          if (!open) setBillEditTarget(null)
+        }}
+        defaultSection={billRegistrationSection}
+        initialMode="create_new"
+        editTarget={billEditTarget}
+        creditCards={data?.credit_cards ?? []}
+        buckets={data?.buckets ?? []}
+        availableBills={[]}
+        onSubmit={handleRegisterBill}
+      />
+
+      <LiabilityAccountSheet
+        open={liabilitySheetOpen}
+        onOpenChange={setLiabilitySheetOpen}
+        row={editingLiability}
+        buckets={data?.buckets ?? []}
+        loanConfigured={
+          editingLiability?.account_id
+            ? loanByAccountId.get(editingLiability.account_id)?.configured
+            : false
+        }
+        loanExpectedAmount={
+          editingLiability?.account_id
+            ? loanByAccountId.get(editingLiability.account_id)?.expectedAmount ??
+              null
+            : null
+        }
+        onSave={handleLiabilityAccountSave}
+        onExclude={handleExcludeLiability}
+      />
+
+      <CreditCardSheet
+        open={cardSheetOpen}
+        onOpenChange={setCardSheetOpen}
+        row={editingCard}
+        buckets={data?.buckets ?? []}
+        onSave={handleCardDetailsSave}
+        onExclude={handleExcludeCard}
+      />
     </div>
   )
 }

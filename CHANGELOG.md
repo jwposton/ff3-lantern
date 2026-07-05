@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Payment worksheet** — group parent rows link to Bill groups hub for structural edits
+- **Worksheet per-row Manage** — bill, card, and liability rows open that item's configuration (bill detail, card sheet, or liability sheet) instead of the section hub list
+- **Worksheet row actions** — per-row manage links use the pencil icon again instead of Manage text (restored from payment-setup hub demotion)
+- **Worksheet inline edit** — pencil opens registration or account sheets on the worksheet so you stay on the plan view after saving (hub deep links remain for setup pages)
 - **Bill group assignment** — rejects members from a different worksheet section than existing group members (Bills vs Liabilities) (#43)
 
 ### Fixed

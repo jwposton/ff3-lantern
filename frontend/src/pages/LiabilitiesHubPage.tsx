@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react"
-import { Link, Navigate } from "react-router-dom"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { LiabilityAccountSheet } from "@/components/payment-run/LiabilityAccountSheet"
@@ -24,6 +24,8 @@ import {
 export function LiabilitiesHubPage() {
   const month = currentMonthKey()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const deepLinkHandled = useRef(false)
   const { data: health, isPending: healthPending } = useHealth()
   const { data, isPending } = usePaymentWorksheet(month)
   const { data: loansData, isPending: loansPending } = useLoans()
@@ -93,6 +95,17 @@ export function LiabilitiesHubPage() {
   }
 
   const excludedCount = data?.excluded_liabilities.length ?? 0
+
+  useEffect(() => {
+    const accountParam = searchParams.get("account")
+    if (!accountParam || deepLinkHandled.current || liabilityAccounts.length === 0) {
+      return
+    }
+    const match = liabilityAccounts.find((row) => row.account_id === accountParam)
+    if (!match) return
+    deepLinkHandled.current = true
+    openLiabilityAccount(match)
+  }, [liabilityAccounts, searchParams])
 
   return (
     <div className="space-y-6">

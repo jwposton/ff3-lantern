@@ -221,10 +221,10 @@ export function BillsTable({
           ) : row.registry_id ? (
             <Link
               to={`/manage/bills/${row.registry_id}`}
-              className="text-muted-foreground hover:text-foreground text-xs font-medium"
+              className="text-muted-foreground hover:text-foreground inline-flex rounded p-0.5"
               aria-label={`Manage ${billName}`}
             >
-              Manage
+              <Pencil className="size-3" aria-hidden />
             </Link>
           ) : null}
         </TableCell>
