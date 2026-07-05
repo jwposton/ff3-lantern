@@ -109,8 +109,23 @@ describe("deriveWorksheetBillRows", () => {
     const firstIndividualIdx = derived.findIndex((r) => r.kind === "individual")
     expect(firstIndividualIdx).toBeLessThan(parentIdx)
     expect(derived.filter((r) => r.kind === "group_parent")).toHaveLength(1)
-    expect(derived.filter((r) => r.kind === "group_child")).toHaveLength(3)
-    expect(derived.filter((r) => r.kind === "individual")).toHaveLength(1)
+    expect(derived.filter((r) => r.kind === "group_child")).toHaveLength(2)
+    expect(derived.filter((r) => r.kind === "individual")).toHaveLength(2)
+
+    const gasIndividual = derived.find(
+      (r) =>
+        r.kind === "individual" &&
+        r.row.row_label === "Gas" &&
+        r.row.bill_group_id === "utilities",
+    )
+    expect(gasIndividual).toBeDefined()
+
+    const parent = derived.find((r) => r.kind === "group_parent")
+    expect(parent?.kind).toBe("group_parent")
+    if (parent?.kind === "group_parent") {
+      expect(parent.children).toHaveLength(2)
+      expect(parent.children.every((c) => c.show_in_group)).toBe(true)
+    }
   })
 
   it("does not emit parent for empty group definition", () => {
