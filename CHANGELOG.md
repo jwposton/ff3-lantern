@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Bill groups PATCH** — explicit `member_ids: null` returns 422 instead of HTTP 500 (#42)
 - **Bill group assignment** — empty `bill_group_id` strings are cleared instead of stored as invalid references (#42)
+- **Bill registry update** — bills with dormant `show_in_group` after group removal or delete can be edited again without clearing the visibility flag (#42)
 - **Budget vs 12-month average tile** — credit card charges (interest, purchases) now count toward the bar chart using the same spending definition as the pie chart (#57)
 - **Variance detail table** — sticky budget column stays opaque and matches row striping while scrolling horizontally (#56)
 - **Transaction Explorer filters** — filter panel scrolls with the page instead of staying pinned (#38)

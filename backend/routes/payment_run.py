@@ -33,13 +33,13 @@ from payment_worksheet_bill_suggestions import (
     fetch_bill_suggestions,
 )
 from payment_worksheet_bills import (
+    BILL_GROUP_SECTIONS,
     BillRegistrationError,
     RegisterBillBody,
-    _normalize_bill_group_id,
-    _validate_bill_group_fields,
     register_bill,
     serialize_bill_registry_for_edit,
     update_linked_firefly_bill,
+    validate_registry_bill_group_update,
 )
 from payment_worksheet_bill_history import (
     bill_history_date_window,
@@ -291,9 +291,6 @@ async def _enrich_bill_group(row: dict) -> BillGroupRow:
     )
 
 
-_BILL_GROUP_MEMBER_SECTIONS = frozenset({"bills", "liabilities"})
-
-
 async def _validate_bill_group_member_ids(member_ids: list[int]) -> None:
     for registry_id in member_ids:
         row = await sidecar_db.get_worksheet_registry(registry_id)
@@ -303,7 +300,7 @@ async def _validate_bill_group_member_ids(member_ids: list[int]) -> None:
                 detail=f"Unknown registry id: {registry_id}",
             )
         section = row.get("worksheet_section")
-        if section not in _BILL_GROUP_MEMBER_SECTIONS:
+        if section not in BILL_GROUP_SECTIONS:
             raise HTTPException(
                 status_code=422,
                 detail=(
@@ -738,15 +735,8 @@ async def update_bill_registry(
     if amount_mode:
         merged["planned_sync"] = _planned_sync_for_amount_mode(str(amount_mode))
 
-    if "bill_group_id" in merged:
-        merged["bill_group_id"] = _normalize_bill_group_id(merged.get("bill_group_id"))
-
     try:
-        await _validate_bill_group_fields(
-            merged.get("bill_group_id"),
-            bool(merged.get("show_in_group")),
-            str(merged.get("worksheet_section") or ""),
-        )
+        await validate_registry_bill_group_update(updates, merged)
     except BillRegistrationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

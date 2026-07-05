@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS worksheet_registry (
   counts_toward_cash_plan INTEGER DEFAULT 1,
   rule_id TEXT,
   row_label TEXT,
-  bill_group_id TEXT,
+  bill_group_id TEXT REFERENCES worksheet_bill_groups(id) ON DELETE SET NULL,
   show_in_group INTEGER NOT NULL DEFAULT 0
 );
 
