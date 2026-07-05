@@ -283,13 +283,14 @@ describe("BillGroupsPage", () => {
 
   it("invalidates paymentRun, billGroups, and registeredBills queries after save", async () => {
     mockBillGroupsFetch()
-    const invalidateSpy = vi.spyOn(testQueryClient, "invalidateQueries")
 
     render(
       <TestProviders>
         <BillGroupsPage />
       </TestProviders>,
     )
+
+    const invalidateSpy = vi.spyOn(testQueryClient, "invalidateQueries")
 
     await waitFor(() => {
       expect(screen.getByText("Utilities")).toBeTruthy()
