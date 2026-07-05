@@ -12,7 +12,7 @@ describe("AboutPage", () => {
     render(<AboutPage />)
 
     expect(screen.getByRole("heading", { name: "About" })).toBeTruthy()
-    expect(screen.getByText("v2.4.2")).toBeTruthy()
+    expect(screen.getByText("v2.4.3")).toBeTruthy()
     expect(screen.getByText(/FF3 Lantern/i)).toBeTruthy()
     expect(screen.getByText(/Sankey Chart by Kirby Wu/i)).toBeTruthy()
     expect(screen.getByText(/age picture diagram by birdpeople/i)).toBeTruthy()

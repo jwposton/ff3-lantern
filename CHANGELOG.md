@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.3] - 2026-07-05
+
 ### Changed
 
 - **Bill Discovery header** — page renamed to **Bill Discovery**; metrics card shows counts and a **From** month/year only; lookback snaps to the first of the month; time-frame control sits below the card with a visible label (#93)
@@ -423,7 +425,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.4.2...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.4.3...HEAD
+[2.4.3]: https://github.com/jwposton/ff3-lantern/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/jwposton/ff3-lantern/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/jwposton/ff3-lantern/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/jwposton/ff3-lantern/compare/v2.3.0...v2.4.0
