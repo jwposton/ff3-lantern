@@ -149,7 +149,7 @@ const MULTI_PAYEE_SUGGESTIONS: BillSuggestionsEnvelope = {
   meta: {
     withdrawals_analyzed: 1384,
     suggestions_count: 4,
-    period_start: "2025-07-04",
+    period_start: "2025-07-01",
     period_end: "2026-07-04",
   },
 }
@@ -159,7 +159,7 @@ const SUGGESTIONS_FIXTURE: BillSuggestionsEnvelope = {
   meta: {
     withdrawals_analyzed: 1384,
     suggestions_count: 49,
-    period_start: "2025-07-04",
+    period_start: "2025-07-01",
     period_end: "2026-07-04",
   },
 }
@@ -347,7 +347,7 @@ function mockDiscoverFetch(options: {
           meta: {
             suggestion_id: suggestionId,
             transaction_count: envelope.data.length,
-            period_start: "2025-07-04",
+            period_start: "2025-07-01",
             period_end: "2026-07-04",
           },
         }),
@@ -442,7 +442,7 @@ describe("BillDiscoverPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Home page")).toBeTruthy()
     })
-    expect(screen.queryByRole("heading", { name: "Bill discover" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Bill Discovery" })).toBeNull()
   })
 
   it("shows back link to payment worksheet", async () => {
@@ -470,7 +470,7 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Bill discover" })).toBeTruthy()
+      expect(screen.getByRole("heading", { name: "Bill Discovery" })).toBeTruthy()
     })
 
     expect(getSuggestionUrls().some((url) => url.includes("lookback_months=24"))).toBe(true)
@@ -486,7 +486,7 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Bill discover" })).toBeTruthy()
+      expect(screen.getByRole("heading", { name: "Bill Discovery" })).toBeTruthy()
     })
 
     expect(getSuggestionUrls().some((url) => url.includes("lookback_months=12"))).toBe(true)
@@ -502,7 +502,7 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("1,384 withdrawals analyzed")).toBeTruthy()
+      expect(screen.getByText("1,384")).toBeTruthy()
     })
     expect(getSuggestionsCalls()).toBe(1)
 
@@ -523,10 +523,10 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("1,384 withdrawals analyzed")).toBeTruthy()
+      expect(screen.getByText("1,384")).toBeTruthy()
     })
-    expect(screen.getByText(/Jul 2025 – Jul 4, 2026/)).toBeTruthy()
-    expect(screen.getByText("0 suggestions")).toBeTruthy()
+    expect(screen.getByText("Jul 2025")).toBeTruthy()
+    expect(screen.getByText("0")).toBeTruthy()
   })
 
   it("hide review toggle updates visible suggestion count in meta bar", async () => {
@@ -539,13 +539,13 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("4 suggestions")).toBeTruthy()
+      expect(screen.getByText("4")).toBeTruthy()
     })
 
     fireEvent.click(screen.getByRole("button", { name: "Hide review" }))
 
     await waitFor(() => {
-      expect(screen.getByText("3 suggestions")).toBeTruthy()
+      expect(screen.getByText("3")).toBeTruthy()
     })
   })
 
@@ -559,10 +559,10 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Bill discover" })).toBeTruthy()
+      expect(screen.getByRole("heading", { name: "Bill Discovery" })).toBeTruthy()
     })
 
-    const lookbackSelect = screen.getByLabelText("Lookback") as HTMLSelectElement
+    const lookbackSelect = screen.getByLabelText("Time frame") as HTMLSelectElement
     expect(lookbackSelect.value).toBe("12")
   })
 
@@ -576,10 +576,10 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Bill discover" })).toBeTruthy()
+      expect(screen.getByRole("heading", { name: "Bill Discovery" })).toBeTruthy()
     })
 
-    const busyRegion = screen.getByLabelText("Bill discover content")
+    const busyRegion = screen.getByLabelText("Bill Discovery content")
     expect(busyRegion.getAttribute("aria-busy")).toBe("true")
 
     const skeletons = document.querySelectorAll('[data-slot="skeleton"]')
@@ -875,7 +875,7 @@ describe("BillDiscoverPage", () => {
         meta: {
           withdrawals_analyzed: 100,
           suggestions_count: 1,
-          period_start: "2025-07-04",
+          period_start: "2025-07-01",
           period_end: "2026-07-04",
         },
       },
@@ -913,7 +913,7 @@ describe("BillDiscoverPage", () => {
         meta: {
           withdrawals_analyzed: 100,
           suggestions_count: 1,
-          period_start: "2025-07-04",
+          period_start: "2025-07-01",
           period_end: "2026-07-04",
         },
       },
@@ -953,7 +953,7 @@ describe("BillDiscoverPage", () => {
         meta: {
           withdrawals_analyzed: 100,
           suggestions_count: 1,
-          period_start: "2025-07-04",
+          period_start: "2025-07-01",
           period_end: "2026-07-04",
         },
       },
@@ -993,7 +993,7 @@ describe("BillDiscoverPage", () => {
         meta: {
           withdrawals_analyzed: 100,
           suggestions_count: 1,
-          period_start: "2025-07-04",
+          period_start: "2025-07-01",
           period_end: "2026-07-04",
         },
       },
@@ -1022,7 +1022,7 @@ describe("BillDiscoverPage", () => {
         meta: {
           withdrawals_analyzed: 1384,
           suggestions_count: 0,
-          period_start: "2025-07-04",
+          period_start: "2025-07-01",
           period_end: "2026-07-04",
         },
       },
@@ -1037,9 +1037,9 @@ describe("BillDiscoverPage", () => {
     await waitFor(() => {
       expect(screen.getByText("No new bill suggestions")).toBeTruthy()
     })
-    expect(screen.getByText("1,384 withdrawals analyzed")).toBeTruthy()
-    expect(screen.getByText(/Jul 2025 – Jul \d, 2026/)).toBeTruthy()
-    expect(screen.getByText("0 suggestions")).toBeTruthy()
+    expect(screen.getByText("1,384")).toBeTruthy()
+    expect(screen.getByText("Jul 2025")).toBeTruthy()
+    expect(screen.getByText("0")).toBeTruthy()
     expect(
       screen.getByRole("link", { name: "Open payment worksheet" }).getAttribute(
         "href",
@@ -1068,7 +1068,7 @@ describe("BillDiscoverPage", () => {
         meta: {
           withdrawals_analyzed: 12,
           suggestions_count: 1,
-          period_start: "2025-07-04",
+          period_start: "2025-07-01",
           period_end: "2026-07-04",
         },
       },
@@ -1219,7 +1219,7 @@ describe("BillDiscoverPage", () => {
     })
     const txnCallsBeforeLookback = getTransactionCalls()
 
-    const lookbackSelect = screen.getByLabelText("Lookback") as HTMLSelectElement
+    const lookbackSelect = screen.getByLabelText("Time frame") as HTMLSelectElement
     fireEvent.change(lookbackSelect, { target: { value: "6" } })
 
     await waitFor(() => {

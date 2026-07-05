@@ -61,19 +61,12 @@ function parseLocalDate(isoDateOnly: string): Date {
   return new Date(year, month - 1, day)
 }
 
-function formatWindowCaption(start: string, end: string): string {
-  const startDate = parseLocalDate(start)
-  const endDate = parseLocalDate(end)
-  const startPart = startDate.toLocaleDateString("en-US", {
+function formatFromMonth(isoDateOnly: string): string {
+  const startDate = parseLocalDate(isoDateOnly)
+  return startDate.toLocaleDateString("en-US", {
     month: "short",
     year: "numeric",
   })
-  const endPart = endDate.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
-  return `${startPart} – ${endPart}`
 }
 
 export function BillDiscoverPage() {
@@ -213,20 +206,22 @@ export function BillDiscoverPage() {
 
   return (
     <div className="space-y-4 px-6 pt-6 pb-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-2">
-          <Link
-            to="/manage/payment-run"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            ← Payment Worksheet
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">Bill discover</h1>
-        </div>
+      <div className="space-y-2">
+        <Link
+          to="/manage/payment-run"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          ← Payment Worksheet
+        </Link>
+        <h1 className="text-2xl font-semibold tracking-tight">Bill Discovery</h1>
+        <p className="text-muted-foreground text-sm">
+          Recurring charges from withdrawal history that are not registered as
+          bills yet.
+        </p>
       </div>
 
       <Card className="rounded-lg border bg-card">
-        <CardContent className="space-y-4 p-4">
+        <CardContent className="p-4">
           {loading ? (
             <div className="grid gap-4 sm:grid-cols-3">
               <Skeleton className="h-16 w-full" />
@@ -237,67 +232,68 @@ export function BillDiscoverPage() {
             <div className="grid gap-4 sm:grid-cols-3">
               <MetricBlock
                 label="Withdrawals analyzed"
-                value={`${data.meta.withdrawals_analyzed.toLocaleString()} withdrawals analyzed`}
+                value={data.meta.withdrawals_analyzed.toLocaleString()}
               />
               <MetricBlock
-                label="Period"
-                value={formatWindowCaption(
-                  data.meta.period_start,
-                  data.meta.period_end,
-                )}
+                label="From"
+                value={formatFromMonth(data.meta.period_start)}
               />
               <MetricBlock
                 label="Suggestions"
-                value={`${visibleSuggestionCount} suggestions`}
+                value={visibleSuggestionCount.toLocaleString()}
               />
             </div>
           ) : null}
-
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            <label htmlFor="discover-lookback" className="sr-only">
-              Lookback
-            </label>
-            <select
-              id="discover-lookback"
-              className={cn(selectClassName, "w-auto min-w-[9rem]")}
-              value={lookbackMonths}
-              onChange={(event) =>
-                handleLookbackChange(Number(event.target.value))
-              }
-            >
-              {LOOKBACK_CHOICES.map((months) => (
-                <option key={months} value={months}>
-                  {months} months
-                </option>
-              ))}
-            </select>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-pressed={hideReview}
-              onClick={() => setHideReview((prev) => !prev)}
-            >
-              {hideReview ? "Showing all" : "Hide review"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isFetching}
-              onClick={handleRefresh}
-            >
-              <RefreshCw
-                className={cn("mr-2 h-4 w-4", isFetching && "animate-spin")}
-              />
-              {isFetching ? "Refreshing…" : "Refresh"}
-            </Button>
-          </div>
         </CardContent>
       </Card>
 
+      <div className="flex flex-nowrap items-end justify-end gap-2">
+        <label
+          htmlFor="discover-lookback"
+          className="flex w-auto shrink-0 flex-col gap-1"
+        >
+          <span className="text-xs text-muted-foreground">Time frame</span>
+          <select
+            id="discover-lookback"
+            className={cn(selectClassName, "h-9 w-auto min-w-[9rem]")}
+            value={lookbackMonths}
+            onChange={(event) =>
+              handleLookbackChange(Number(event.target.value))
+            }
+          >
+            {LOOKBACK_CHOICES.map((months) => (
+              <option key={months} value={months}>
+                {months} months
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-pressed={hideReview}
+          disabled={loading}
+          onClick={() => setHideReview((prev) => !prev)}
+        >
+          {hideReview ? "Showing all" : "Hide review"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isFetching}
+          onClick={handleRefresh}
+        >
+          <RefreshCw
+            className={cn("mr-2 h-4 w-4", isFetching && "animate-spin")}
+          />
+          {isFetching ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
+
       <div
-        aria-label="Bill discover content"
+        aria-label="Bill Discovery content"
         aria-busy={loading ? "true" : undefined}
         className="space-y-4"
       >

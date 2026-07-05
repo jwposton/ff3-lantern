@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Bill Discovery header** — page renamed to **Bill Discovery**; metrics card shows counts and a **From** month/year only; lookback snaps to the first of the month; time-frame control sits below the card with a visible label (#93)
+
 ## [2.4.2] - 2026-07-05
 
 ### Added

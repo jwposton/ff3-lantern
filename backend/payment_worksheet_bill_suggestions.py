@@ -427,6 +427,16 @@ def _subtract_months(end: date, months: int) -> date:
     return date(year, month, day)
 
 
+def _lookback_period_start(end: date, months: int) -> date:
+    """First day of the month N calendar months before end's month."""
+    year = end.year
+    month = end.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    return date(year, month, 1)
+
+
 def _days_in_month(year: int, month: int) -> int:
     if month == 12:
         next_month = date(year + 1, 1, 1)
@@ -1844,7 +1854,7 @@ async def fetch_bill_suggestions(
     if lookback_months not in LOOKBACK_CHOICES:
         raise ValueError("lookback_months must be 6, 12, or 24.")
     period_end = date.today()
-    period_start = _subtract_months(period_end, lookback_months)
+    period_start = _lookback_period_start(period_end, lookback_months)
     start_iso = period_start.isoformat()
     end_iso = period_end.isoformat()
     splits = await client.fetch_splits(start_iso, end_iso)
@@ -1874,7 +1884,7 @@ async def fetch_bill_suggestion_transactions(
     if lookback_months not in LOOKBACK_CHOICES:
         raise ValueError("lookback_months must be 6, 12, or 24.")
     period_end = date.today()
-    period_start = _subtract_months(period_end, lookback_months)
+    period_start = _lookback_period_start(period_end, lookback_months)
     start_iso = period_start.isoformat()
     end_iso = period_end.isoformat()
     splits = await client.fetch_splits(start_iso, end_iso)

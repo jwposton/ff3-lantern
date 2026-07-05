@@ -99,7 +99,7 @@ const paymentSetupNavItem = {
 
 const billDiscoverNavItem = {
   to: "/manage/payment-run/discover",
-  label: "Bill discover",
+  label: "Bill Discovery",
   icon: ScanSearch,
   end: true,
 } as const
