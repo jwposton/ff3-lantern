@@ -757,6 +757,16 @@ class FireflyClient:
                 page += 1
         return flat
 
+    async def fetch_about(self) -> dict[str, Any]:
+        """Return Firefly /api/v1/about payload (version, api_version, etc.)."""
+        async with self._build_client() as client:
+            response = await client.get("/api/v1/about")
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            return response.json()
+
     async def fetch_bill_transactions(
         self, bill_id: str, start: str, end: str
     ) -> list[dict[str, Any]]:

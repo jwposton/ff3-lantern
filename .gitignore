@@ -42,3 +42,4 @@ docker-compose.override.yml
 
 # Datafiles
 data/
+demo/.integration-token

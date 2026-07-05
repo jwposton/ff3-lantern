@@ -1,0 +1,100 @@
+# Ephemeral Firefly III + Lantern stack for CI integration smoke tests (#103).
+# Usage (from repo root):
+#   FIREFLY_TAG=version-6.6.3 docker compose -f demo/docker-compose.integration.yml up -d --wait db firefly
+#   demo/seed/bootstrap-firefly.sh
+#   FIREFLY_API_TOKEN="$(cat demo/.integration-token)" \
+#     docker compose -f demo/docker-compose.integration.yml up -d --wait lantern-backend
+#   scripts/integration-smoke.sh
+#   docker compose -f demo/docker-compose.integration.yml down -v --remove-orphans
+
+name: ff3lantern-integration
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: firefly
+      POSTGRES_PASSWORD: secret_firefly_password
+      POSTGRES_DB: firefly
+    volumes:
+      - integration_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firefly -d firefly"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  firefly:
+    image: fireflyiii/core:${FIREFLY_TAG:-version-6.6.3}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      APP_KEY: SomeRandomStringOf32CharsExactly
+      APP_DEBUG: "false"
+      APP_URL: http://firefly:8080
+      TRUSTED_PROXIES: "**"
+      TZ: UTC
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: firefly
+      DB_USERNAME: firefly
+      DB_PASSWORD: secret_firefly_password
+      PGSQL_SCHEMA: public
+      CACHE_DRIVER: file
+      SESSION_DRIVER: file
+      STATIC_CRON_TOKEN: ff3lanternIntegrationCronToken01
+      LOG_CHANNEL: stderr
+      APP_LOG_LEVEL: warning
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "http://127.0.0.1:8080/api/v1/cron/ff3lanternIntegrationCronToken01",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 36
+      start_period: 90s
+    ports:
+      - "127.0.0.1:${FIREFLY_INTEGRATION_PORT:-8081}:8080"
+
+  lantern-backend:
+    build:
+      context: ../backend
+    depends_on:
+      firefly:
+        condition: service_healthy
+    environment:
+      FIREFLY_BASE_URL: http://firefly:8080
+      FIREFLY_API_TOKEN: ${FIREFLY_API_TOKEN:-bootstrap-pending}
+      FF3LANTERN_PAYMENT_WORKSHEET_ENABLED: "true"
+      FF3LANTERN_DATA_DIR: /data
+      CORS_ALLOWED_ORIGINS: http://localhost
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - integration_lantern_data:/data
+    ports:
+      - "${LANTERN_INTEGRATION_PORT:-18002}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  integration_db:
+  integration_lantern_data:
