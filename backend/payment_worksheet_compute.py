@@ -418,10 +418,29 @@ def _assemble_bill_rows(
                 "credit_card_account_id": reg.get("credit_card_account_id"),
                 "amount_mode": reg.get("amount_mode"),
                 "worksheet_section": reg.get("worksheet_section"),
+                "bill_group_id": reg.get("bill_group_id"),
+                "show_in_group": bool(reg.get("show_in_group")),
             }
         )
     rows.sort(key=bill_row_display_sort_key)
     return rows
+
+
+async def _slim_bill_groups_for_worksheet() -> list[dict[str, Any]]:
+    groups = await sidecar_db.list_bill_groups()
+    result: list[dict[str, Any]] = []
+    for row in groups:
+        members = await sidecar_db.list_bill_group_members(row["id"])
+        result.append(
+            {
+                "id": row["id"],
+                "label": row["label"],
+                "sort_order": row["sort_order"],
+                "member_count": len(members),
+                "visible_count": sum(1 for member in members if member["show_in_group"]),
+            }
+        )
+    return result
 
 
 async def build_worksheet_envelope(month: str) -> dict[str, Any]:
@@ -459,6 +478,7 @@ async def build_worksheet_envelope(month: str) -> dict[str, Any]:
     )
     section_subtotals = compute_section_subtotals(bills, liabilities, credit_cards)
     grand_totals = compute_grand_totals(credit_cards, section_subtotals)
+    bill_groups = await _slim_bill_groups_for_worksheet()
 
     return {
         "month": month,
@@ -469,6 +489,7 @@ async def build_worksheet_envelope(month: str) -> dict[str, Any]:
         "bills": bills,
         "liabilities": liabilities,
         "excluded_liabilities": excluded_liabilities,
+        "bill_groups": bill_groups,
         "section_subtotals": section_subtotals,
         "grand_totals": grand_totals,
         "shortfall": rollups["shortfall"],
