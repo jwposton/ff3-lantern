@@ -1,0 +1,67 @@
+name: Firefly integration smoke
+
+# Track B (#103): ephemeral compose-up against real Firefly III.
+# PRs: single pinned tag (~10 min). Nightly: supported minors + latest.
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+    inputs:
+      firefly_tag:
+        description: "fireflyiii/core tag (e.g. version-6.6.3, version-6.6, latest)"
+        required: false
+        default: version-6.6.3
+
+permissions:
+  contents: read
+
+jobs:
+  integration-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run integration smoke (pinned Firefly)
+        env:
+          FIREFLY_TAG: version-6.6.3
+        run: bash scripts/integration-smoke.sh
+
+  integration-nightly:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        firefly_tag:
+          - version-6.5
+          - version-6.6
+          - version-6.6.3
+          - latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run integration smoke (${{ matrix.firefly_tag }})
+        env:
+          FIREFLY_TAG: ${{ matrix.firefly_tag }}
+        run: |
+          echo "Firefly matrix tag: $FIREFLY_TAG"
+          echo "Lantern commit: $(git rev-parse HEAD)"
+          bash scripts/integration-smoke.sh
+
+  integration-manual:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run integration smoke (${{ github.event.inputs.firefly_tag }})
+        env:
+          FIREFLY_TAG: ${{ github.event.inputs.firefly_tag || 'version-6.6.3' }}
+        run: |
+          echo "Firefly tag: $FIREFLY_TAG"
+          echo "Lantern commit: $(git rev-parse HEAD)"
+          bash scripts/integration-smoke.sh

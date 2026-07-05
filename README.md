@@ -227,6 +227,25 @@ FF3LANTERN_DATA_DIR=./data pytest tests/ -q
 
 Local `uvicorn` (outside Docker) also uses `./data` unless you set `FF3LANTERN_DATA_DIR`.
 
+## Supported Firefly versions
+
+Lantern is tested against real Firefly III API responses in CI (not mocked fixtures). Supported versions are those that pass the [integration workflow](.github/workflows/integration.yml):
+
+| Context | Firefly image tag |
+|---------|-------------------|
+| Pull requests to `main` | `fireflyiii/core:version-6.6.3` (pinned) |
+| Nightly schedule | `version-6.5`, `version-6.6`, `version-6.6.3`, `latest` |
+
+When connected, `GET /health` includes `firefly_version` from Firefly’s `/api/v1/about` endpoint.
+
+Run the same smoke suite locally:
+
+```bash
+bash scripts/integration-smoke.sh
+```
+
+Optional: `FIREFLY_TAG=version-6.6.3 INTEGRATION_KEEP_STACK=1 bash scripts/integration-smoke.sh` leaves the stack running for debugging.
+
 ## Verification
 
 ```bash

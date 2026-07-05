@@ -22,4 +22,21 @@ This document mirrors `.cursor/rules/release-and-changelog.mdc` for human reader
 
 6. Confirm the **Publish Docker images** workflow (`.github/workflows/publish.yml`) succeeds.
 
-Docker images publish to `ghcr.io/<owner>/ff3-lantern-{backend,frontend}:X.Y.Z` on every `v*` tag push.
+On every `v*` tag push the workflow:
+
+- Runs backend pytest and frontend build
+- Publishes multi-arch Docker images to `ghcr.io/<owner>/ff3-lantern-{backend,frontend}:X.Y.Z` (and `:latest`)
+- Creates a **GitHub Release** with notes from the matching `CHANGELOG.md` section
+
+Release notes are extracted by `scripts/changelog-release-notes.sh` (same format agents use when cutting a release).
+
+## Backfill GitHub Releases for older tags
+
+If tags were pushed before release automation, Docker may exist without a GitHub Release page:
+
+```bash
+chmod +x scripts/backfill-github-releases.sh scripts/changelog-release-notes.sh
+./scripts/backfill-github-releases.sh
+```
+
+Preview one version: `./scripts/changelog-release-notes.sh 2.4.3`

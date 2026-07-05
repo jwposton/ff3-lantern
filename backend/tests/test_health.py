@@ -33,6 +33,16 @@ def test_health_env_presence_booleans_unset(client):
     assert data["payment_worksheet_enabled"] is False
 
 
+def test_health_firefly_version_null_without_firefly(monkeypatch, tmp_path):
+    monkeypatch.delenv("FIREFLY_BASE_URL", raising=False)
+    monkeypatch.delenv("FIREFLY_API_TOKEN", raising=False)
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    from main import app
+
+    response = TestClient(app).get("/health")
+    assert response.json()["firefly_version"] is None
+
+
 def test_health_openrouter_and_sidecar_flags(monkeypatch, tmp_path):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
     monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
