@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Income line on bar charts** — Spending and Cash Flow bar reports show a green monthly Income line (bank inflows) with legend toggle and tooltip; drilldown charts unchanged (#48)
+
 ## [2.3.0] - 2026-07-05
 
 ### Added

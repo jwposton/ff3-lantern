@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { BarChartData } from "@/lib/barChart"
+import { INCOME_LINE_COLOR, INCOME_LINE_LABEL } from "@/lib/barChart"
 
 import { SpendingBarChart } from "./SpendingBarChart"
 
@@ -167,5 +168,124 @@ describe("SpendingBarChart", () => {
     expect(screen.getByText("Cash outflow by month")).toBeTruthy()
     const yAxis = capturedOption?.yAxis as Record<string, unknown>
     expect(yAxis?.name).toBe("Cash outflow")
+  })
+
+  it("adds emerald Income line series when monthlyIncome is provided", () => {
+    render(
+      <SpendingBarChart
+        chartData={sampleChartData}
+        loading={false}
+        emptyMessage="No data"
+        onSelect={() => {}}
+        monthlyIncome={[3000]}
+      />,
+    )
+
+    const series = capturedOption?.series as Array<Record<string, unknown>>
+    const incomeSeries = series.find((s) => s.name === INCOME_LINE_LABEL)
+    expect(incomeSeries).toMatchObject({
+      type: "line",
+      data: [3000],
+      lineStyle: { color: INCOME_LINE_COLOR, width: 2 },
+    })
+    expect(incomeSeries?.label).toBeUndefined()
+  })
+
+  it("uses item tooltip with income appended on bar hover when income line is enabled", () => {
+    render(
+      <SpendingBarChart
+        chartData={sampleChartData}
+        loading={false}
+        emptyMessage="No data"
+        onSelect={() => {}}
+        monthlyIncome={[3000]}
+      />,
+    )
+
+    const tooltip = capturedOption?.tooltip as Record<string, unknown>
+    expect(tooltip?.trigger).toBe("item")
+    const formatter = tooltip.formatter as (params: unknown) => string
+    const barHover = formatter({
+      seriesName: "Groceries",
+      name: "2026-01",
+      value: 100,
+      dataIndex: 0,
+    })
+    expect(barHover).toContain("Groceries: 100.00")
+    expect(barHover).toContain("Income: 3,000.00")
+
+    const incomeHover = formatter({
+      seriesName: INCOME_LINE_LABEL,
+      name: "2026-01",
+      value: 3000,
+      dataIndex: 0,
+    })
+    expect(incomeHover).toContain("Income: 3,000.00")
+    expect(incomeHover).not.toContain("Groceries")
+  })
+
+  it("omits income series and uses item tooltip without monthlyIncome", () => {
+    render(
+      <SpendingBarChart
+        chartData={sampleChartData}
+        loading={false}
+        emptyMessage="No data"
+        onSelect={() => {}}
+      />,
+    )
+
+    const series = capturedOption?.series as Array<Record<string, unknown>>
+    expect(series.some((s) => s.name === INCOME_LINE_LABEL)).toBe(false)
+    const tooltip = capturedOption?.tooltip as Record<string, unknown>
+    expect(tooltip?.trigger).toBe("item")
+  })
+
+  it("does not drill when Income legend item is toggled", async () => {
+    const onSelect = vi.fn()
+    render(
+      <SpendingBarChart
+        chartData={sampleChartData}
+        loading={false}
+        emptyMessage="No data"
+        onSelect={onSelect}
+        monthlyIncome={[3000]}
+      />,
+    )
+
+    capturedOnEvents?.legendselectchanged?.({
+      name: INCOME_LINE_LABEL,
+      selected: { [INCOME_LINE_LABEL]: false },
+    })
+
+    expect(onSelect).not.toHaveBeenCalled()
+
+    await waitFor(() => {
+      const tooltip = capturedOption?.tooltip as Record<string, unknown>
+      const formatter = tooltip.formatter as (params: unknown) => string
+      const barHover = formatter({
+        seriesName: "Groceries",
+        name: "2026-01",
+        value: 100,
+        dataIndex: 0,
+      })
+      expect(barHover).not.toContain("Income:")
+    })
+  })
+
+  it("does not drill when Income line is clicked", () => {
+    const onSelect = vi.fn()
+    render(
+      <SpendingBarChart
+        chartData={sampleChartData}
+        loading={false}
+        emptyMessage="No data"
+        onSelect={onSelect}
+        monthlyIncome={[3000]}
+      />,
+    )
+
+    capturedOnEvents?.click?.({ seriesName: INCOME_LINE_LABEL })
+
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })

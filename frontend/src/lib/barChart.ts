@@ -4,6 +4,7 @@ import {
   cashFlowBudgetLabel,
   cashFlowCategoryLabel,
 } from "@/lib/cashFlowLabels"
+import { isCashFlowInflow } from "@/lib/spending"
 import { enumerateMonths, monthKey } from "@/lib/trends"
 
 const UNCategorized_LABEL = "Uncategorized"
@@ -21,6 +22,9 @@ export type TrendLineSeries = {
 }
 
 export const TOTAL_LABEL = "Total"
+export const INCOME_LINE_LABEL = "Income"
+/** Aligns with dashboard KPI positive cash styling (emerald-500). */
+export const INCOME_LINE_COLOR = "#10b981"
 
 export type LineSeriesOptions = {
   includeTotal?: boolean
@@ -148,6 +152,23 @@ export function buildBarChartData(
   }
 
   return { months, stacks, data }
+}
+
+/** Monthly bank inflow totals aligned with {@link enumerateMonths} for chart overlays. */
+export function buildMonthlyIncomeTotals(
+  rows: OmniRow[],
+  start: string,
+  end: string,
+): number[] {
+  const months = enumerateMonths(start, end)
+  const totals = new Map(months.map((month) => [month, 0]))
+  for (const row of rows) {
+    if (!isCashFlowInflow(row)) continue
+    const month = monthKey(row.date)
+    if (!totals.has(month)) continue
+    totals.set(month, (totals.get(month) ?? 0) + parseAmount(row.amount))
+  }
+  return months.map((month) => totals.get(month) ?? 0)
 }
 
 export function stackTotalsAcrossMonths(

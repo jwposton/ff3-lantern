@@ -7,8 +7,9 @@ import {
   creditCardPaymentTransferNoBudget,
   creditCardWithdrawal,
   mainCheckingWithdrawal,
+  salaryDeposit,
 } from "@/test/fixtures/omniRows"
-import { buildBarChartData, barChartDataToLineSeries, filterRowsForDrilldown, TOTAL_LABEL } from "@/lib/barChart"
+import { buildBarChartData, barChartDataToLineSeries, buildMonthlyIncomeTotals, filterRowsForDrilldown, TOTAL_LABEL } from "@/lib/barChart"
 import { CC_PAYMENT_BUDGET_LABEL } from "@/lib/cashFlowLabels"
 import { isCashFlowOutflow, isSpendingExpense } from "@/lib/spending"
 
@@ -199,6 +200,27 @@ describe("buildBarChartData", () => {
     expect(result.stacks).toContain("Store B")
     expect(result.stacks).not.toContain("Gas Station")
     expect(result.data["2026-01"]?.["Store A"]).toBeCloseTo(40, 2)
+  })
+})
+
+describe("buildMonthlyIncomeTotals", () => {
+  it("aggregates bank inflows per month using cashFlowInflowTotal semantics", () => {
+    const rows = [
+      { ...salaryDeposit, date: "2026-01-01", amount: "5000.00" },
+      { ...salaryDeposit, date: "2026-02-01", amount: "5100.00" },
+      { ...mainCheckingWithdrawal, date: "2026-01-15", amount: "75.50" },
+    ]
+    const totals = buildMonthlyIncomeTotals(rows, "2026-01-01", "2026-02-28")
+    expect(totals).toEqual([5000, 5100])
+  })
+
+  it("zero-fills months with no inflow rows", () => {
+    const totals = buildMonthlyIncomeTotals(
+      [mainCheckingWithdrawal],
+      "2026-01-01",
+      "2026-03-31",
+    )
+    expect(totals).toEqual([0, 0, 0])
   })
 })
 
