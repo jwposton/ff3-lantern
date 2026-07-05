@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { WorksheetGrandTotal } from "./WorksheetGrandTotal"
@@ -28,10 +28,26 @@ const BASE_TOTALS: GrandTotals = {
       liabilities: {
         cash: { due: "500.00", planned: "500.00" },
         credit: { due: "25.00", planned: "25.00" },
+        by_credit_card: [
+          {
+            account_id: "cc-amex",
+            name: "Amex",
+            due: "25.00",
+            planned: "25.00",
+          },
+        ],
       },
       bills: {
         cash: { due: "100.00", planned: "100.00" },
         credit: { due: "50.00", planned: "50.00" },
+        by_credit_card: [
+          {
+            account_id: "cc-chase",
+            name: "Chase VISA",
+            due: "50.00",
+            planned: "50.00",
+          },
+        ],
       },
       credit_card_pmts: {
         cash: { due: "0.00", planned: "200.00" },
@@ -76,6 +92,64 @@ describe("WorksheetGrandTotal", () => {
     ).toBe("200.00")
   })
 
+  it("renders per-card breakdown nested under bills and liabilities", () => {
+    render(<WorksheetGrandTotal grandTotals={BASE_TOTALS} />)
+
+    expect(screen.getByTestId("grand-total-bills-card-cc-chase-due").textContent).toBe(
+      "50.00",
+    )
+    expect(
+      screen.getByTestId("grand-total-bills-card-cc-chase-planned").textContent,
+    ).toBe("50.00")
+    expect(
+      screen.getByTestId("grand-total-liabilities-card-cc-amex-due").textContent,
+    ).toBe("25.00")
+    expect(
+      screen.getByTestId("grand-total-liabilities-card-cc-amex-planned").textContent,
+    ).toBe("25.00")
+  })
+
+  it("collapses card breakdown when bills or liabilities toggled", () => {
+    render(<WorksheetGrandTotal grandTotals={BASE_TOTALS} />)
+
+    expect(screen.getByTestId("grand-total-bills-card-cc-chase-due")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Bills" }))
+    expect(screen.queryByTestId("grand-total-bills-card-cc-chase-due")).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Bills" }))
+    expect(screen.getByTestId("grand-total-bills-card-cc-chase-due")).toBeTruthy()
+  })
+
+  it("renders unassigned card bucket when present", () => {
+    const totals: GrandTotals = {
+      ...BASE_TOTALS,
+      breakdown: {
+        ...BASE_TOTALS.breakdown,
+        due_planned: {
+          ...BASE_TOTALS.breakdown.due_planned,
+          bills: {
+            ...BASE_TOTALS.breakdown.due_planned.bills,
+            by_credit_card: [
+              {
+                account_id: null,
+                name: "Unassigned",
+                due: "10.00",
+                planned: "10.00",
+              },
+            ],
+          },
+        },
+      },
+    }
+
+    render(<WorksheetGrandTotal grandTotals={totals} />)
+
+    expect(screen.getByTestId("grand-total-bills-card-unassigned-due").textContent).toBe(
+      "10.00",
+    )
+  })
+
   it("hides all-zero child rows and collapsible parent groups", () => {
     const totals: GrandTotals = {
       ...BASE_TOTALS,
@@ -114,7 +188,8 @@ describe("WorksheetGrandTotal", () => {
 
     expect(screen.getByTestId("grand-total-real-estate-owed")).toBeTruthy()
 
-    fireEvent.click(screen.getByRole("button", { name: "Liabilities" }))
+    const owedCard = screen.getByTestId("grand-total-owed-card")
+    fireEvent.click(within(owedCard).getByRole("button", { name: "Liabilities" }))
     expect(screen.queryByTestId("grand-total-real-estate-owed")).toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Cash (bank)" }))

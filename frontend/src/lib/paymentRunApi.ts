@@ -90,6 +90,22 @@ export type SectionSubtotals = {
   }
 }
 
+export type DuePlannedRailSection = {
+  cash: { due: string; planned: string }
+  credit: { due: string; planned: string }
+}
+
+export type DuePlannedSection = DuePlannedRailSection & {
+  by_credit_card?: CreditCardDuePlannedRow[]
+}
+
+export type CreditCardDuePlannedRow = {
+  account_id: string | null
+  name: string
+  due: string
+  planned: string
+}
+
 export type GrandTotalsBreakdown = {
   owed: {
     liabilities: string
@@ -106,15 +122,10 @@ export type GrandTotalsBreakdown = {
     credit: string
   }
   due_planned: {
-    liabilities: DuePlannedRailSection
-    bills: DuePlannedRailSection
+    liabilities: DuePlannedSection
+    bills: DuePlannedSection
     credit_card_pmts: DuePlannedRailSection
   }
-}
-
-export type DuePlannedRailSection = {
-  cash: { due: string; planned: string }
-  credit: { due: string; planned: string }
 }
 
 export type GrandTotals = {

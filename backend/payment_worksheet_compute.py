@@ -10,6 +10,9 @@ import sidecar_db
 from payment_worksheet_liabilities import is_real_estate_liability, liability_row_key
 
 
+UNASSIGNED_CREDIT_CARD_ID = "__unassigned__"
+
+
 def cc_row_key(account_id: str) -> str:
     return f"cc:{account_id}"
 
@@ -296,17 +299,118 @@ def _compute_due_planned_sections(
         Decimal("0"),
     )
 
+    liab_pair = _format_due_planned_rail_pair(
+        liab_d_c, liab_d_cr, liab_p_c, liab_p_cr
+    )
+    bills_pair = _format_due_planned_rail_pair(
+        bills_d_c, bills_d_cr, bills_p_c, bills_p_cr
+    )
+
     return {
-        "liabilities": _format_due_planned_rail_pair(
-            liab_d_c, liab_d_cr, liab_p_c, liab_p_cr
-        ),
-        "bills": _format_due_planned_rail_pair(
-            bills_d_c, bills_d_cr, bills_p_c, bills_p_cr
-        ),
+        "liabilities": {
+            **liab_pair,
+            "by_credit_card": _compute_by_credit_card_due_planned(
+                liabilities, credit_cards
+            ),
+        },
+        "bills": {
+            **bills_pair,
+            "by_credit_card": _compute_by_credit_card_due_planned(
+                bills, credit_cards
+            ),
+        },
         "credit_card_pmts": _format_due_planned_rail_pair(
             Decimal("0"), Decimal("0"), cc_planned, Decimal("0")
         ),
     }
+
+
+def _valid_credit_card_account_id(account_id: Any) -> bool:
+    return bool(account_id and str(account_id).strip())
+
+
+def _credit_card_bucket_key(account_id: Any) -> str:
+    if not _valid_credit_card_account_id(account_id):
+        return UNASSIGNED_CREDIT_CARD_ID
+    return str(account_id)
+
+
+def _accumulate_credit_card_row(
+    row: dict[str, Any],
+    buckets: dict[str, dict[str, Decimal]],
+) -> None:
+    due_credit = (
+        _decimal_amount(row.get("amount_due"))
+        if row.get("payment_rail") == "credit_card"
+        else Decimal("0")
+    )
+    planned = _decimal_amount(row.get("planned_amount"))
+    if row.get("account_id") or row.get("counts_toward_cash_plan"):
+        planned_credit = Decimal("0")
+    else:
+        planned_credit = planned
+
+    if due_credit == 0 and planned_credit == 0:
+        return
+
+    key = _credit_card_bucket_key(row.get("credit_card_account_id"))
+    entry = buckets.setdefault(key, {"due": Decimal("0"), "planned": Decimal("0")})
+    entry["due"] += due_credit
+    entry["planned"] += planned_credit
+
+
+def _compute_by_credit_card_due_planned(
+    rows: list[dict[str, Any]],
+    credit_cards: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    card_names = {
+        card["account_id"]: card.get("name")
+        for card in credit_cards
+        if card.get("account_id")
+    }
+    buckets: dict[str, dict[str, Decimal]] = {}
+
+    for row in rows:
+        _accumulate_credit_card_row(row, buckets)
+
+    rows: list[dict[str, Any]] = []
+    for account_id, totals in buckets.items():
+        if totals["due"] == 0 and totals["planned"] == 0:
+            continue
+        if account_id == UNASSIGNED_CREDIT_CARD_ID:
+            rows.append(
+                {
+                    "account_id": None,
+                    "name": "Unassigned",
+                    "due": _format_decimal(totals["due"]),
+                    "planned": _format_decimal(totals["planned"]),
+                }
+            )
+            continue
+        rows.append(
+            {
+                "account_id": account_id,
+                "name": card_names.get(account_id) or account_id,
+                "due": _format_decimal(totals["due"]),
+                "planned": _format_decimal(totals["planned"]),
+            }
+        )
+
+    card_by_id = {
+        card["account_id"]: card for card in credit_cards if card.get("account_id")
+    }
+
+    def sort_key(row: dict[str, Any]) -> tuple[int, str, str]:
+        account_id = row.get("account_id")
+        if account_id is None:
+            return (999_999_999, "unassigned", "")
+        card = card_by_id.get(account_id)
+        if card is not None:
+            return credit_card_display_sort_key(card)
+        return (999_999, (row.get("name") or "").casefold(), str(account_id))
+
+    rows.sort(key=sort_key)
+    return rows
 
 
 def _planned_credit_total(

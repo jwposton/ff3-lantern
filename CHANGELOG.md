@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Worksheet grand total per-card breakdown** — **Due & planned** **Credit card** group nests each card under **Bills** or **Liabilities** with a collapsible chevron so card lines reconcile to the section subtotal (#79)
 - **Income line on bar charts** — Spending and Cash Flow bar reports show a green monthly Income line (bank inflows) with legend toggle and tooltip; drilldown charts unchanged (#48)
 - **Budget vs average tile modes** — dashboard tile supports ranking by total spend or change vs 12-month average, and displaying bars as dollars or percent of average; preferences persist in the browser (#58)
 
