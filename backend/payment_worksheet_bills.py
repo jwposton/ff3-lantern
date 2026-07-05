@@ -11,7 +11,11 @@ from typing import Any, Literal
 
 import sidecar_db
 from firefly_client import FireflyClient
-from payment_worksheet_bill_history import bill_history_date_window
+from payment_worksheet_bill_history import (
+    bill_amount_due_fetch_window,
+    bill_history_date_window,
+    compute_trailing_monthly_average,
+)
 from pydantic import BaseModel, field_validator
 
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
@@ -188,6 +192,22 @@ def compute_bill_owed_from_firefly(
     if not amount_max:
         amount_max = amount_min
     return compute_recurring_bill_owed(amount_min, amount_max)
+
+
+def compute_bill_owed_from_linked_payments(
+    rows: list[dict[str, Any]],
+    *,
+    ff_bill: dict[str, Any],
+    amount_mode: str,
+    months: int = 3,
+) -> str:
+    """Worksheet amount due: trailing monthly average, else Firefly min/max midpoint."""
+    if amount_mode == "intermittent":
+        return "0.00"
+    average = compute_trailing_monthly_average(rows, months=months)
+    if average is not None:
+        return f"{average}"
+    return compute_bill_owed_from_firefly(ff_bill, amount_mode=amount_mode)
 
 
 def _firefly_bill_amounts(body: RegisterBillBody) -> tuple[str, str]:

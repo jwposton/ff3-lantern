@@ -89,6 +89,53 @@ def _month_in_stats_range(month_key: str, start_month: str, end_month: str) -> b
     return start_month <= month_key <= end_month
 
 
+def _month_key_tuple(month_key: str) -> tuple[int, int] | None:
+    if len(month_key) != 7 or month_key[4] != "-":
+        return None
+    try:
+        return int(month_key[:4]), int(month_key[5:7])
+    except ValueError:
+        return None
+
+
+def compute_trailing_monthly_average(
+    rows: list[dict[str, Any]],
+    *,
+    months: int = 3,
+) -> Decimal | None:
+    """Arithmetic mean of summed monthly payment totals over the trailing N months."""
+    totals_by_month: dict[tuple[int, int], Decimal] = {}
+    for row in rows:
+        month_key = str(row.get("date") or "")[:7]
+        key = _month_key_tuple(month_key)
+        if key is None:
+            continue
+        totals_by_month[key] = totals_by_month.get(key, Decimal("0")) + abs(
+            _decimal_amount(row.get("amount"))
+        )
+
+    if not totals_by_month:
+        return None
+
+    recent_keys = sorted(totals_by_month.keys())[-months:]
+    month_totals = [totals_by_month[key] for key in recent_keys]
+    return (
+        sum(month_totals, Decimal("0")) / Decimal(len(month_totals))
+    ).quantize(Decimal("0.01"))
+
+
+def bill_amount_due_fetch_window(
+    today: date | None = None,
+    *,
+    lookback_months: int = 4,
+) -> tuple[str, str]:
+    """Inclusive fetch window for trailing monthly averages on refresh."""
+    if today is None:
+        today = date.today()
+    start_month = _month_key_offset(today, lookback_months)
+    return f"{start_month}-01", today.isoformat()
+
+
 def compute_bill_history_stats(
     rows: list[dict[str, Any]],
     today: date | None = None,

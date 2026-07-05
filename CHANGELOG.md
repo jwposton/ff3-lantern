@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Bill discover adopt** — semi-monthly usage billing (e.g. Backblaze) no longer prefills invalid repeat frequencies that Firefly rejects with 422
 - **Bill discover monthly prefill** — recurring monthly suggestions pre-fill equal min/max from the trailing 3-month average of total cluster spend per month (#73)
+- **Worksheet bill amount due** — recurring bills use the same trailing 3-month average of linked payments on refresh; falls back to Firefly min/max when no history exists (#73)
 - **Bill group validation** — fails when a group member references a missing registry row (#43)
 - **Bill groups PATCH** — explicit `member_ids: null` returns 422 instead of HTTP 500 (#42)
 - **Bill group assignment** — empty `bill_group_id` strings are cleared instead of stored as invalid references (#42)

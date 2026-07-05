@@ -6,6 +6,7 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any
 
 import httpx
 import pytest
@@ -482,7 +483,12 @@ async def test_excluded_liability(data_dir, payment_worksheet_env):
     assert balances["excluded_liabilities"]["42"]["name"] == "Mortgage"
 
 
-def _build_client_with_bills(fixture: dict, bills: dict[str, dict]) -> FireflyClient:
+def _build_client_with_bills(
+    fixture: dict,
+    bills: dict[str, dict],
+    *,
+    bill_transactions: dict[str, list[dict[str, Any]]] | None = None,
+) -> FireflyClient:
     accounts_data = fixture["accounts"]
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -527,6 +533,38 @@ def _build_client_with_bills(fixture: dict, bills: dict[str, dict]) -> FireflyCl
                                 "repeat_freq": bill.get("repeat_freq", "monthly"),
                             },
                         }
+                    },
+                )
+            if (
+                path == f"/api/v1/bills/{bill_id}/transactions"
+                and request.method == "GET"
+            ):
+                txns = (bill_transactions or {}).get(bill_id, [])
+                journals = []
+                for idx, txn in enumerate(txns):
+                    journals.append(
+                        {
+                            "type": "transactions",
+                            "id": str(900 + idx),
+                            "attributes": {
+                                "transactions": [
+                                    {
+                                        "type": txn.get("type", "withdrawal"),
+                                        "amount": txn["amount"],
+                                        "date": txn["date"],
+                                        "destination_name": txn.get(
+                                            "destination_name", "Merchant"
+                                        ),
+                                    }
+                                ]
+                            },
+                        }
+                    )
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": journals,
+                        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
                     },
                 )
         if path.endswith("/transactions") and request.method == "GET":
@@ -620,7 +658,51 @@ async def test_refresh_bill_owed(data_dir, payment_worksheet_env):
 
 
 @pytest.mark.asyncio
-async def test_refresh_recurring_bill_owed_uses_min_max_average(data_dir, payment_worksheet_env):
+async def test_refresh_recurring_bill_owed_uses_three_month_linked_average(
+    data_dir, payment_worksheet_env
+):
+    fixture = _fixture()
+    bills = {
+        "bill-range": {
+            "name": "Electric",
+            "amount_min": "80.00",
+            "amount_max": "120.00",
+        }
+    }
+    bill_transactions = {
+        "bill-range": [
+            {"date": "2026-05-01", "amount": "90.00"},
+            {"date": "2026-06-01", "amount": "100.00"},
+            {"date": "2026-07-01", "amount": "110.00"},
+        ]
+    }
+    client = _build_client_with_bills(
+        fixture, bills, bill_transactions=bill_transactions
+    )
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-range",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "recurring",
+            "planned_sync": "fixed",
+            "payment_rail": "bank",
+            "rule_id": "rule-1",
+            "row_label": "Electric",
+        }
+    )
+    month = "2026-07"
+
+    await run_refresh(client, month)
+
+    balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
+    assert balances["bills"][str(reg_id)]["owed"] == "100.00"
+
+
+@pytest.mark.asyncio
+async def test_refresh_recurring_bill_owed_fallback_firefly_without_history(
+    data_dir, payment_worksheet_env
+):
     fixture = _fixture()
     bills = {
         "bill-range": {

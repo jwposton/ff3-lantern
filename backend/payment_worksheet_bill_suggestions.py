@@ -12,6 +12,7 @@ from typing import Any, Iterator, Literal, NamedTuple
 
 import sidecar_db
 from firefly_client import FireflyClient
+from payment_worksheet_bill_history import compute_trailing_monthly_average
 from payment_worksheet_liabilities import is_liability_summary
 from payment_worksheet_profiles import is_credit_card_asset
 from transaction_normalization import description_fingerprint
@@ -1093,43 +1094,6 @@ def _pad_amounts(
     return f"{lo}", f"{hi}"
 
 
-def _txn_amount_decimal(txn: dict[str, Any]) -> Decimal | None:
-    raw = txn.get("amount")
-    if isinstance(raw, Decimal):
-        return raw
-    if raw is None:
-        return None
-    try:
-        return Decimal(str(raw))
-    except (InvalidOperation, TypeError, ValueError):
-        return None
-
-
-def _monthly_cluster_average(
-    txns: list[dict[str, Any]],
-    *,
-    months: int = 3,
-) -> Decimal | None:
-    """Trailing calendar-month average of summed cluster spend."""
-    totals_by_month: dict[tuple[int, int], Decimal] = {}
-    for txn in txns:
-        parsed = _parse_date(str(txn.get("date") or ""))
-        amount = _txn_amount_decimal(txn)
-        if parsed is None or amount is None:
-            continue
-        key = (parsed.year, parsed.month)
-        totals_by_month[key] = totals_by_month.get(key, Decimal("0")) + amount
-
-    if not totals_by_month:
-        return None
-
-    recent_keys = sorted(totals_by_month.keys())[-months:]
-    month_totals = [totals_by_month[key] for key in recent_keys]
-    return (
-        sum(month_totals, Decimal("0")) / Decimal(len(month_totals))
-    ).quantize(Decimal("0.01"), ROUND_HALF_UP)
-
-
 def _recommend_amount_mode(metrics: dict[str, Any]) -> Literal["recurring", "intermittent"]:
     if metrics["amt_variance_pct"] <= 10 and metrics["regularity"] >= 0.5:
         return "recurring"
@@ -1428,7 +1392,7 @@ def _build_register_prefill(
         amount_mode = _recommend_amount_mode(metrics)
         repeat_freq = _freq_to_repeat_freq(freq)
         if amount_mode == "recurring" and freq == "monthly":
-            monthly_avg = _monthly_cluster_average(txns, months=3)
+            monthly_avg = compute_trailing_monthly_average(txns, months=3)
             if monthly_avg is not None:
                 avg_text = _format_decimal(monthly_avg)
                 amount_min = amount_max = avg_text

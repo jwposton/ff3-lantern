@@ -1058,7 +1058,7 @@ def test_spotify_prefill_rail_and_amount_mode():
 
 
 def test_monthly_recurring_prefill_uses_three_month_average():
-    from payment_worksheet_bill_suggestions import _monthly_cluster_average
+    from payment_worksheet_bill_history import compute_trailing_monthly_average
 
     txns = [
         {"date": "2026-01-12", "amount": "10.00"},
@@ -1068,17 +1068,17 @@ def test_monthly_recurring_prefill_uses_three_month_average():
         {"date": "2026-03-12", "amount": "8.00"},
         {"date": "2026-03-19", "amount": "4.00"},
     ]
-    assert _monthly_cluster_average(txns, months=3) == Decimal("15.00")
+    assert compute_trailing_monthly_average(txns, months=3) == Decimal("15.00")
 
 
 def test_monthly_cluster_average_uses_available_months_when_under_three():
-    from payment_worksheet_bill_suggestions import _monthly_cluster_average
+    from payment_worksheet_bill_history import compute_trailing_monthly_average
 
     txns = [
         {"date": "2026-02-01", "amount": "20.00"},
         {"date": "2026-03-01", "amount": "40.00"},
     ]
-    assert _monthly_cluster_average(txns, months=3) == Decimal("30.00")
+    assert compute_trailing_monthly_average(txns, months=3) == Decimal("30.00")
 
 
 def test_backblaze_intermittent_prefill_keeps_padded_min_max():
