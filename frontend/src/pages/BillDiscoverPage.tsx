@@ -6,7 +6,6 @@ import { toast } from "sonner"
 
 import { BillRegistrationSheet } from "@/components/payment-run/BillRegistrationSheet"
 import { BillSuggestionBucketSection } from "@/components/payment-run/BillSuggestionBucketSection"
-import { DiscoverIgnoredCategories } from "@/components/payment-run/DiscoverIgnoredCategories"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -122,7 +121,11 @@ export function BillDiscoverPage() {
     queryClient.removeQueries({
       queryKey: ["paymentRun", "billSuggestionTransactions"],
     })
-  }, [discoverSettings?.ignored_categories, queryClient])
+  }, [
+    discoverSettings?.ignored_categories,
+    discoverSettings?.ignored_payees,
+    queryClient,
+  ])
 
   const {
     data,
@@ -290,8 +293,6 @@ export function BillDiscoverPage() {
               {isFetching ? "Refreshing…" : "Refresh"}
             </Button>
           </div>
-
-          <DiscoverIgnoredCategories lookbackMonths={lookbackMonths} />
         </CardContent>
       </Card>
 

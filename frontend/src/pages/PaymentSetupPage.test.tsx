@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
@@ -18,8 +18,9 @@ function TestProviders({ children }: { children: ReactNode }) {
 }
 
 function mockSetupFetch() {
-  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input)
+    const method = init?.method ?? "GET"
 
     if (url.includes("/health")) {
       return new Response(
@@ -43,6 +44,31 @@ function mockSetupFetch() {
     if (url.includes("/api/payment-run/available")) {
       return new Response(
         JSON.stringify({ data: [{ id: "ff-1", name: "Internet" }] }),
+        { status: 200 },
+      )
+    }
+
+    if (url.includes("/api/payment-run/discover-settings")) {
+      if (method === "PUT") {
+        const body = JSON.parse(String(init?.body ?? "{}"))
+        return new Response(
+          JSON.stringify({
+            ignored_categories: body.ignored_categories ?? [],
+            ignored_payees: body.ignored_payees ?? [],
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          ignored_categories: [],
+          ignored_payees: [],
+          available_categories: [
+            { id: "1", name: "Gas" },
+            { id: "2", name: "Rent" },
+          ],
+          suggested_ignored_categories: ["Gas", "Restaurants"],
+        }),
         { status: 200 },
       )
     }
@@ -119,5 +145,28 @@ describe("PaymentSetupPage", () => {
     expect(
       screen.getByRole("link", { name: "Open worksheet" }).getAttribute("href"),
     ).toBe("/manage/payment-run")
+  })
+
+  it("shows bill discovery config section", async () => {
+    mockSetupFetch()
+
+    render(
+      <TestProviders>
+        <PaymentSetupPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Bill discovery config")).toBeTruthy()
+      expect(screen.getByText("Ignored categories")).toBeTruthy()
+      expect(screen.getByText("Ignored payees")).toBeTruthy()
+    })
+
+    const select = screen.getByLabelText("Add ignored category")
+    fireEvent.change(select, { target: { value: "Gas" } })
+
+    await waitFor(() => {
+      expect(screen.getByText("Gas")).toBeTruthy()
+    })
   })
 })

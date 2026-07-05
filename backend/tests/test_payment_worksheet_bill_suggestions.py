@@ -13,6 +13,7 @@ from payment_worksheet_bill_suggestions import (
     _category_is_ignored,
     _cluster_withdrawals,
     _is_quiet_category,
+    _payee_is_ignored,
     _payee_similarity,
     _merchant_from_category,
     _pad_amounts,
@@ -26,7 +27,11 @@ from payment_worksheet_bill_suggestions import (
 )
 
 
-def _engine_kwargs(*, ignored_categories: list[str] | None = None) -> dict[str, Any]:
+def _engine_kwargs(
+    *,
+    ignored_categories: list[str] | None = None,
+    ignored_payees: list[str] | None = None,
+) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "accounts": empty_accounts(),
         "firefly_bills": [],
@@ -36,6 +41,8 @@ def _engine_kwargs(*, ignored_categories: list[str] | None = None) -> dict[str, 
     }
     if ignored_categories is not None:
         kwargs["ignored_categories"] = ignored_categories
+    if ignored_payees is not None:
+        kwargs["ignored_payees"] = ignored_payees
     return kwargs
 
 
@@ -779,6 +786,29 @@ def test_category_ignore_casefold_and_alias():
     assert _category_is_ignored("Gasoline", ["Gas"]) is True
     assert _category_is_ignored("Restaurant", ["Restaurants"]) is True
     assert _category_is_ignored("Rent", ["Gas", "Groceries"]) is False
+
+
+def test_payee_ignore_casefold():
+    assert _payee_is_ignored("Spotify USA Inc", ["spotify usa inc"]) is True
+    assert _payee_is_ignored("Spotify USA Inc", ["Netflix"]) is False
+    assert _payee_is_ignored("", ["Spotify"]) is False
+
+
+def test_spotify_excluded_when_payee_ignored():
+    result = build_bill_suggestions(
+        spotify_monthly_withdrawals(),
+        **_engine_kwargs(ignored_payees=["Spotify USA Inc"]),
+    )
+    assert result["data"] == []
+
+
+def test_spotify_includes_destination_name():
+    result = build_bill_suggestions(
+        spotify_monthly_withdrawals(),
+        **_engine_kwargs(),
+    )
+    assert len(result["data"]) == 1
+    assert result["data"][0]["destination_name"] == "Spotify USA Inc"
 
 
 def arbys_multi_visit_fast_food(months: int = 6) -> list[dict[str, Any]]:

@@ -29,8 +29,10 @@ from payment_worksheet_profiles import (
 )
 from payment_worksheet_bill_suggestions import (
     LOOKBACK_CHOICES,
+    _subtract_months,
     fetch_bill_suggestion_transactions,
     fetch_bill_suggestions,
+    resolve_suggestion_destination_name,
 )
 from payment_worksheet_bills import (
     BILL_GROUP_SECTIONS,
@@ -997,7 +999,17 @@ async def available_bills(
 
 
 class DiscoverSettingsBody(BaseModel):
-    ignored_categories: list[str] = []
+    ignored_categories: list[str] | None = None
+    ignored_payees: list[str] | None = None
+
+
+class DiscoverIgnorePayeeBody(BaseModel):
+    suggestion_id: str
+    lookback_months: int = 12
+
+
+class DiscoverIgnoreCategoryBody(BaseModel):
+    category: str
 
 
 @router.get("/payment-run/discover-settings")
@@ -1016,6 +1028,7 @@ async def get_discover_settings_route(
     )
     return {
         "ignored_categories": settings["ignored_categories"],
+        "ignored_payees": settings["ignored_payees"],
         "available_categories": available,
         "suggested_ignored_categories": sidecar_db.DEFAULT_DISCOVER_IGNORED_CATEGORIES,
     }
@@ -1026,8 +1039,56 @@ async def put_discover_settings_route(
     body: DiscoverSettingsBody,
     _: None = Depends(require_payment_worksheet),
 ):
-    updated = await sidecar_db.update_discover_ignored_categories(body.ignored_categories)
+    updated = await sidecar_db.update_discover_settings(
+        ignored_categories=body.ignored_categories,
+        ignored_payees=body.ignored_payees,
+    )
     return updated
+
+
+@router.post("/payment-run/discover-settings/ignore-payee")
+async def discover_ignore_payee_route(
+    body: DiscoverIgnorePayeeBody,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    if body.lookback_months not in LOOKBACK_CHOICES:
+        raise HTTPException(
+            status_code=422,
+            detail="lookback_months must be 6, 12, or 24.",
+        )
+    period_end = date.today()
+    period_start = _subtract_months(period_end, body.lookback_months)
+    try:
+        splits = await client.fetch_splits(period_start.isoformat(), period_end.isoformat())
+        accounts = await client.fetch_accounts()
+        bills = await client.fetch_bills()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    registry_rows = await sidecar_db.list_worksheet_registry()
+    settings = await sidecar_db.get_discover_settings()
+    destination = resolve_suggestion_destination_name(
+        splits,
+        accounts=accounts,
+        firefly_bills=bills,
+        registry_rows=registry_rows,
+        ignored_categories=settings["ignored_categories"],
+        ignored_payees=settings["ignored_payees"],
+        suggestion_id=body.suggestion_id,
+    )
+    if not destination:
+        raise HTTPException(status_code=404, detail="Suggestion not found.")
+    result = await sidecar_db.add_discover_ignored_payee(destination)
+    return result
+
+
+@router.post("/payment-run/discover-settings/ignore-category")
+async def discover_ignore_category_route(
+    body: DiscoverIgnoreCategoryBody,
+    _: None = Depends(require_payment_worksheet),
+):
+    result = await sidecar_db.add_discover_ignored_category(body.category)
+    return result
 
 
 @router.get("/payment-run/bill-suggestions")

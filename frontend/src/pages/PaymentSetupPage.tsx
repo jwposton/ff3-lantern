@@ -2,6 +2,7 @@ import { ArrowRight, ScanSearch, Wallet } from "lucide-react"
 import { Link, Navigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 
+import { BillDiscoveryConfigSection } from "@/components/payment-run/BillDiscoveryConfigSection"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -156,6 +157,8 @@ export function PaymentSetupPage() {
           manageHref="/manage/payment-run/bill-groups"
         />
       </div>
+
+      <BillDiscoveryConfigSection />
 
       <Card className="border-dashed">
         <CardContent className="py-6 text-center text-sm text-muted-foreground">

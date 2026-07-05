@@ -2080,18 +2080,35 @@ def test_discover_settings_get_and_put(monkeypatch, client, data_dir, payment_wo
         body = get_response.json()
         assert body["ignored_categories"]
         assert "Gas" in body["ignored_categories"]
+        assert body["ignored_payees"] == []
         assert {row["name"] for row in body["available_categories"]} == {"Gas", "Rent"}
         assert body["suggested_ignored_categories"]
 
         put_response = client.put(
             "/api/payment-run/discover-settings",
-            json={"ignored_categories": ["Gas", "gas", " Rent "]},
+            json={"ignored_categories": ["Gas", "gas", " Rent "], "ignored_payees": ["PayPal"]},
         )
         assert put_response.status_code == 200
         assert put_response.json()["ignored_categories"] == ["Gas", "Rent"]
+        assert put_response.json()["ignored_payees"] == ["PayPal"]
 
         get_again = client.get("/api/payment-run/discover-settings")
         assert get_again.json()["ignored_categories"] == ["Gas", "Rent"]
+        assert get_again.json()["ignored_payees"] == ["PayPal"]
+
+        category_post = client.post(
+            "/api/payment-run/discover-settings/ignore-category",
+            json={"category": "Restaurants"},
+        )
+        assert category_post.status_code == 200
+        assert "Restaurants" in category_post.json()["ignored_categories"]
+
+        category_post_again = client.post(
+            "/api/payment-run/discover-settings/ignore-category",
+            json={"category": "restaurants"},
+        )
+        assert category_post_again.status_code == 200
+        assert category_post_again.json()["ignored_categories"].count("Restaurants") == 1
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 
