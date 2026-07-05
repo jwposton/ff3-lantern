@@ -461,12 +461,9 @@ async function parseError(res: Response, fallback: string): Promise<never> {
   throw new Error(detail)
 }
 
-export function currentMonthKey(): string {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, "0")
-  return `${year}-${month}`
-}
+import { currentMonthKey } from "@/lib/appClock"
+
+export { currentMonthKey }
 
 export function formatMonthLabel(monthKey: string): string {
   const [year, month] = monthKey.split("-")

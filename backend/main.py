@@ -11,6 +11,7 @@ from routes.categorize import router as categorize_router
 from routes.loans import router as loans_router
 from routes.payment_run import payment_worksheet_enabled, router as payment_run_router
 from routes.transactions import router as transactions_router
+from app_clock import demo_anchor_date_str
 from cors import parse_cors_origins
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,6 +51,7 @@ class HealthResponse(BaseModel):
     openrouter_configured: bool
     sidecar_writable: bool
     payment_worksheet_enabled: bool
+    demo_anchor_date: str | None = None
 
 
 def _is_set(name: str) -> bool:
@@ -104,4 +106,5 @@ async def health() -> HealthResponse:
         openrouter_configured=_is_set("OPENROUTER_API_KEY"),
         sidecar_writable=await sidecar_db.is_writable(),
         payment_worksheet_enabled=payment_worksheet_enabled(),
+        demo_anchor_date=demo_anchor_date_str(),
     )

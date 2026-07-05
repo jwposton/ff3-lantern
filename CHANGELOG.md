@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Demo anchor date** — `FF3LANTERN_DEMO_ANCHOR_DATE` pins “today” for the payment worksheet and UI (public demo compose defaults to 2026-07-05); sidebar shows a demo banner when active (#102)
+- **Demo Firefly deep links** — `FF3LANTERN_FIREFLY_PUBLIC_URL` sets browser-reachable Firefly URLs for “Open in Firefly” while API calls stay on the internal Docker hostname (#102)
+- **Demo Firefly users** — bootstrap creates a service account (Lantern API token) separate from the published browser login (`demo@demo.ts`, demo role, no admin) (#102)
 - **Firefly integration CI** — GitHub Actions workflow runs Lantern against a disposable Firefly III container with a minimal seeded dataset; PRs use pinned `version-6.6.3`, nightly matrix covers supported minors and `latest` (#103)
 - **Health `firefly_version`** — `GET /health` reports the connected Firefly III version from `/api/v1/about` when credentials are configured (#103)
 

@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!demo/.env.demo.example
 
 # Python
 __pycache__/
@@ -40,6 +41,11 @@ docker-compose.override.yml
 .planning
 .cursor
 
-# Datafiles
+# Operator-private inputs (Firefly exports, prod sidecar)
 data/
+demo-secrets/
+demo/.runtime/
+demo/.env.demo
 demo/.integration-token
+demo/firefly-export.sanitized.json
+demo/ff3lantern.db

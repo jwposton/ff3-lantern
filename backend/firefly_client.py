@@ -15,6 +15,14 @@ import firefly_reference_cache
 logger = logging.getLogger(__name__)
 
 
+def firefly_public_base_url() -> str:
+    """Browser-reachable Firefly base URL for UI links (API may use internal Docker hostname)."""
+    public = os.environ.get("FF3LANTERN_FIREFLY_PUBLIC_URL", "").strip().rstrip("/")
+    if public:
+        return public
+    return os.environ.get("FIREFLY_BASE_URL", "").strip().rstrip("/")
+
+
 def _format_firefly_error(response: httpx.Response) -> str:
     """Extract a short operator-facing message from a Firefly error response."""
     try:

@@ -7,6 +7,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+import app_clock
+
 
 def _decimal_amount(value: Any) -> Decimal:
     if value is None or value == "":
@@ -39,7 +41,7 @@ def bill_history_date_window(today: date | None = None) -> tuple[str, str]:
     Stats use a conditional 12-month window — see ``bill_history_stats_month_range``.
     """
     if today is None:
-        today = date.today()
+        today = app_clock.today()
     year = today.year
     month = today.month - 12
     while month <= 0:
@@ -56,7 +58,7 @@ def rows_have_current_month_payment(
 ) -> bool:
     """True when at least one linked payment falls in the current calendar month."""
     if today is None:
-        today = date.today()
+        today = app_clock.today()
     current_key = _month_key_for_date(today)
     for row in rows:
         month_key = str(row.get("date") or "")[:7]
@@ -79,7 +81,7 @@ def bill_history_stats_month_range(
     12 complete months before the current month (keep last year's same-month hit).
     """
     if today is None:
-        today = date.today()
+        today = app_clock.today()
     if current_month_has_payment:
         return _month_key_offset(today, 11), _month_key_for_date(today)
     return _month_key_offset(today, 12), _month_key_offset(today, 1)
@@ -131,7 +133,7 @@ def bill_amount_due_fetch_window(
 ) -> tuple[str, str]:
     """Inclusive fetch window for trailing monthly averages on refresh."""
     if today is None:
-        today = date.today()
+        today = app_clock.today()
     start_month = _month_key_offset(today, lookback_months)
     return f"{start_month}-01", today.isoformat()
 
@@ -142,7 +144,7 @@ def compute_bill_history_stats(
 ) -> dict[str, Any]:
     """Aggregate rows into rolling 12-month totals and averages."""
     if today is None:
-        today = date.today()
+        today = app_clock.today()
     current_month_has_payment = rows_have_current_month_payment(rows, today)
     stats_start, stats_end = bill_history_stats_month_range(
         today,

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
+import app_clock
 import sidecar_db
 from firefly_client import FireflyClient
 from loan_profiles import parse_loan_profile_from_notes
@@ -261,8 +262,8 @@ async def run_refresh(
 ) -> dict[str, str]:
     month = month or current_month_key()
     month_start = f"{month}-01"
-    today = datetime.now(timezone.utc).date().isoformat()
-    refreshed_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
+    today = app_clock.now_utc().date().isoformat()
+    refreshed_at = app_clock.now_utc().replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
     )
 

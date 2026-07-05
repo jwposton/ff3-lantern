@@ -21,6 +21,7 @@ import { ReferenceCacheMenuItem } from "@/components/ReferenceCacheButton"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
 import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
 import { PRODUCT_NAME } from "@/lib/product"
+import { formatDemoAnchorLabel } from "@/lib/appClock"
 import { useHealth } from "@/hooks/useHealth"
 import { useManageQueueCounts } from "@/hooks/useManageQueueCounts"
 import {
@@ -266,10 +267,19 @@ export function AppSidebar() {
   const { categorizeCount, loanSplitCount } = useManageQueueCounts()
   const { data: health } = useHealth()
   const paymentWorksheetEnabled = health?.payment_worksheet_enabled ?? false
+  const demoAnchorDate = health?.demo_anchor_date?.trim() || null
 
   return (
     <Sidebar collapsible="icon">
       <SidebarRail />
+      {demoAnchorDate ? (
+        <div
+          className="border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center text-xs text-amber-950 dark:text-amber-100 group-data-[collapsible=icon]:hidden"
+          role="status"
+        >
+          Demo — data as of {formatDemoAnchorLabel(demoAnchorDate)}
+        </div>
+      ) : null}
       <SidebarHeader className="border-b border-sidebar-border group-data-[collapsible=icon]:px-0">
         <div className="flex h-12 w-full items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0">
           <SidebarTrigger

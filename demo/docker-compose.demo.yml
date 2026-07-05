@@ -1,0 +1,109 @@
+# Public demo stack (#102) — infra only; data lives on the host (see demo/README.md).
+#
+#   DEMO_DATA_DIR=~/ff3lantern-demo-data ./demo/demo-up.sh
+#
+# Requires demo/.env.demo (from demo/.env.demo.example) after first bootstrap.
+
+name: ff3lantern-demo
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: firefly
+      POSTGRES_PASSWORD: ${DEMO_DB_PASSWORD:-secret_firefly_password}
+      POSTGRES_DB: firefly
+    volumes:
+      - demo_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firefly -d firefly"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  firefly:
+    image: fireflyiii/core:${FIREFLY_TAG:-version-6.6.3}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      APP_KEY: ${DEMO_APP_KEY:-SomeRandomStringOf32CharsExactly}
+      APP_DEBUG: "false"
+      APP_URL: http://firefly:8080
+      TRUSTED_PROXIES: "**"
+      TZ: ${TZ:-UTC}
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: firefly
+      DB_USERNAME: firefly
+      DB_PASSWORD: ${DEMO_DB_PASSWORD:-secret_firefly_password}
+      PGSQL_SCHEMA: public
+      CACHE_DRIVER: file
+      SESSION_DRIVER: file
+      STATIC_CRON_TOKEN: ${DEMO_CRON_TOKEN:-ff3lanternDemoCronToken01}
+      LOG_CHANNEL: stderr
+      APP_LOG_LEVEL: warning
+    ports:
+      - "127.0.0.1:${DEMO_FIREFLY_PORT:-8088}:8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "http://127.0.0.1:8080/api/v1/cron/${DEMO_CRON_TOKEN:-ff3lanternDemoCronToken01}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 36
+      start_period: 90s
+
+  lantern-backend:
+    image: ghcr.io/${GITHUB_OWNER:-jwposton}/ff3-lantern-backend:${FF3LANTERN_TAG:-latest}
+    build:
+      context: ../backend
+    depends_on:
+      firefly:
+        condition: service_healthy
+    env_file:
+      - path: .env.demo
+        required: false
+    environment:
+      FIREFLY_BASE_URL: http://firefly:8080
+      FF3LANTERN_FIREFLY_PUBLIC_URL: ${FF3LANTERN_FIREFLY_PUBLIC_URL:-http://127.0.0.1:8088}
+      FF3LANTERN_PAYMENT_WORKSHEET_ENABLED: "true"
+      FF3LANTERN_DATA_DIR: /data
+      FF3LANTERN_DEMO_ANCHOR_DATE: ${FF3LANTERN_DEMO_ANCHOR_DATE:-2026-07-05}
+      CORS_ALLOWED_ORIGINS: ${DEMO_CORS_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - ${DEMO_RUNTIME_DIR:-./.runtime}/lantern-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  lantern-frontend:
+    image: ghcr.io/${GITHUB_OWNER:-jwposton}/ff3-lantern-frontend:${FF3LANTERN_TAG:-latest}
+    build:
+      context: ../frontend
+    depends_on:
+      lantern-backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${DEMO_FRONTEND_PORT:-8080}:80"
+
+volumes:
+  demo_db:

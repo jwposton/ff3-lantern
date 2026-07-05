@@ -84,6 +84,21 @@ def test_health_does_not_leak_secrets(client, monkeypatch):
     assert response.json()["payment_worksheet_enabled"] is True
 
 
+def test_health_demo_anchor_date(monkeypatch, tmp_path):
+    monkeypatch.setenv("FF3LANTERN_DEMO_ANCHOR_DATE", "2026-07-05")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    import importlib
+
+    import app_clock
+    import main
+
+    importlib.reload(app_clock)
+    importlib.reload(main)
+
+    response = TestClient(main.app).get("/health")
+    assert response.json()["demo_anchor_date"] == "2026-07-05"
+
+
 def test_health_payment_worksheet_disabled(monkeypatch, tmp_path):
     monkeypatch.delenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", raising=False)
     monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))

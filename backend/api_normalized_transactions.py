@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from firefly_client import FireflyClient
+from firefly_client import FireflyClient, firefly_public_base_url
 from transaction_normalization import normalize_transactions
 
 router = APIRouter()
@@ -50,6 +50,6 @@ async def get_normalized_transactions(
         ) from exc
     return {
         "data": data,
-        "firefly_base_url": client.base_url,
+        "firefly_base_url": firefly_public_base_url(),
         "meta": {"count": len(data), "start": start, "end": end},
     }
