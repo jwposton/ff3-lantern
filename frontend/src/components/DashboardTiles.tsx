@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactNode } from "react"
+import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { useNavigate } from "react-router-dom"
 
 import { BudgetCurrentVsAverageChart } from "@/components/BudgetCurrentVsAverageChart"
@@ -22,15 +22,25 @@ import {
   isUncategorizedDisplayName,
 } from "@/lib/manageNav"
 import {
+  readBudgetVsAverageDisplayMode,
+  readBudgetVsAverageRankMode,
+  writeBudgetVsAverageDisplayMode,
+  writeBudgetVsAverageRankMode,
+  type BudgetVsAverageDisplayMode,
+  type BudgetVsAverageRankMode,
+} from "@/lib/budgetVsAveragePrefs"
+import {
+  buildBudgetVsAverageTileState,
+  budgetVsAverageTileSubtitle,
+} from "@/lib/budgetVsAverageTile"
+import {
   readMomRollingAverageMethod,
   type RollingWindowMonths,
 } from "@/lib/momComparePrefs"
 import {
-  aggregateOtherBaselines,
   currentCalendarMonth,
   currentVsRollingBaseline,
   lastDayOfMonth,
-  rankStacksByAmount,
 } from "@/lib/momVariance"
 import {
   isCashFlowOutflow,
@@ -149,6 +159,12 @@ export function DashboardTiles({
     () => readMomRollingAverageMethod("spending"),
     [],
   )
+  const [rankMode, setRankMode] = useState<BudgetVsAverageRankMode>(() =>
+    readBudgetVsAverageRankMode(),
+  )
+  const [displayMode, setDisplayMode] = useState<BudgetVsAverageDisplayMode>(
+    () => readBudgetVsAverageDisplayMode(),
+  )
 
   const currentMonthSpendingPieSlices = useMemo(
     () =>
@@ -190,24 +206,24 @@ export function DashboardTiles({
       ROLLING_WINDOW_MONTHS,
       rollingMethod,
     )
-    if (pairs == null) {
-      return { sortedNames: [] as string[], values: new Map() }
-    }
-
-    const currentTotals = new Map<string, number>()
-    for (const [name, { current }] of pairs) {
-      currentTotals.set(name, current)
-    }
-    const { names } = rankStacksByAmount(currentTotals, BUDGET_BAR_TOP_N)
-    const aggregated = aggregateOtherBaselines(pairs, names)
-    const sortedNames = names.filter((name) => aggregated.has(name))
-    return { sortedNames, values: aggregated }
+    return buildBudgetVsAverageTileState(
+      chartData,
+      currentMonth,
+      ROLLING_WINDOW_MONTHS,
+      rollingMethod,
+      rankMode,
+      displayMode,
+      BUDGET_BAR_TOP_N,
+      pairs,
+    )
   }, [
     averageSpendingRows,
     averageStart,
     averageEnd,
     currentMonth,
     rollingMethod,
+    rankMode,
+    displayMode,
   ])
 
   if (isError) {
@@ -259,7 +275,21 @@ export function DashboardTiles({
             loading={isAverageLoading}
             emptyMessage="Not enough history for a rolling average comparison"
             chartTitle={budgetVsAverageTileTitle()}
-            chartSubtitle={currentMonthLabel}
+            chartSubtitle={budgetVsAverageTileSubtitle(
+              currentMonthLabel,
+              rankMode,
+            )}
+            rankMode={rankMode}
+            displayMode={displayMode}
+            controlsDisabled={isAverageLoading}
+            onRankModeChange={(mode) => {
+              setRankMode(mode)
+              writeBudgetVsAverageRankMode(mode)
+            }}
+            onDisplayModeChange={(mode) => {
+              setDisplayMode(mode)
+              writeBudgetVsAverageDisplayMode(mode)
+            }}
             onSelect={makeBudgetDrillHandler(currentMonthStart, currentMonthEnd)}
           />
         </div>
