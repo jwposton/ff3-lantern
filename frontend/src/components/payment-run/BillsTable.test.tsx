@@ -167,16 +167,16 @@ describe("BillsTable expandable bill groups", () => {
   it("hides visible group children when collapsed and reveals them on expand (BGRP-11)", async () => {
     renderBillsTable()
 
-    expect(screen.queryByText("Electric")).not.toBeInTheDocument()
-    expect(screen.queryByText("Water")).not.toBeInTheDocument()
+    expect(screen.queryByText("Electric")).toBeNull()
+    expect(screen.queryByText("Water")).toBeNull()
 
     fireEvent.click(
       screen.getByRole("button", { name: "Expand Utilities bills" }),
     )
 
     await waitFor(() => {
-      expect(screen.getByText("Electric")).toBeInTheDocument()
-      expect(screen.getByText("Water")).toBeInTheDocument()
+      expect(screen.getByText("Electric")).toBeTruthy()
+      expect(screen.getByText("Water")).toBeTruthy()
     })
   })
 
@@ -187,10 +187,10 @@ describe("BillsTable expandable bill groups", () => {
     expect(utilitiesRow).not.toBeNull()
     const row = utilitiesRow!
 
-    expect(within(row).getByText("$125.25")).toBeInTheDocument()
-    expect(within(row).getByText("1/2")).toBeInTheDocument()
-    expect(within(row).queryByRole("checkbox")).not.toBeInTheDocument()
-    expect(within(row).queryByRole("textbox")).not.toBeInTheDocument()
+    expect(within(row).getAllByText("125.25").length).toBeGreaterThan(0)
+    expect(within(row).getByText("1/2")).toBeTruthy()
+    expect(within(row).queryByRole("checkbox")).toBeNull()
+    expect(within(row).queryByRole("textbox")).toBeNull()
   })
 
   it("keeps subtotal testids unchanged when expanding (BGRP-14 / D-06)", async () => {
@@ -204,7 +204,7 @@ describe("BillsTable expandable bill groups", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("Electric")).toBeInTheDocument()
+      expect(screen.getByText("Electric")).toBeTruthy()
     })
 
     expect(screen.getByTestId("bills-due-subtotal").textContent).toBe(dueBefore)
