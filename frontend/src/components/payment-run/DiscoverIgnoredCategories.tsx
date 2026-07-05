@@ -9,11 +9,11 @@ import {
 } from "@/hooks/useDiscoverSettings"
 import { cn } from "@/lib/utils"
 
-const selectClassName =
+export const discoverSelectClassName =
   "border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-2 focus-visible:outline-hidden"
 
 type DiscoverIgnoredCategoriesProps = {
-  lookbackMonths: number
+  lookbackMonths?: number
   className?: string
 }
 
@@ -42,18 +42,20 @@ export function DiscoverIgnoredCategories({
         seen.add(name.toLowerCase())
       }
     }
-    updateMutation.mutate(merged)
+    updateMutation.mutate({ ignored_categories: merged })
   }
 
   function addCategory(categoryName: string) {
     if (!categoryName || ignoredFolded.has(categoryName.toLowerCase())) return
-    updateMutation.mutate([...ignored, categoryName])
+    updateMutation.mutate({ ignored_categories: [...ignored, categoryName] })
   }
 
   function removeCategory(categoryName: string) {
-    updateMutation.mutate(
-      ignored.filter((name) => name.toLowerCase() !== categoryName.toLowerCase()),
-    )
+    updateMutation.mutate({
+      ignored_categories: ignored.filter(
+        (name) => name.toLowerCase() !== categoryName.toLowerCase(),
+      ),
+    })
   }
 
   if (isPending) {
@@ -127,7 +129,7 @@ export function DiscoverIgnoredCategories({
         </label>
         <select
           id="discover-ignore-category"
-          className={cn(selectClassName, "max-w-xs flex-1")}
+          className={cn(discoverSelectClassName, "max-w-xs flex-1")}
           defaultValue=""
           disabled={updateMutation.isPending || addable.length === 0}
           onChange={(event) => {

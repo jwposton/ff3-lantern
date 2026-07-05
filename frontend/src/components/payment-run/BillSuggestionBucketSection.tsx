@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { Fragment } from "react"
 
+import { BillSuggestionIgnoreMenu } from "@/components/payment-run/BillSuggestionIgnoreMenu"
 import { BillSuggestionTransactionsPanel } from "@/components/payment-run/BillSuggestionTransactionsPanel"
 import { COMPACT_TABLE } from "@/components/payment-run/worksheetTableUtils"
 import { Badge } from "@/components/ui/badge"
@@ -14,11 +15,91 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { formatDisplayAmount, formatDisplayDate } from "@/lib/formatDisplay"
+import { formatDisplayDate } from "@/lib/formatDisplay"
 import type { BillSuggestion } from "@/lib/paymentRunApi"
 import { cn } from "@/lib/utils"
 
-const DESKTOP_COLUMN_COUNT = 11
+const DESKTOP_COLUMN_COUNT = 10
+
+const AMOUNT_CELL_CLASS = "text-center align-middle tabular-nums text-xs"
+
+function parseSuggestionAmount(value: string): number | null {
+  const parsed = Number.parseFloat(String(value).replace(/,/g, ""))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+/** True when min and max are within one cent (fixed subscription-style amounts). */
+export function isFixedSuggestionAmount(min: string, max: string): boolean {
+  const minVal = parseSuggestionAmount(min)
+  const maxVal = parseSuggestionAmount(max)
+  if (minVal === null || maxVal === null) return true
+  return Math.abs(minVal - maxVal) < 0.01
+}
+
+function formatCompactAmount(value: string | number | null | undefined): string {
+  if (value == null || value === "") return "—"
+  const parsed =
+    typeof value === "number"
+      ? value
+      : Number.parseFloat(String(value).replace(/,/g, ""))
+  if (!Number.isFinite(parsed)) return String(value)
+  const cents = Math.abs(Math.round(parsed * 100) % 100)
+  if (cents === 0) {
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(parsed)
+  }
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(parsed)
+}
+
+/** @internal exported for tests */
+export function formatSuggestionAmountRange(min: string, max: string): string {
+  return `${formatCompactAmount(min)} - ${formatCompactAmount(max)}`
+}
+
+export function BillSuggestionAmountDisplay({
+  row,
+  className,
+}: {
+  row: Pick<BillSuggestion, "amount_min" | "amount_avg" | "amount_max">
+  className?: string
+}) {
+  const fixed = isFixedSuggestionAmount(row.amount_min, row.amount_max)
+
+  if (fixed) {
+    const primary =
+      row.amount_avg?.trim() ||
+      row.amount_min?.trim() ||
+      row.amount_max?.trim() ||
+      ""
+    return (
+      <span className={className}>{formatCompactAmount(primary || null)}</span>
+    )
+  }
+
+  return (
+    <div className={cn("leading-snug", className)}>
+      <div>{formatCompactAmount(row.amount_avg)}</div>
+      <div className="text-muted-foreground text-[0.65rem] leading-tight">
+        {formatSuggestionAmountRange(row.amount_min, row.amount_max)}
+      </div>
+    </div>
+  )
+}
+
+const WRAP_CELL_CLASS =
+  "max-w-[5.5rem] min-w-[3.5rem] text-center text-xs leading-snug break-words whitespace-normal align-middle"
+
+const DATA_CELL_CLASS = "text-center align-middle"
+
+function formatCategoryLabel(category: string | undefined | null): string {
+  const text = (category ?? "").trim()
+  return text || "—"
+}
 
 export function confidenceBadgeClass(
   confidence: BillSuggestion["confidence"],
@@ -44,22 +125,8 @@ export function billColumnDetail(row: BillSuggestion): string | null {
     row.bucket?.trim() ||
     ""
   )
-  const category = typeof row.category === "string" ? row.category.trim() : ""
-  const parts: string[] = []
-
-  if (category) {
-    const merchantBase = row.merchant
-      .replace(/ \(likely\)$/, "")
-      .replace(/ \(misc\)$/, "")
-    if (category.toLowerCase() !== merchantBase.toLowerCase()) {
-      parts.push(category)
-    }
-  }
-  if (payee) {
-    parts.push(`Payee: ${payee}`)
-  }
-
-  return parts.length ? parts.join(" · ") : null
+  if (!payee) return null
+  return `Payee: ${payee}`
 }
 
 /** @deprecated Use billColumnDetail */
@@ -178,16 +245,15 @@ export function BillSuggestionBucketSection({
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8 p-0 text-center" />
-                <TableHead className="min-w-[8rem]">Bill</TableHead>
-                <TableHead className="w-[4.5rem] text-right">Min</TableHead>
-                <TableHead className="w-[4.5rem] text-right">Avg</TableHead>
-                <TableHead className="w-[4.5rem] text-right">Max</TableHead>
-                <TableHead className="w-[4rem]">Freq</TableHead>
-                <TableHead className="w-[3rem] text-right">Hits</TableHead>
-                <TableHead className="min-w-[5rem]">Paid via</TableHead>
-                <TableHead className="w-[5.5rem]">Confidence</TableHead>
-                <TableHead className="w-[5.5rem]">Last</TableHead>
-                <TableHead className="w-[4.5rem]">Action</TableHead>
+                <TableHead className="min-w-[8rem] text-center">Bill</TableHead>
+                <TableHead className="min-w-[3.5rem] text-center">Paid via</TableHead>
+                <TableHead className="w-[4rem] text-center">Freq</TableHead>
+                <TableHead className="w-[3rem] text-center">Hits</TableHead>
+                <TableHead className="min-w-[4.5rem] text-center">Amount</TableHead>
+                <TableHead className="w-[5.5rem] text-center">Last</TableHead>
+                <TableHead className="min-w-[3.5rem] text-center">Cat.</TableHead>
+                <TableHead className="w-[5rem] text-center">Confidence</TableHead>
+                <TableHead className="min-w-[7rem] text-center">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -204,7 +270,7 @@ export function BillSuggestionBucketSection({
                           onToggleExpanded={onToggleExpanded}
                         />
                       </TableCell>
-                      <TableCell>
+                      <TableCell className={DATA_CELL_CLASS}>
                         <div className="font-medium">{row.merchant}</div>
                         {detail ? (
                           <p className="text-xs text-muted-foreground">
@@ -212,48 +278,54 @@ export function BillSuggestionBucketSection({
                           </p>
                         ) : null}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatDisplayAmount(row.amount_min)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatDisplayAmount(row.amount_avg)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatDisplayAmount(row.amount_max)}
-                      </TableCell>
-                      <TableCell>{capitalizeLabel(row.freq)}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {row.occurrences}
-                      </TableCell>
-                      <TableCell
-                        className="max-w-[8rem] truncate"
-                        title={row.payment_source}
-                      >
+                      <TableCell className={cn(WRAP_CELL_CLASS, "text-muted-foreground")}>
                         {row.payment_source}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className={DATA_CELL_CLASS}>
+                        {capitalizeLabel(row.freq)}
+                      </TableCell>
+                      <TableCell className={cn(DATA_CELL_CLASS, "tabular-nums")}>
+                        {row.occurrences}
+                      </TableCell>
+                      <TableCell className={AMOUNT_CELL_CLASS}>
+                        <BillSuggestionAmountDisplay row={row} />
+                      </TableCell>
+                      <TableCell className={cn(DATA_CELL_CLASS, "tabular-nums")}>
+                        {formatDisplayDate(row.last_date)}
+                      </TableCell>
+                      <TableCell
+                        className={cn(WRAP_CELL_CLASS, "text-muted-foreground")}
+                      >
+                        {formatCategoryLabel(row.category)}
+                      </TableCell>
+                      <TableCell className={DATA_CELL_CLASS}>
                         <Badge
                           variant="outline"
                           className={cn(
-                            "border-transparent font-normal",
+                            "border-transparent font-normal text-xs",
                             confidenceBadgeClass(row.confidence),
                           )}
                         >
                           {capitalizeLabel(row.confidence)}
                         </Badge>
                       </TableCell>
-                      <TableCell className="tabular-nums">
-                        {formatDisplayDate(row.last_date)}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          type="button"
-                          size="sm"
-                          aria-label={`Adopt ${row.merchant} as bill`}
-                          onClick={() => onAdopt(row)}
-                        >
-                          Adopt
-                        </Button>
+                      <TableCell className={DATA_CELL_CLASS}>
+                        <div className="flex flex-nowrap items-center justify-center gap-0.5">
+                          <Button
+                            type="button"
+                            size="xs"
+                            aria-label={`Adopt ${row.merchant} as bill`}
+                            onClick={() => onAdopt(row)}
+                          >
+                            Adopt
+                          </Button>
+                          <BillSuggestionIgnoreMenu
+                            row={row}
+                            payeeSectionRowCount={rows.length}
+                            lookbackMonths={lookbackMonths}
+                            size="xs"
+                          />
+                        </div>
                       </TableCell>
                     </TableRow>
                     {isExpanded ? (
@@ -303,14 +375,14 @@ export function BillSuggestionBucketSection({
                     ) : null}
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums">
-                  <span>Min {formatDisplayAmount(row.amount_min)}</span>
-                  <span>Avg {formatDisplayAmount(row.amount_avg)}</span>
-                  <span>Max {formatDisplayAmount(row.amount_max)}</span>
-                </div>
+                <p className="text-xs tabular-nums">
+                  <BillSuggestionAmountDisplay row={row} />
+                </p>
                 <p className="text-xs text-muted-foreground">
                   {capitalizeLabel(row.freq)} · {row.occurrences} hits ·{" "}
                   <span title={row.payment_source}>{row.payment_source}</span>
+                  {" · Cat. "}
+                  {formatCategoryLabel(row.category)}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <Badge
@@ -334,14 +406,21 @@ export function BillSuggestionBucketSection({
                     isExpanded={isExpanded}
                   />
                 ) : null}
-                <Button
-                  type="button"
-                  className="min-h-[44px] w-full"
-                  aria-label={`Adopt ${row.merchant} as bill`}
-                  onClick={() => onAdopt(row)}
-                >
-                  Adopt
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    className="min-h-[44px] flex-1"
+                    aria-label={`Adopt ${row.merchant} as bill`}
+                    onClick={() => onAdopt(row)}
+                  >
+                    Adopt
+                  </Button>
+                  <BillSuggestionIgnoreMenu
+                    row={row}
+                    payeeSectionRowCount={rows.length}
+                    lookbackMonths={lookbackMonths}
+                  />
+                </div>
               </div>
             )
           })}

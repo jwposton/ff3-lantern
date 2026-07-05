@@ -394,6 +394,7 @@ export type BillSuggestion = {
   payment_source: string
   sample_descriptions: string[]
   payee: string
+  destination_name?: string | null
   bucket: string
   cluster: string | null
   register_prefill: BillRegistrationPrefill
@@ -437,8 +438,14 @@ export type DiscoverCategoryOption = {
 
 export type DiscoverSettingsEnvelope = {
   ignored_categories: string[]
+  ignored_payees: string[]
   available_categories: DiscoverCategoryOption[]
   suggested_ignored_categories?: string[]
+}
+
+export type DiscoverSettingsUpdate = {
+  ignored_categories?: string[]
+  ignored_payees?: string[]
 }
 
 async function parseError(res: Response, fallback: string): Promise<never> {
@@ -738,17 +745,55 @@ export async function fetchDiscoverSettings(): Promise<DiscoverSettingsEnvelope>
 }
 
 export async function updateDiscoverSettings(
-  ignoredCategories: string[],
-): Promise<Pick<DiscoverSettingsEnvelope, "ignored_categories">> {
+  body: DiscoverSettingsUpdate,
+): Promise<Pick<DiscoverSettingsEnvelope, "ignored_categories" | "ignored_payees">> {
   const res = await fetch("/api/payment-run/discover-settings", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ignored_categories: ignoredCategories }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) {
     await parseError(res, `Failed to save discover settings (${res.status})`)
   }
-  return (await res.json()) as Pick<DiscoverSettingsEnvelope, "ignored_categories">
+  return (await res.json()) as Pick<
+    DiscoverSettingsEnvelope,
+    "ignored_categories" | "ignored_payees"
+  >
+}
+
+export async function ignoreDiscoverPayee(
+  suggestionId: string,
+  lookbackMonths: number,
+): Promise<{ ignored_payees: string[]; ignored_payee: string }> {
+  const res = await fetch("/api/payment-run/discover-settings/ignore-payee", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      suggestion_id: suggestionId,
+      lookback_months: lookbackMonths,
+    }),
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to ignore payee (${res.status})`)
+  }
+  return (await res.json()) as { ignored_payees: string[]; ignored_payee: string }
+}
+
+export async function ignoreDiscoverCategory(
+  category: string,
+): Promise<{ ignored_categories: string[]; ignored_category: string }> {
+  const res = await fetch("/api/payment-run/discover-settings/ignore-category", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ category }),
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to ignore category (${res.status})`)
+  }
+  return (await res.json()) as {
+    ignored_categories: string[]
+    ignored_category: string
+  }
 }
 
 type BillRegistrationErrorDetail = {

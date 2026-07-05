@@ -49,7 +49,10 @@ __all__ = [
     "insert_bill_group_if_absent",
     "patch_bill_group",
     "replace_bill_group_members",
+    "add_discover_ignored_category",
+    "add_discover_ignored_payee",
     "update_discover_ignored_categories",
+    "update_discover_settings",
     "update_worksheet_registry",
     "upsert_bill_group",
     "upsert_bucket_balance",
@@ -134,6 +137,7 @@ CREATE TABLE IF NOT EXISTS worksheet_bucket_balance (
 CREATE TABLE IF NOT EXISTS discover_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   ignored_categories_json TEXT NOT NULL DEFAULT '[]',
+  ignored_payees_json TEXT NOT NULL DEFAULT '[]',
   defaults_version INTEGER NOT NULL DEFAULT 0
 );
 """
@@ -235,6 +239,12 @@ async def init_db() -> None:
         try:
             await db.execute(
                 "ALTER TABLE discover_settings ADD COLUMN defaults_version INTEGER NOT NULL DEFAULT 0"
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                "ALTER TABLE discover_settings ADD COLUMN ignored_payees_json TEXT NOT NULL DEFAULT '[]'"
             )
         except aiosqlite.OperationalError:
             pass
@@ -936,37 +946,10 @@ async def upsert_bucket_balance(
         await db.commit()
 
 
-async def get_discover_settings() -> dict[str, Any]:
-    """Return persisted bill-discover settings (single-row sidecar config)."""
-    await init_db()
-    async with aiosqlite.connect(get_db_path()) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT ignored_categories_json FROM discover_settings WHERE id = 1"
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return {"ignored_categories": []}
-        try:
-            categories = json.loads(row["ignored_categories_json"])
-        except json.JSONDecodeError:
-            categories = []
-        if not isinstance(categories, list):
-            categories = []
-        cleaned = [
-            str(name).strip()
-            for name in categories
-            if name is not None and str(name).strip()
-        ]
-        return {"ignored_categories": cleaned}
-
-
-async def update_discover_ignored_categories(categories: list[str]) -> dict[str, Any]:
-    """Replace operator-selected categories excluded from bill discovery."""
-    await init_db()
+def _dedupe_string_list(values: list[str]) -> list[str]:
     cleaned: list[str] = []
     seen: set[str] = set()
-    for name in categories:
+    for name in values:
         text = str(name).strip()
         if not text:
             continue
@@ -975,16 +958,123 @@ async def update_discover_ignored_categories(categories: list[str]) -> dict[str,
             continue
         seen.add(folded)
         cleaned.append(text)
-    payload = json.dumps(cleaned)
+    return cleaned
+
+
+async def get_discover_settings() -> dict[str, Any]:
+    """Return persisted bill-discover settings (single-row sidecar config)."""
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT ignored_categories_json, ignored_payees_json FROM discover_settings WHERE id = 1"
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return {"ignored_categories": [], "ignored_payees": []}
+        try:
+            categories = json.loads(row["ignored_categories_json"])
+        except json.JSONDecodeError:
+            categories = []
+        if not isinstance(categories, list):
+            categories = []
+        try:
+            payees = json.loads(row["ignored_payees_json"])
+        except (json.JSONDecodeError, KeyError, TypeError):
+            payees = []
+        if not isinstance(payees, list):
+            payees = []
+        return {
+            "ignored_categories": _dedupe_string_list(categories),
+            "ignored_payees": _dedupe_string_list(payees),
+        }
+
+
+async def update_discover_settings(
+    *,
+    ignored_categories: list[str] | None = None,
+    ignored_payees: list[str] | None = None,
+) -> dict[str, Any]:
+    """Replace operator-selected discover filters (omit a field to preserve it)."""
+    await init_db()
+    current = await get_discover_settings()
+    next_categories = (
+        _dedupe_string_list(ignored_categories)
+        if ignored_categories is not None
+        else current["ignored_categories"]
+    )
+    next_payees = (
+        _dedupe_string_list(ignored_payees)
+        if ignored_payees is not None
+        else current["ignored_payees"]
+    )
     async with aiosqlite.connect(get_db_path()) as db:
         await db.execute(
             """
-            INSERT INTO discover_settings (id, ignored_categories_json)
-            VALUES (1, ?)
+            INSERT INTO discover_settings (id, ignored_categories_json, ignored_payees_json)
+            VALUES (1, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-              ignored_categories_json = excluded.ignored_categories_json
+              ignored_categories_json = excluded.ignored_categories_json,
+              ignored_payees_json = excluded.ignored_payees_json
             """,
-            (payload,),
+            (json.dumps(next_categories), json.dumps(next_payees)),
         )
         await db.commit()
-    return {"ignored_categories": cleaned}
+    return {
+        "ignored_categories": next_categories,
+        "ignored_payees": next_payees,
+    }
+
+
+async def update_discover_ignored_categories(categories: list[str]) -> dict[str, Any]:
+    """Replace operator-selected categories excluded from bill discovery."""
+    result = await update_discover_settings(ignored_categories=categories)
+    return {"ignored_categories": result["ignored_categories"]}
+
+
+async def add_discover_ignored_category(category: str) -> dict[str, Any]:
+    """Append one category to the ignore list (idempotent)."""
+    current = await get_discover_settings()
+    text = str(category).strip()
+    if not text:
+        return {"ignored_categories": current["ignored_categories"], "ignored_category": ""}
+    folded = text.casefold()
+    if any(name.casefold() == folded for name in current["ignored_categories"]):
+        existing = next(
+            name for name in current["ignored_categories"] if name.casefold() == folded
+        )
+        return {
+            "ignored_categories": current["ignored_categories"],
+            "ignored_category": existing,
+        }
+    updated = await update_discover_settings(
+        ignored_categories=[*current["ignored_categories"], text],
+    )
+    return {
+        "ignored_categories": updated["ignored_categories"],
+        "ignored_category": text,
+    }
+
+
+async def add_discover_ignored_payee(payee: str) -> dict[str, Any]:
+    """Append one payee to the ignore list (idempotent)."""
+    current = await get_discover_settings()
+    text = str(payee).strip()
+    if not text:
+        return {"ignored_payees": current["ignored_payees"], "ignored_payee": ""}
+    folded = text.casefold()
+    if any(name.casefold() == folded for name in current["ignored_payees"]):
+        existing = next(
+            name for name in current["ignored_payees"] if name.casefold() == folded
+        )
+        return {
+            "ignored_payees": current["ignored_payees"],
+            "ignored_payee": existing,
+        }
+    updated = await update_discover_settings(
+        ignored_payees=[*current["ignored_payees"], text],
+    )
+    return {
+        "ignored_payees": updated["ignored_payees"],
+        "ignored_payee": text,
+    }

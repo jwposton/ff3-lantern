@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Bill discover ignore actions** — per-row **Ignore** menu on discover suggestions to exclude a payee or category; **Bill discovery config** on Payment setup lists ignored categories and payees with remove actions (#91)
+
+### Changed
+
+- **Bill discover table** — single **Amount** column (avg primary; variable bills show muted min - max below with compact dollars); centered text; compact Adopt/Ignore (#91)
+
 ## [2.4.1] - 2026-07-05
 
 ### Fixed

@@ -339,6 +339,15 @@ def _category_is_ignored(category: str, ignored_categories: list[str]) -> bool:
     return False
 
 
+def _payee_is_ignored(destination: str, ignored_payees: list[str]) -> bool:
+    """True when Firefly destination_name matches operator payee ignore list."""
+    text = (destination or "").strip()
+    if not text or not ignored_payees:
+        return False
+    folded = text.casefold()
+    return any(payee.strip().casefold() == folded for payee in ignored_payees if payee.strip())
+
+
 def _account_summary(
     tx: dict[str, Any],
     accounts: dict[str, dict[str, Any]],
@@ -371,13 +380,16 @@ def _is_noise_transaction(
     accounts: dict[str, dict[str, Any]],
     *,
     ignored_categories: list[str],
+    ignored_payees: list[str] | None = None,
 ) -> bool:
-    """Exclude operator-ignored categories and accounting-only noise."""
+    """Exclude operator-ignored categories/payees and accounting-only noise."""
     category = str(tx.get("category_name") or "")
     if _category_is_ignored(category, ignored_categories):
         return True
 
     destination = str(tx.get("destination_name") or "")
+    if _payee_is_ignored(destination, ignored_payees or []):
+        return True
     description = str(tx.get("description") or "")
 
     if _is_gas_merchant(destination, category):
@@ -1343,6 +1355,7 @@ def _enrich_opaque_subgroup(
         "payment_source": sub_metrics["payment_source"],
         "sample_descriptions": sub_metrics["sample_descriptions"],
         "payee": raw_payee,
+        "destination_name": _pick_canonical_payee(subgroup_txns) or None,
         "bucket": raw_payee,
         "cluster": _slugify_cluster(raw_payee),
         "register_prefill": register_prefill,
@@ -1532,6 +1545,7 @@ def _enrich_suggestion(
         "payment_source": metrics["payment_source"],
         "sample_descriptions": metrics["sample_descriptions"],
         "payee": raw_payee,
+        "destination_name": _pick_canonical_payee(txns) or None,
         "bucket": raw_payee,
         "cluster": None,
         "register_prefill": register_prefill,
@@ -1569,8 +1583,10 @@ def _prepare_bill_suggestion_groups(
     firefly_bills: list[dict[str, Any]],
     registry_rows: list[dict[str, Any]],
     ignored_categories: list[str] | None = None,
+    ignored_payees: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]], set[str], set[str]]:
     ignore_list = ignored_categories if ignored_categories is not None else []
+    payee_ignore_list = ignored_payees if ignored_payees is not None else []
     registered_bill_ids = {
         str(row["firefly_bill_id"])
         for row in registry_rows
@@ -1582,7 +1598,12 @@ def _prepare_bill_suggestion_groups(
     filtered = [
         row
         for row in parsed
-        if not _is_noise_transaction(row, accounts, ignored_categories=ignore_list)
+        if not _is_noise_transaction(
+            row,
+            accounts,
+            ignored_categories=ignore_list,
+            ignored_payees=payee_ignore_list,
+        )
     ]
     filtered = [
         row
@@ -1728,6 +1749,61 @@ def _find_matching_suggestion_transactions(
     return None
 
 
+def _find_emitted_suggestion(
+    splits: list[dict[str, Any]],
+    *,
+    accounts: dict[str, dict[str, Any]],
+    firefly_bills: list[dict[str, Any]],
+    registry_rows: list[dict[str, Any]],
+    ignored_categories: list[str] | None = None,
+    ignored_payees: list[str] | None = None,
+    suggestion_id: str,
+) -> _EmittedSuggestionGroup | None:
+    _, groups, registered_bill_ids, _live_bill_ids = _prepare_bill_suggestion_groups(
+        splits,
+        accounts=accounts,
+        firefly_bills=firefly_bills,
+        registry_rows=registry_rows,
+        ignored_categories=ignored_categories,
+        ignored_payees=ignored_payees,
+    )
+    for emitted in _iter_emitted_suggestion_groups(
+        groups,
+        firefly_bills=firefly_bills,
+        registry_rows=registry_rows,
+        registered_bill_ids=registered_bill_ids,
+    ):
+        if emitted.suggestion_id == suggestion_id:
+            return emitted
+    return None
+
+
+def resolve_suggestion_destination_name(
+    splits: list[dict[str, Any]],
+    *,
+    accounts: dict[str, dict[str, Any]],
+    firefly_bills: list[dict[str, Any]],
+    registry_rows: list[dict[str, Any]],
+    ignored_categories: list[str] | None = None,
+    ignored_payees: list[str] | None = None,
+    suggestion_id: str,
+) -> str | None:
+    """Canonical Firefly destination_name for a visible suggestion, or None."""
+    emitted = _find_emitted_suggestion(
+        splits,
+        accounts=accounts,
+        firefly_bills=firefly_bills,
+        registry_rows=registry_rows,
+        ignored_categories=ignored_categories,
+        ignored_payees=ignored_payees,
+        suggestion_id=suggestion_id,
+    )
+    if emitted is None:
+        return None
+    payee = _pick_canonical_payee(emitted.txns)
+    return payee.strip() if payee else None
+
+
 def find_suggestion_transactions(
     splits: list[dict[str, Any]],
     *,
@@ -1737,6 +1813,7 @@ def find_suggestion_transactions(
     period_start: str,
     period_end: str,
     ignored_categories: list[str] | None = None,
+    ignored_payees: list[str] | None = None,
     suggestion_id: str,
 ) -> list[dict[str, Any]] | None:
     """Return normalized withdrawal rows for suggestion_id, or None if not found."""
@@ -1747,6 +1824,7 @@ def find_suggestion_transactions(
         firefly_bills=firefly_bills,
         registry_rows=registry_rows,
         ignored_categories=ignored_categories,
+        ignored_payees=ignored_payees,
     )
     return _find_matching_suggestion_transactions(
         groups,
@@ -1782,6 +1860,7 @@ async def fetch_bill_suggestions(
         period_start=start_iso,
         period_end=end_iso,
         ignored_categories=settings["ignored_categories"],
+        ignored_payees=settings["ignored_payees"],
     )
 
 
@@ -1811,6 +1890,7 @@ async def fetch_bill_suggestion_transactions(
         period_start=start_iso,
         period_end=end_iso,
         ignored_categories=settings["ignored_categories"],
+        ignored_payees=settings["ignored_payees"],
         suggestion_id=suggestion_id,
     )
     if txns is None:
@@ -1835,6 +1915,7 @@ def build_bill_suggestions(
     period_start: str,
     period_end: str,
     ignored_categories: list[str] | None = None,
+    ignored_payees: list[str] | None = None,
 ) -> dict[str, Any]:
     """Pure engine — primary unit-test entry point."""
     parsed, groups, registered_bill_ids, _live_bill_ids = _prepare_bill_suggestion_groups(
@@ -1843,6 +1924,7 @@ def build_bill_suggestions(
         firefly_bills=firefly_bills,
         registry_rows=registry_rows,
         ignored_categories=ignored_categories,
+        ignored_payees=ignored_payees,
     )
 
     suggestions: list[dict[str, Any]] = []

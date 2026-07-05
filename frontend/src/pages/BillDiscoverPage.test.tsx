@@ -296,14 +296,37 @@ function mockDiscoverFetch(options: {
 
     if (url.includes("/api/payment-run/discover-settings")) {
       if (method === "PUT") {
+        const body = JSON.parse(String(init?.body ?? "{}"))
         return new Response(
-          JSON.stringify({ ignored_categories: ["Gas"] }),
+          JSON.stringify({
+            ignored_categories: body.ignored_categories ?? ["Gas"],
+            ignored_payees: body.ignored_payees ?? [],
+          }),
+          { status: 200 },
+        )
+      }
+      if (url.includes("ignore-payee") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            ignored_payees: ["Spotify USA Inc"],
+            ignored_payee: "Spotify USA Inc",
+          }),
+          { status: 200 },
+        )
+      }
+      if (url.includes("ignore-category") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            ignored_categories: ["Streaming"],
+            ignored_category: "Streaming",
+          }),
           { status: 200 },
         )
       }
       return new Response(
         JSON.stringify({
           ignored_categories: [],
+          ignored_payees: [],
           available_categories: [
             { id: "1", name: "Gas" },
             { id: "2", name: "Rent" },
@@ -1029,13 +1052,22 @@ describe("BillDiscoverPage", () => {
     ).toBe("/manage/bills")
   })
 
-  it("shows ignored categories controls and saves selection", async () => {
+  it("shows category column and ignore menu on suggestion rows", async () => {
     mockDiscoverFetch({
       suggestions: {
-        data: [],
+        data: [
+          makeSuggestion({
+            id: "spotify",
+            merchant: "Spotify",
+            payee: "Spotify USA Inc",
+            bucket: "Spotify USA Inc",
+            destination_name: "Spotify USA Inc",
+            category: "Streaming",
+          }),
+        ],
         meta: {
-          withdrawals_analyzed: 0,
-          suggestions_count: 0,
+          withdrawals_analyzed: 12,
+          suggestions_count: 1,
           period_start: "2025-07-04",
           period_end: "2026-07-04",
         },
@@ -1049,14 +1081,12 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("Ignored categories")).toBeTruthy()
-    })
-
-    const select = screen.getByLabelText("Add ignored category")
-    fireEvent.change(select, { target: { value: "Gas" } })
-
-    await waitFor(() => {
-      expect(screen.getByText("Gas")).toBeTruthy()
+      expect(screen.getByText("Cat.")).toBeTruthy()
+      expect(screen.getByText("Streaming")).toBeTruthy()
+      expect(
+        screen.getAllByRole("button", { name: "Ignore options for Spotify" })
+          .length,
+      ).toBeGreaterThan(0)
     })
   })
 
