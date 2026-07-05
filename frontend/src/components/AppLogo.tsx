@@ -5,9 +5,11 @@ import { cn } from "@/lib/utils"
 interface AppLogoProps {
   className?: string
   size?: number
+  /** When true, hides the logo from assistive tech (e.g. inside a labeled control). */
+  decorative?: boolean
 }
 
-export function AppLogo({ className, size = 20 }: AppLogoProps) {
+export function AppLogo({ className, size = 20, decorative }: AppLogoProps) {
   const gradId = useId().replace(/:/g, "")
 
   return (
@@ -16,8 +18,9 @@ export function AppLogo({ className, size = 20 }: AppLogoProps) {
       height={size}
       viewBox="0 0 32 32"
       fill="none"
-      role="img"
-      aria-label="FF3 Lantern"
+      role={decorative ? undefined : "img"}
+      aria-label={decorative ? undefined : "FF3 Lantern"}
+      aria-hidden={decorative ? true : undefined}
       className={cn("shrink-0", className)}
     >
       <defs>
