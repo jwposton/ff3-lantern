@@ -10,6 +10,7 @@ from decimal import ROUND_HALF_UP, ROUND_UP, Decimal, InvalidOperation
 from difflib import SequenceMatcher
 from typing import Any, Iterator, Literal, NamedTuple
 
+import app_clock
 import sidecar_db
 from firefly_client import FireflyClient
 from payment_worksheet_bill_history import compute_trailing_monthly_average
@@ -1853,7 +1854,7 @@ async def fetch_bill_suggestions(
     """Fetch Firefly data and build bill suggestions (compute-on-demand, read-only sidecar)."""
     if lookback_months not in LOOKBACK_CHOICES:
         raise ValueError("lookback_months must be 6, 12, or 24.")
-    period_end = date.today()
+    period_end = app_clock.today()
     period_start = _lookback_period_start(period_end, lookback_months)
     start_iso = period_start.isoformat()
     end_iso = period_end.isoformat()
@@ -1883,7 +1884,7 @@ async def fetch_bill_suggestion_transactions(
     """Fetch Firefly data and resolve drill-down transactions for one suggestion."""
     if lookback_months not in LOOKBACK_CHOICES:
         raise ValueError("lookback_months must be 6, 12, or 24.")
-    period_end = date.today()
+    period_end = app_clock.today()
     period_start = _lookback_period_start(period_end, lookback_months)
     start_iso = period_start.isoformat()
     end_iso = period_end.isoformat()

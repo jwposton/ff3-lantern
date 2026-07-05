@@ -5,6 +5,8 @@ import { RouterProvider } from "react-router-dom"
 
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { setDemoAnchorDate } from "@/lib/appClock"
+import { fetchHealth } from "@/lib/healthApi"
 import { router } from "@/routes"
 
 import "./index.css"
@@ -17,13 +19,24 @@ const queryClient = new QueryClient({
   },
 })
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <RouterProvider router={router} />
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
-  </StrictMode>,
-)
+async function bootstrap() {
+  try {
+    const health = await fetchHealth()
+    setDemoAnchorDate(health.demo_anchor_date)
+  } catch {
+    // Offline or backend not ready — live clock until /health succeeds.
+  }
+
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <RouterProvider router={router} />
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </StrictMode>,
+  )
+}
+
+void bootstrap()

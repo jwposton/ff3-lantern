@@ -10,7 +10,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-import firefly_reference_cache
+from firefly_client import firefly_public_base_url
 import sidecar_db
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
@@ -356,7 +356,7 @@ async def get_payment_worksheet(
 ):
     target_month = _validate_month(month or current_month_key())
     envelope = await build_worksheet_envelope(target_month)
-    base = os.environ.get("FIREFLY_BASE_URL", "").strip().rstrip("/")
+    base = firefly_public_base_url()
     if base:
         envelope["firefly_base_url"] = base
     return envelope
@@ -928,7 +928,7 @@ async def bill_history(
     existing = await sidecar_db.get_worksheet_registry(registry_id)
     if existing is None or not existing.get("firefly_bill_id"):
         raise HTTPException(status_code=404, detail="Registered bill not found.")
-    today = date.today()
+    today = app_clock.today()
     start, end = bill_history_date_window(today)
     try:
         rows = await client.fetch_bill_transactions(
@@ -973,7 +973,7 @@ async def bill_history(
         payload["rule_sync_status"] = rule_sync_status
     if row_label_synced:
         payload["row_label_synced"] = True
-    base = os.environ.get("FIREFLY_BASE_URL", "").strip().rstrip("/")
+    base = firefly_public_base_url()
     if base:
         payload["firefly_base_url"] = base
     return payload
@@ -1057,7 +1057,7 @@ async def discover_ignore_payee_route(
             status_code=422,
             detail="lookback_months must be 6, 12, or 24.",
         )
-    period_end = date.today()
+    period_end = app_clock.today()
     period_start = _lookback_period_start(period_end, body.lookback_months)
     try:
         splits = await client.fetch_splits(period_start.isoformat(), period_end.isoformat())

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from typing import Any
 
+import app_clock
 import sidecar_db
 from firefly_client import FireflyClient, _normalize_account_role, _normalize_account_type
 
@@ -161,8 +161,8 @@ def is_funding_bucket_eligible_summary(summary: dict[str, Any]) -> bool:
     )
 
 
-def current_month_key() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m")
+import app_clock
+from app_clock import current_month_key
 
 
 async def patch_worksheet_refresh_profile(
@@ -179,7 +179,7 @@ async def patch_worksheet_refresh_profile(
             "excluded_credit_cards": {},
         }
         refreshed_at = (
-            datetime.now(timezone.utc)
+            app_clock.now_utc()
             .replace(microsecond=0)
             .isoformat()
             .replace("+00:00", "Z")
@@ -245,7 +245,7 @@ async def patch_worksheet_refresh_liability_profile(
             "excluded_liabilities": {},
         }
         refreshed_at = (
-            datetime.now(timezone.utc)
+            app_clock.now_utc()
             .replace(microsecond=0)
             .isoformat()
             .replace("+00:00", "Z")

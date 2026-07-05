@@ -1,3 +1,5 @@
+import { referenceDate as appReferenceDate } from "@/lib/appClock"
+
 /** Format worksheet payment due day (1–31). */
 export function formatPaymentDueDay(
   day: string | null | undefined,
@@ -36,7 +38,7 @@ function parseDueDay(day: string | null | undefined): number | null {
 export function isPaymentDueUrgent(
   paymentDueDay: string | null | undefined,
   worksheetMonth: string,
-  referenceDate: Date = new Date(),
+  referenceDate: Date = appReferenceDate(),
 ): boolean {
   const dueDay = parseDueDay(paymentDueDay)
   if (dueDay == null) return false
@@ -66,7 +68,7 @@ export function shouldHighlightCreditCardDue(
     paid_at: string | null
   },
   worksheetMonth: string,
-  referenceDate: Date = new Date(),
+  referenceDate: Date = appReferenceDate(),
 ): boolean {
   if (input.paid_at) return false
   if (isLastPaymentInWorksheetMonth(input.last_payment_date, worksheetMonth)) {

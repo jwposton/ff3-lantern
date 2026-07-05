@@ -5,6 +5,7 @@ import type {
   RollingAverageMethod,
   RollingWindowMonths,
 } from "@/lib/momComparePrefs"
+import { referenceDate } from "@/lib/appClock"
 import { enumerateMonths } from "@/lib/trends"
 
 const OTHER_LABEL = "Other"
@@ -24,7 +25,7 @@ export function addMonths(month: string, delta: number): string {
   return `${y}-${String(m).padStart(2, "0")}`
 }
 
-export function currentCalendarMonth(now: Date = new Date()): string {
+export function currentCalendarMonth(now: Date = referenceDate()): string {
   const y = now.getFullYear()
   const m = String(now.getMonth() + 1).padStart(2, "0")
   return `${y}-${m}`

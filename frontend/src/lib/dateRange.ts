@@ -4,6 +4,8 @@ export type DateRange = [start: string, end: string]
 
 type SearchParamsLike = URLSearchParams | { get: (key: string) => string | null }
 
+import { referenceDate } from "@/lib/appClock"
+
 function formatDateLocal(date: Date): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
@@ -11,19 +13,19 @@ function formatDateLocal(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
-export function monthToDate(now: Date = new Date()): DateRange {
+export function monthToDate(now: Date = referenceDate()): DateRange {
   const end = formatDateLocal(now)
   const startDate = new Date(now.getFullYear(), now.getMonth(), 1)
   return [formatDateLocal(startDate), end]
 }
 
-export function yearToDate(now: Date = new Date()): DateRange {
+export function yearToDate(now: Date = referenceDate()): DateRange {
   const end = formatDateLocal(now)
   const startDate = new Date(now.getFullYear(), 0, 1)
   return [formatDateLocal(startDate), end]
 }
 
-export function previousMonthToDate(now: Date = new Date()): DateRange {
+export function previousMonthToDate(now: Date = referenceDate()): DateRange {
   const end = formatDateLocal(now)
   const startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
   return [formatDateLocal(startDate), end]

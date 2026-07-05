@@ -1,3 +1,4 @@
+import { referenceDate } from "@/lib/appClock"
 import { useMemo } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -18,7 +19,7 @@ const PRESETS = [
 ] as const
 
 function todayString(): string {
-  const now = new Date()
+  const now = referenceDate()
   const y = now.getFullYear()
   const m = String(now.getMonth() + 1).padStart(2, "0")
   const d = String(now.getDate()).padStart(2, "0")

@@ -9,8 +9,9 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
+import app_clock
 import sidecar_db
-from firefly_client import FireflyClient
+from firefly_client import FireflyClient, firefly_public_base_url
 from payment_worksheet_bill_history import (
     bill_amount_due_fetch_window,
     bill_history_date_window,
@@ -68,12 +69,8 @@ def bill_registration_http_detail(
     return exc.detail
 
 
-def _firefly_base_url() -> str:
-    return os.environ.get("FIREFLY_BASE_URL", "").strip().rstrip("/")
-
-
 def _firefly_rule_edit_url(rule_id: str) -> str | None:
-    base = _firefly_base_url()
+    base = firefly_public_base_url()
     rid = str(rule_id).strip()
     if not base or not rid:
         return None
@@ -81,7 +78,7 @@ def _firefly_rule_edit_url(rule_id: str) -> str | None:
 
 
 def _firefly_bill_show_url(bill_id: str) -> str | None:
-    base = _firefly_base_url()
+    base = firefly_public_base_url()
     bid = str(bill_id).strip()
     if not base or not bid:
         return None
@@ -291,10 +288,10 @@ def _planned_sync_for_amount_mode(amount_mode: str) -> str:
 
 
 def _default_bill_date() -> str:
-    """First day of current UTC month — required by Firefly BillStore."""
-    today = datetime.now(UTC)
-    first = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    return first.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    """First day of current month — required by Firefly BillStore."""
+    today = app_clock.today()
+    first = today.replace(day=1)
+    return first.strftime("%Y-%m-%dT12:00:00+00:00")
 
 
 _FIREFLY_REPEAT_FREQS = frozenset(
