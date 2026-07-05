@@ -15,6 +15,8 @@ from loan_profiles import parse_loan_profile_from_notes
 from payment_worksheet_bills import (
     compute_bill_owed_from_firefly,
     compute_bill_owed_from_linked_payments,
+    link_to_bill_action_value,
+    rule_link_sync_status,
 )
 from payment_worksheet_bill_history import bill_amount_due_fetch_window
 from payment_worksheet_cc import classify_cc_activity_category, is_credit_card_payment_flow
@@ -410,6 +412,14 @@ async def run_refresh(
     balances["excluded_liabilities"] = excluded_liabilities
 
     registry_rows = await sidecar_db.list_worksheet_registry()
+    rules_by_id: dict[str, dict[str, Any]] = {}
+    try:
+        rules_by_id = {
+            str(rule["id"]): rule for rule in await client.fetch_rules()
+        }
+    except RuntimeError as exc:
+        logger.warning("Could not fetch Firefly rules for link sync check: %s", exc)
+
     for reg in registry_rows:
         bill_id = reg.get("firefly_bill_id")
         if not bill_id:
@@ -451,11 +461,29 @@ async def run_refresh(
                 ff_bill=ff_bill,
                 amount_mode=str(reg.get("amount_mode") or "recurring"),
             )
-        balances["bills"][reg_id] = {
+        bill_name = str(ff_bill.get("name") or reg.get("row_label") or "")
+        rule_sync_status = None
+        rule_id = reg.get("rule_id")
+        rule = None
+        if rule_id and str(rule_id).strip():
+            rule = rules_by_id.get(str(rule_id).strip())
+        else:
+            targets = {bill_name, str(bill_id)}
+            for candidate in rules_by_id.values():
+                link_value = link_to_bill_action_value(candidate)
+                if link_value in targets:
+                    rule = candidate
+                    break
+        if rule is not None or (rule_id and str(rule_id).strip()):
+            rule_sync_status = rule_link_sync_status(rule, bill_name)
+        bill_entry: dict[str, Any] = {
             "owed": owed,
             "firefly_bill_id": str(bill_id),
-            "name": ff_bill.get("name") or reg.get("row_label"),
+            "name": bill_name or None,
         }
+        if rule_sync_status is not None:
+            bill_entry["rule_sync_status"] = rule_sync_status
+        balances["bills"][reg_id] = bill_entry
 
         if reg.get("amount_mode") == "intermittent":
             continue

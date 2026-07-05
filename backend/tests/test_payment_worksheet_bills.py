@@ -13,12 +13,16 @@ from payment_worksheet_bills import (
     BillRegistrationError,
     RegisterBillBody,
     build_bill_link_rule_body,
+    build_rule_update_body,
     compute_bill_owed_from_firefly,
     compute_recurring_bill_owed,
     find_link_rules_for_bill,
+    link_to_bill_action_value,
     list_link_rules_for_bill,
     register_bill,
     register_new_bill,
+    rule_link_sync_status,
+    sync_link_rule_bill_name,
     _normalize_firefly_repeat_freq,
     _resolve_firefly_bill_amounts,
 )
@@ -855,3 +859,256 @@ async def test_register_linked_bill_skips_trigger_when_existing_rule(data_dir):
     )
     await register_bill(client, body)
     assert trigger_calls == []
+
+
+def test_rule_link_sync_status_detects_drift():
+    rule = {
+        "actions": [{"type": "link_to_bill", "value": "Old name", "active": True}],
+    }
+    assert rule_link_sync_status(rule, "New name") == "out_of_sync"
+    assert rule_link_sync_status(rule, "Old name") == "synced"
+    assert rule_link_sync_status(None, "Old name") == "rule_unavailable"
+
+
+def test_link_to_bill_action_value():
+    rule = {
+        "actions": [
+            {"type": "set_category", "value": "Bills"},
+            {"type": "link_to_bill", "value": "  Water  ", "active": True},
+        ],
+    }
+    assert link_to_bill_action_value(rule) == "Water"
+
+
+def test_build_rule_update_body_preserves_triggers():
+    rule = {
+        "rule_group_id": "9",
+        "trigger": "store-journal",
+        "active": True,
+        "strict": True,
+        "triggers": [{"type": "description_contains", "value": "X", "active": True}],
+        "actions": [{"type": "link_to_bill", "value": "Old", "active": True}],
+        "title": "Old",
+    }
+    body = build_rule_update_body(
+        rule,
+        title="New",
+        actions=[{"type": "link_to_bill", "value": "New", "active": True}],
+    )
+    assert body["title"] == "New"
+    assert body["rule_group_id"] == "9"
+    assert body["strict"] is True
+    assert body["actions"][0]["value"] == "New"
+
+
+@pytest.mark.asyncio
+async def test_sync_link_rule_bill_name_updates_link_and_title():
+    seen: list[dict] = []
+
+    class _RuleClient(FireflyClient):
+        async def fetch_rule(self, rule_id: str):
+            assert rule_id == "rule-1"
+            return {
+                "id": "rule-1",
+                "title": "Gas bill",
+                "rule_group_id": "9",
+                "trigger": "store-journal",
+                "active": True,
+                "strict": False,
+                "triggers": [
+                    {"type": "description_contains", "value": "GAS", "active": True},
+                ],
+                "actions": [
+                    {"type": "link_to_bill", "value": "Gas bill", "active": True},
+                ],
+            }
+
+        async def update_rule(self, rule_id: str, body: dict):
+            seen.append(body)
+            return {"id": rule_id, "title": body["title"]}
+
+    client = _RuleClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    await sync_link_rule_bill_name(
+        client,
+        rule_id="rule-1",
+        old_bill_name="Gas bill",
+        new_bill_name="Gas utility",
+    )
+    assert seen[0]["title"] == "Gas utility"
+    assert seen[0]["actions"][0]["value"] == "Gas utility"
+
+
+@pytest.mark.asyncio
+async def test_sync_link_rule_bill_name_preserves_custom_title():
+    seen: list[dict] = []
+
+    class _RuleClient(FireflyClient):
+        async def fetch_rule(self, rule_id: str):
+            return {
+                "id": rule_id,
+                "title": "Custom import rule",
+                "rule_group_id": "9",
+                "trigger": "store-journal",
+                "active": True,
+                "strict": False,
+                "triggers": [],
+                "actions": [
+                    {"type": "link_to_bill", "value": "Gas bill", "active": True},
+                ],
+            }
+
+        async def update_rule(self, rule_id: str, body: dict):
+            seen.append(body)
+            return {"id": rule_id, "title": body["title"]}
+
+    client = _RuleClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    await sync_link_rule_bill_name(
+        client,
+        rule_id="rule-1",
+        old_bill_name="Gas bill",
+        new_bill_name="Gas utility",
+    )
+    assert seen[0]["title"] == "Custom import rule"
+    assert seen[0]["actions"][0]["value"] == "Gas utility"
+
+
+@pytest.mark.asyncio
+async def test_discover_link_rule_id_from_bill_rules():
+    class _BillRulesClient(FireflyClient):
+        async def fetch_bill_rules(self, bill_id: str):
+            assert bill_id == "bill-1"
+            return [
+                {
+                    "id": "rule-9",
+                    "title": "Water",
+                    "actions": [
+                        {"type": "link_to_bill", "value": "Water bill", "active": True},
+                    ],
+                }
+            ]
+
+    client = _BillRulesClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    from payment_worksheet_bills import discover_link_rule_id
+
+    rule_id = await discover_link_rule_id(
+        client,
+        firefly_bill_id="bill-1",
+        bill_name="Water bill",
+    )
+    assert rule_id == "rule-9"
+
+
+@pytest.mark.asyncio
+async def test_update_registered_bill_firefly_discovers_rule_id_on_rename():
+    seen: list[dict] = []
+
+    class _RenameClient(FireflyClient):
+        async def fetch_bill(self, bill_id: str):
+            return {
+                "id": bill_id,
+                "name": "Spotify",
+                "amount_min": "10.00",
+                "amount_max": "10.00",
+                "repeat_freq": "monthly",
+            }
+
+        async def update_bill(self, bill_id: str, body: dict):
+            return {"id": bill_id, "attributes": body}
+
+        async def fetch_bill_rules(self, bill_id: str):
+            return [
+                {
+                    "id": "rule-sub",
+                    "title": "Spotify",
+                    "actions": [
+                        {"type": "link_to_bill", "value": "Spotify", "active": True},
+                    ],
+                }
+            ]
+
+        async def fetch_rule(self, rule_id: str):
+            return {
+                "id": rule_id,
+                "title": "Spotify",
+                "rule_group_id": "9",
+                "trigger": "store-journal",
+                "active": True,
+                "strict": False,
+                "triggers": [],
+                "actions": [
+                    {"type": "link_to_bill", "value": "Spotify", "active": True},
+                ],
+            }
+
+        async def update_rule(self, rule_id: str, body: dict):
+            seen.append(body)
+            return {"id": rule_id, "title": body["title"]}
+
+    from payment_worksheet_bills import update_registered_bill_firefly
+
+    client = _RenameClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    resolved = await update_registered_bill_firefly(
+        client,
+        firefly_bill_id="bill-sub",
+        rule_id=None,
+        name="Spotify Premium",
+    )
+    assert resolved == "rule-sub"
+    assert seen[0]["actions"][0]["value"] == "Spotify Premium"
+
+
+@pytest.mark.asyncio
+async def test_sync_link_rule_bill_name_uses_worksheet_group_when_missing():
+    seen: list[dict] = []
+
+    class _LegacyRuleClient(FireflyClient):
+        async def fetch_rule(self, rule_id: str):
+            return {
+                "id": rule_id,
+                "title": "Spotify",
+                "trigger": "store-journal",
+                "active": True,
+                "strict": False,
+                "triggers": [],
+                "actions": [
+                    {"type": "link_to_bill", "value": "Spotify", "active": True},
+                ],
+            }
+
+        async def ensure_rule_group(self, title: str):
+            assert title == "Payment worksheet"
+            return "group-legacy"
+
+        async def update_rule(self, rule_id: str, body: dict):
+            seen.append(body)
+            return {"id": rule_id, "title": body["title"]}
+
+    client = _LegacyRuleClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    await sync_link_rule_bill_name(
+        client,
+        rule_id="rule-legacy",
+        old_bill_name="Spotify",
+        new_bill_name="Spotify Premium",
+    )
+    assert seen[0]["rule_group_id"] == "group-legacy"
+    assert seen[0]["actions"][0]["value"] == "Spotify Premium"

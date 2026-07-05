@@ -36,9 +36,13 @@ from payment_worksheet_bills import (
     BILL_GROUP_SECTIONS,
     BillRegistrationError,
     RegisterBillBody,
+    detect_rule_link_sync,
+    discover_link_rule_id,
     register_bill,
+    repair_link_rule_for_bill,
     serialize_bill_registry_for_edit,
-    update_linked_firefly_bill,
+    sync_registry_row_label_if_drifted,
+    update_registered_bill_firefly,
     validate_registry_bill_group_update,
 )
 from payment_worksheet_bill_history import (
@@ -714,7 +718,27 @@ async def get_bill_registry(
         firefly_bill = await client.fetch_bill(str(existing["firefly_bill_id"]))
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return serialize_bill_registry_for_edit(existing, firefly_bill)
+    bill_name = str(firefly_bill.get("name") or "")
+    rule_id = existing.get("rule_id")
+    if not rule_id or not str(rule_id).strip():
+        rule_id = await discover_link_rule_id(
+            client,
+            firefly_bill_id=str(existing["firefly_bill_id"]),
+            bill_name=bill_name,
+        )
+    try:
+        rule_sync_status = await detect_rule_link_sync(
+            client,
+            rule_id=rule_id,
+            bill_name=bill_name,
+        )
+    except BillRegistrationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return serialize_bill_registry_for_edit(
+        existing,
+        firefly_bill,
+        rule_sync_status=rule_sync_status,
+    )
 
 
 @router.put("/payment-run/bills/{registry_id}")
@@ -783,9 +807,10 @@ async def update_bill_registry(
         )
     ):
         try:
-            await update_linked_firefly_bill(
+            resolved_rule_id = await update_registered_bill_firefly(
                 client,
                 firefly_bill_id=str(firefly_bill_id),
+                rule_id=existing.get("rule_id"),
                 name=firefly_name,
                 amount_min=firefly_amount_min,
                 amount_max=firefly_amount_max,
@@ -794,12 +819,66 @@ async def update_bill_registry(
             )
         except BillRegistrationError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        if resolved_rule_id and not existing.get("rule_id"):
+            merged["rule_id"] = resolved_rule_id
 
     await sidecar_db.update_worksheet_registry(registry_id, merged)
     updated = await sidecar_db.get_worksheet_registry(registry_id)
     if updated is None:
         raise HTTPException(status_code=500, detail="Failed to update registry row.")
     return updated
+
+
+@router.post("/payment-run/bills/{registry_id}/repair-rule")
+async def repair_bill_link_rule(
+    registry_id: int,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    existing = await sidecar_db.get_worksheet_registry(registry_id)
+    if existing is None or not existing.get("firefly_bill_id"):
+        raise HTTPException(status_code=404, detail="Registered bill not found.")
+    rule_id = existing.get("rule_id")
+    try:
+        firefly_bill = await client.fetch_bill(str(existing["firefly_bill_id"]))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    bill_name = str(firefly_bill.get("name") or "")
+    if not rule_id or not str(rule_id).strip():
+        rule_id = await discover_link_rule_id(
+            client,
+            firefly_bill_id=str(existing["firefly_bill_id"]),
+            bill_name=bill_name,
+        )
+    if not rule_id or not str(rule_id).strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Registry row has no linked import rule.",
+        )
+    try:
+        rule_sync_status = await repair_link_rule_for_bill(
+            client,
+            rule_id=str(rule_id).strip(),
+            bill_name=bill_name,
+        )
+    except BillRegistrationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    merged = {**existing, "id": registry_id}
+    rule_id_added = not existing.get("rule_id")
+    if rule_id_added:
+        merged["rule_id"] = str(rule_id).strip()
+    merged, row_label_synced = await sync_registry_row_label_if_drifted(
+        registry_id,
+        merged,
+        bill_name,
+    )
+    if rule_id_added and not row_label_synced:
+        await sidecar_db.update_worksheet_registry(registry_id, merged)
+    response: dict[str, Any] = {"ok": True, "rule_sync_status": rule_sync_status}
+    if row_label_synced:
+        response["row_label_synced"] = True
+        response["row_label"] = merged.get("row_label")
+    return response
 
 
 @router.delete("/payment-run/bills/{registry_id}")
@@ -853,14 +932,41 @@ async def bill_history(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     stats = compute_bill_history_stats(rows, today=today)
     transactions = sorted(rows, key=lambda row: row.get("date") or "", reverse=True)
+    try:
+        firefly_bill = await client.fetch_bill(str(existing["firefly_bill_id"]))
+        bill_name = str(firefly_bill.get("name") or "")
+        rule_id = existing.get("rule_id")
+        if not rule_id or not str(rule_id).strip():
+            rule_id = await discover_link_rule_id(
+                client,
+                firefly_bill_id=str(existing["firefly_bill_id"]),
+                bill_name=bill_name,
+            )
+        rule_sync_status = await detect_rule_link_sync(
+            client,
+            rule_id=rule_id,
+            bill_name=bill_name,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    existing, row_label_synced = await sync_registry_row_label_if_drifted(
+        registry_id,
+        existing,
+        bill_name,
+    )
     payload: dict[str, Any] = {
         "registry_id": registry_id,
         "row_label": existing.get("row_label"),
+        "name": bill_name or None,
         "firefly_bill_id": existing["firefly_bill_id"],
         "window": {"start": start, "end": end},
         **stats,
         "transactions": transactions,
     }
+    if rule_sync_status is not None:
+        payload["rule_sync_status"] = rule_sync_status
+    if row_label_synced:
+        payload["row_label_synced"] = True
     base = os.environ.get("FIREFLY_BASE_URL", "").strip().rstrip("/")
     if base:
         payload["firefly_base_url"] = base

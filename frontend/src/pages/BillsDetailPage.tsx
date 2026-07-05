@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react"
-import { ExternalLink, Plus, RefreshCw } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { AlertTriangle, ExternalLink, Plus, RefreshCw } from "lucide-react"
 import {
   Link,
   Navigate,
@@ -19,6 +19,7 @@ import {
   registeredBillsQueryKey,
   useBillHistory,
   useRegisteredBills,
+  billHistoryQueryKey,
 } from "@/hooks/useBillHistory"
 import { useHealth } from "@/hooks/useHealth"
 import {
@@ -35,6 +36,7 @@ import {
   currentMonthKey,
   fetchAvailableBills,
   registerBill,
+  repairBillLinkRule,
   updateBillRegistry,
   type AvailableFireflyBill,
   type BillHistoryTransaction,
@@ -270,16 +272,68 @@ function BillTransactionTable({
   )
 }
 
+function BillRuleSyncWarning({
+  registryId,
+  onRepaired,
+}: {
+  registryId: number
+  onRepaired: () => void
+}) {
+  const [repairing, setRepairing] = useState(false)
+
+  return (
+    <div className="rounded-lg border border-amber-500/50 bg-amber-500/5 p-4 space-y-3">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Import rule out of sync</p>
+          <p className="text-muted-foreground text-sm">
+            The Firefly rule that links withdrawals to this bill still points at
+            an old bill name. New imports may not attach to this bill until you
+            repair the rule.
+          </p>
+        </div>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={repairing}
+        onClick={() => {
+          setRepairing(true)
+          void repairBillLinkRule(registryId)
+            .then(() => {
+              toast.success("Import rule repaired")
+              onRepaired()
+            })
+            .catch((error: unknown) => {
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "Could not repair import rule.",
+              )
+            })
+            .finally(() => setRepairing(false))
+        }}
+      >
+        {repairing ? "Repairing…" : "Repair rule"}
+      </Button>
+    </div>
+  )
+}
+
 function BillDetailPanel({
   registryId,
   bills,
   billsLoaded,
   onEditRegistration,
+  onRowLabelSynced,
 }: {
   registryId: string | undefined
   bills: RegisteredBillListItem[]
   billsLoaded: boolean
   onEditRegistration?: (bill: RegisteredBillListItem) => void
+  onRowLabelSynced?: (registryId: number, rowLabel: string) => void
 }) {
   const parsedId =
     registryId != null ? Number.parseInt(registryId, 10) : Number.NaN
@@ -297,6 +351,27 @@ function BillDetailPanel({
     isError: historyError,
     refetch: refetchHistory,
   } = useBillHistory(historyEnabled ? validId : null)
+
+  const rowLabelSyncedHandled = useRef(false)
+  useEffect(() => {
+    rowLabelSyncedHandled.current = false
+  }, [validId])
+
+  useEffect(() => {
+    if (!history?.row_label_synced || validId == null || rowLabelSyncedHandled.current) {
+      return
+    }
+    const label = (history.row_label ?? history.name ?? "").trim()
+    if (!label) return
+    rowLabelSyncedHandled.current = true
+    onRowLabelSynced?.(validId, label)
+  }, [
+    history?.row_label_synced,
+    history?.row_label,
+    history?.name,
+    validId,
+    onRowLabelSynced,
+  ])
 
   if (!registryId) {
     if (bills.length > 0) {
@@ -362,9 +437,20 @@ function BillDetailPanel({
 
       {!historyPending && !historyError && history && (
         <>
+          {history.rule_sync_status === "out_of_sync" && validId != null ? (
+            <BillRuleSyncWarning
+              registryId={validId}
+              onRepaired={() => {
+                void refetchHistory()
+                if (validId != null && history?.name) {
+                  onRowLabelSynced?.(validId, history.name)
+                }
+              }}
+            />
+          ) : null}
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-xl font-semibold">
-              {history.row_label ?? selectedBill?.row_label ?? "Bill"}
+              {history.name ?? history.row_label ?? selectedBill?.row_label ?? "Bill"}
             </h2>
             {selectedBill && onEditRegistration ? (
               <Button
@@ -440,6 +526,26 @@ export function BillsDetailPage() {
   } = useRegisteredBills()
   const refreshing = billsFetching && !billsPending
 
+  const handleRowLabelSynced = useCallback(
+    (registryId: number, rowLabel: string) => {
+      queryClient.setQueryData<{ data: RegisteredBillListItem[] }>(
+        registeredBillsQueryKey(),
+        (old) => {
+          if (!old) return old
+          let changed = false
+          const data = old.data.map((bill) => {
+            if (bill.registry_id !== registryId) return bill
+            if (bill.row_label === rowLabel) return bill
+            changed = true
+            return { ...bill, row_label: rowLabel }
+          })
+          return changed ? { data } : old
+        },
+      )
+    },
+    [queryClient],
+  )
+
   const [billRegistrationOpen, setBillRegistrationOpen] = useState(false)
   const [billRegistrationMode, setBillRegistrationMode] = useState<
     "create_new" | "link_existing"
@@ -509,6 +615,9 @@ export function BillsDetailPage() {
       await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
       await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
       await queryClient.invalidateQueries({ queryKey: billGroupsQueryKey() })
+      await queryClient.invalidateQueries({
+        queryKey: billHistoryQueryKey(editTarget.registryId),
+      })
       setBillRegistrationOpen(false)
       setEditTarget(null)
       toast.success(`${payload.name} updated`, { duration: 4000 })
@@ -601,6 +710,7 @@ export function BillsDetailPage() {
           bills={bills}
           billsLoaded={!billsPending}
           onEditRegistration={(bill) => void openEditRegistration(bill)}
+          onRowLabelSynced={handleRowLabelSynced}
         />
       </div>
 

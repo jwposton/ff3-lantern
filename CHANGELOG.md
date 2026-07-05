@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Bill rename import rule sync** — renaming a registered bill updates the linked Firefly rule's `link_to_bill` action; older rules missing `rule_group_id` on GET are resolved via Firefly includes or the Payment worksheet rule group (#84)
+- **Bill history name after edit** — Bills detail heading and history refresh immediately after renaming a registered bill instead of showing a cached old label (#84)
+- **Bill history sidebar label** — bill picker list updates when the Firefly bill name and sidecar `row_label` have drifted (e.g. after rename in Firefly or rule repair) (#84)
+- **Bill history request loop** — fixed runaway `GET /payment-run/bills` when reconciling a drifted bill label by patching the list cache instead of invalidating it (#84)
+- **Bill import rule drift** — bill detail and worksheet refresh flag out-of-sync import rules; **Repair rule** on the Bills page fixes stale `link_to_bill` values (#84)
 - **Budget vs average percent mode** — budgets with no 12-month average show an amber bar capped at 100% (labeled with this month's dollars) instead of a misleading blue percentage; zero-spend rows stay empty (#58)
 - **Budget vs average chart order** — dollars mode sorts rows by the larger of current-month spend and 12-month average; percent mode sorts by ratio (#58)
 - **Total spend rank** — top 15 uses the higher of current-month spend or 12-month average, so zero-current budgets with a strong average (e.g. Healthcare) still appear (#58)

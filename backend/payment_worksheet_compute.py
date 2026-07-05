@@ -686,6 +686,11 @@ def _assemble_bill_rows(
                 "worksheet_section": reg.get("worksheet_section"),
                 "bill_group_id": reg.get("bill_group_id"),
                 "show_in_group": bool(reg.get("show_in_group")),
+                **(
+                    {"rule_sync_status": snap["rule_sync_status"]}
+                    if snap.get("rule_sync_status") is not None
+                    else {}
+                ),
             }
         )
     rows.sort(key=bill_row_display_sort_key)
