@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { BillRegistrationSheet } from "./BillRegistrationSheet"
 import type { RegisterBillPayload } from "@/lib/paymentRunApi"
@@ -11,10 +11,11 @@ vi.mock("@/lib/paymentRunApi", async (importOriginal) => {
   return {
     ...actual,
     fetchBillRegistry: vi.fn(),
+    fetchBillGroups: vi.fn(),
   }
 })
 
-import { fetchBillRegistry } from "@/lib/paymentRunApi"
+import { fetchBillGroups, fetchBillRegistry } from "@/lib/paymentRunApi"
 
 function TestProviders({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({
@@ -71,6 +72,19 @@ describe("BillRegistrationSheet", () => {
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+  })
+
+  beforeEach(() => {
+    vi.mocked(fetchBillGroups).mockResolvedValue({
+      data: [
+        {
+          id: "utilities",
+          label: "Utilities",
+          sort_order: 1,
+          members: [],
+        },
+      ],
+    })
   })
 
   it("calls registerBill payload on submit", async () => {
@@ -198,5 +212,152 @@ describe("BillRegistrationSheet", () => {
 
     const cardSelect = screen.getByLabelText("Credit card") as HTMLSelectElement
     expect(cardSelect.value).toBe("42")
+  })
+
+  it("prefills group select and Show in group checkbox when editing", async () => {
+    vi.mocked(fetchBillRegistry).mockResolvedValue({
+      registry_id: 7,
+      row_label: "Electric",
+      firefly_bill_id: "bill-7",
+      worksheet_section: "bills",
+      payment_rail: "bank",
+      amount_mode: "recurring",
+      funding_bucket_key: "checking",
+      credit_card_account_id: null,
+      name: "Electric",
+      amount_min: "50.00",
+      amount_max: "50.00",
+      repeat_freq: "monthly",
+      bill_group_id: "utilities",
+      show_in_group: true,
+    })
+
+    render(
+      <TestProviders>
+        <BillRegistrationSheet
+          {...BASE_PROPS}
+          onSubmit={vi.fn()}
+          editTarget={{
+            registryId: 7,
+            row_label: "Electric",
+            worksheet_section: "bills",
+            payment_rail: "bank",
+            funding_bucket_key: "checking",
+            credit_card_account_id: null,
+            amount_mode: "recurring",
+          }}
+        />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const groupSelect = screen.getByLabelText("Bill group") as HTMLSelectElement
+      expect(groupSelect.value).toBe("utilities")
+    })
+
+    const showCheckbox = screen.getByRole("checkbox", {
+      name: "Show in group",
+    }) as HTMLInputElement
+    expect(showCheckbox.checked).toBe(true)
+  })
+
+  it("disables Show in group when group is cleared", async () => {
+    render(
+      <TestProviders>
+        <BillRegistrationSheet {...BASE_PROPS} onSubmit={vi.fn()} />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Bill group")).toBeTruthy()
+    })
+
+    const groupSelect = screen.getByLabelText("Bill group") as HTMLSelectElement
+    fireEvent.change(groupSelect, { target: { value: "utilities" } })
+
+    const showCheckbox = screen.getByRole("checkbox", {
+      name: "Show in group",
+    }) as HTMLInputElement
+    fireEvent.click(showCheckbox)
+    expect(showCheckbox.checked).toBe(true)
+
+    fireEvent.change(groupSelect, { target: { value: "" } })
+
+    expect(showCheckbox.disabled).toBe(true)
+    expect(showCheckbox.checked).toBe(false)
+  })
+
+  it("includes bill_group_id and show_in_group in submit payload", async () => {
+    const onSubmit = vi.fn(async (_payload: RegisterBillPayload) => {})
+
+    render(
+      <TestProviders>
+        <BillRegistrationSheet {...BASE_PROPS} onSubmit={onSubmit} />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Bill group")).toBeTruthy()
+    })
+
+    fireEvent.change(screen.getByLabelText("Bill name"), {
+      target: { value: "Electric" },
+    })
+    fireEvent.change(screen.getByLabelText("Amount min"), {
+      target: { value: "99.00" },
+    })
+    fireEvent.change(screen.getByLabelText(/Rule — description contains/i), {
+      target: { value: "ELECTRIC CO" },
+    })
+    fireEvent.change(screen.getByLabelText("Bill group"), {
+      target: { value: "utilities" },
+    })
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show in group" }))
+
+    fireEvent.click(screen.getByRole("button", { name: "Register bill" }))
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bill_group_id: "utilities",
+          show_in_group: true,
+        }),
+      )
+    })
+  })
+
+  it("sends null bill_group_id when no group selected", async () => {
+    const onSubmit = vi.fn(async (_payload: RegisterBillPayload) => {})
+
+    render(
+      <TestProviders>
+        <BillRegistrationSheet {...BASE_PROPS} onSubmit={onSubmit} />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Bill group")).toBeTruthy()
+    })
+
+    fireEvent.change(screen.getByLabelText("Bill name"), {
+      target: { value: "Electric" },
+    })
+    fireEvent.change(screen.getByLabelText("Amount min"), {
+      target: { value: "99.00" },
+    })
+    fireEvent.change(screen.getByLabelText(/Rule — description contains/i), {
+      target: { value: "ELECTRIC CO" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Register bill" }))
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bill_group_id: null,
+          show_in_group: false,
+        }),
+      )
+    })
   })
 })

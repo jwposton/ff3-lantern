@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,9 +14,13 @@ import {
 } from "@/components/ui/sheet"
 import { useCategorizeMeta } from "@/hooks/useCategorizeMeta"
 import {
+  billGroupsQueryKey,
+  createBillGroup,
+  fetchBillGroups,
   fetchBillLinkRules,
   fetchBillRegistry,
   type AvailableFireflyBill,
+  type BillGroup,
   type BillLinkRule,
   type BillRegistrationPrefill,
   type CreditCardRow,
@@ -124,6 +129,7 @@ export function BillRegistrationSheet({
   loadingAvailable = false,
   onSubmit,
 }: BillRegistrationSheetProps) {
+  const queryClient = useQueryClient()
   const [mode, setMode] = useState<RegistrationMode>("create_new")
   const [name, setName] = useState("")
   const [amountMin, setAmountMin] = useState("")
@@ -154,6 +160,13 @@ export function BillRegistrationSheet({
   const [suggestedFields, setSuggestedFields] = useState<Set<string>>(
     () => new Set(),
   )
+  const [billGroupId, setBillGroupId] = useState("")
+  const [showInGroup, setShowInGroup] = useState(false)
+  const [billGroups, setBillGroups] = useState<BillGroup[]>([])
+  const [loadingGroups, setLoadingGroups] = useState(false)
+  const [inlineCreateMode, setInlineCreateMode] = useState(false)
+  const [newGroupLabel, setNewGroupLabel] = useState("")
+  const [creatingGroup, setCreatingGroup] = useState(false)
 
   const { data: categorizeMeta } = useCategorizeMeta()
   const categories = categorizeMeta?.categories ?? []
@@ -191,6 +204,10 @@ export function BillRegistrationSheet({
       setUseExistingRule(false)
       setError(null)
       setSuggestedFields(new Set())
+      setBillGroupId("")
+      setShowInGroup(false)
+      setInlineCreateMode(false)
+      setNewGroupLabel("")
       return
     }
     if (initialPrefill) {
@@ -219,6 +236,10 @@ export function BillRegistrationSheet({
       setUseExistingRule(false)
       setError(null)
       setSuggestedFields(buildSuggestedFields(initialPrefill))
+      setBillGroupId("")
+      setShowInGroup(false)
+      setInlineCreateMode(false)
+      setNewGroupLabel("")
       return
     }
     setMode(initialMode)
@@ -241,6 +262,10 @@ export function BillRegistrationSheet({
     setUseExistingRule(false)
     setError(null)
     setSuggestedFields(new Set())
+    setBillGroupId("")
+    setShowInGroup(false)
+    setInlineCreateMode(false)
+    setNewGroupLabel("")
   }, [
     open,
     defaultSection,
@@ -252,6 +277,27 @@ export function BillRegistrationSheet({
     creditCards,
     paymentSourceHint,
   ])
+
+  useEffect(() => {
+    if (!open) return
+
+    let cancelled = false
+    setLoadingGroups(true)
+    void fetchBillGroups()
+      .then(({ data }) => {
+        if (!cancelled) setBillGroups(data)
+      })
+      .catch(() => {
+        if (!cancelled) setBillGroups([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingGroups(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   useEffect(() => {
     if (!open || !editTarget) {
@@ -284,6 +330,8 @@ export function BillRegistrationSheet({
         setCreditCardAccountId(
           details.credit_card_account_id ?? creditCards[0]?.account_id ?? "",
         )
+        setBillGroupId(details.bill_group_id ?? "")
+        setShowInGroup(details.show_in_group ?? false)
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -398,6 +446,31 @@ export function BillRegistrationSheet({
     if (trimmed && !amountMin.trim()) setAmountMin(trimmed)
   }
 
+  async function handleCreateGroup() {
+    const trimmedLabel = newGroupLabel.trim()
+    if (!trimmedLabel) {
+      setError("Group label is required.")
+      return
+    }
+    setCreatingGroup(true)
+    setError(null)
+    try {
+      const group = await createBillGroup({ label: trimmedLabel })
+      await queryClient.invalidateQueries({ queryKey: billGroupsQueryKey() })
+      const { data } = await fetchBillGroups()
+      setBillGroups(data)
+      setBillGroupId(group.id)
+      setInlineCreateMode(false)
+      setNewGroupLabel("")
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not create bill group.",
+      )
+    } finally {
+      setCreatingGroup(false)
+    }
+  }
+
   async function handleSubmit() {
     const trimmedName = name.trim()
     if (!trimmedName) {
@@ -445,6 +518,10 @@ export function BillRegistrationSheet({
       setError("Amount min or max is required for recurring bills.")
       return
     }
+    if (showInGroup && !billGroupId) {
+      setError("show_in_group requires bill_group_id when set to true.")
+      return
+    }
 
     const payload: RegisterBillPayload = {
       mode,
@@ -465,6 +542,8 @@ export function BillRegistrationSheet({
       amount_exactly: amountExactly.trim() || null,
       firefly_bill_id: mode === "link_existing" ? selectedBillId : null,
       rule_id: ruleId,
+      bill_group_id: billGroupId || null,
+      show_in_group: showInGroup,
     }
 
     setSaving(true)
@@ -705,6 +784,78 @@ export function BillRegistrationSheet({
               <option value="bills">Bills</option>
               <option value="liabilities">Liabilities</option>
             </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium" htmlFor="bill-group">
+              Bill group
+            </label>
+            {loadingGroups ? (
+              <p className="text-muted-foreground text-sm">Loading groups…</p>
+            ) : (
+              <select
+                id="bill-group"
+                className={selectClassName}
+                value={inlineCreateMode ? "__create__" : billGroupId}
+                onChange={(event) => {
+                  const value = event.target.value
+                  if (value === "__create__") {
+                    setInlineCreateMode(true)
+                    return
+                  }
+                  setInlineCreateMode(false)
+                  setBillGroupId(value)
+                  if (!value) setShowInGroup(false)
+                }}
+              >
+                <option value="">None</option>
+                {billGroups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.label}
+                  </option>
+                ))}
+                <option value="__create__">Create new group…</option>
+              </select>
+            )}
+            {inlineCreateMode ? (
+              <div className="flex flex-wrap items-end gap-2 pt-1">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <label className="text-xs font-medium" htmlFor="new-group-label">
+                    New group label
+                  </label>
+                  <Input
+                    id="new-group-label"
+                    value={newGroupLabel}
+                    onChange={(event) => setNewGroupLabel(event.target.value)}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={creatingGroup}
+                  onClick={() => void handleCreateGroup()}
+                >
+                  {creatingGroup ? "Creating…" : "Create"}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="space-y-1">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={showInGroup}
+                disabled={!billGroupId}
+                onChange={(event) => setShowInGroup(event.target.checked)}
+              />
+              Show in group
+            </label>
+            <p className="text-muted-foreground text-xs">
+              When checked, this bill appears as a child row under its group on
+              the worksheet.
+            </p>
           </div>
 
           <div className="space-y-1">

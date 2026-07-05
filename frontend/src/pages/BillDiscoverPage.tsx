@@ -25,6 +25,7 @@ import {
   parseLookback,
 } from "@/lib/billDiscoverUtils"
 import {
+  billGroupsQueryKey,
   currentMonthKey,
   fetchAvailableBills,
   registerBill,
@@ -146,11 +147,13 @@ export function BillDiscoverPage() {
     try {
       await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
       await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
+      await queryClient.invalidateQueries({ queryKey: billGroupsQueryKey() })
       await refetch()
     } catch {
       // Registration succeeded; refresh failure should not block success UX
       void queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
       void queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
+      void queryClient.invalidateQueries({ queryKey: billGroupsQueryKey() })
       void refetch()
     }
     setSheetOpen(false)
