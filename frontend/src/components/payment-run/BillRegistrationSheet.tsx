@@ -28,6 +28,24 @@ import {
   type RegisterBillPayload,
 } from "@/lib/paymentRunApi"
 
+const BILL_REPEAT_FREQ_OPTIONS = ["monthly", "weekly", "yearly"] as const
+
+function normalizeBillRepeatFreq(value: string | null | undefined): string {
+  const raw = (value ?? "monthly").trim().toLowerCase() || "monthly"
+  if ((BILL_REPEAT_FREQ_OPTIONS as readonly string[]).includes(raw)) {
+    return raw
+  }
+  const legacy: Record<string, string> = {
+    quarterly: "monthly",
+    "half-year": "yearly",
+    "every 2 weeks": "weekly",
+    "every 3 months": "monthly",
+    yearly: "yearly",
+    annual: "yearly",
+  }
+  return legacy[raw] ?? "monthly"
+}
+
 type RegistrationMode = "create_new" | "link_existing"
 
 export type BillRegistrationEditTarget = {
@@ -183,7 +201,7 @@ export function BillRegistrationSheet({
       setAmountMode(
         editTarget.amount_mode === "intermittent" ? "intermittent" : "recurring",
       )
-      setRepeatFreq(editTarget.repeat_freq ?? "monthly")
+      setRepeatFreq(normalizeBillRepeatFreq(editTarget.repeat_freq))
       setWorksheetSection(
         editTarget.worksheet_section === "liabilities" ? "liabilities" : "bills",
       )
@@ -216,7 +234,7 @@ export function BillRegistrationSheet({
       setAmountMin(initialPrefill.amount_min ?? "")
       setAmountMax(initialPrefill.amount_max ?? "")
       setAmountMode(initialPrefill.amount_mode ?? "recurring")
-      setRepeatFreq(initialPrefill.repeat_freq ?? "monthly")
+      setRepeatFreq(normalizeBillRepeatFreq(initialPrefill.repeat_freq))
       setWorksheetSection(initialPrefill.worksheet_section ?? defaultSection)
       const rail = initialPrefill.payment_rail ?? "bank"
       setPaymentRail(rail)
@@ -314,7 +332,7 @@ export function BillRegistrationSheet({
         setName(details.name ?? details.row_label ?? "")
         setAmountMin(details.amount_min ?? "")
         setAmountMax(details.amount_max ?? details.amount_min ?? "")
-        setRepeatFreq(details.repeat_freq ?? "monthly")
+        setRepeatFreq(normalizeBillRepeatFreq(details.repeat_freq))
         setAmountMode(
           details.amount_mode === "intermittent" ? "intermittent" : "recurring",
         )
@@ -363,7 +381,7 @@ export function BillRegistrationSheet({
     setName(bill.name ?? "")
     setAmountMin(bill.amount_min ?? "")
     setAmountMax(bill.amount_max ?? bill.amount_min ?? "")
-    setRepeatFreq(bill.repeat_freq ?? "monthly")
+    setRepeatFreq(normalizeBillRepeatFreq(bill.repeat_freq))
   }, [selectedBillId, availableBills])
 
   useEffect(() => {

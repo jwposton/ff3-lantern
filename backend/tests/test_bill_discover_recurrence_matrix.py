@@ -243,6 +243,28 @@ def test_visit_style_anchor_cyclicality_ignores_category():
     assert _is_visit_style_spending(txns, metrics=metrics) is False
 
 
+def test_backblaze_register_prefill_uses_firefly_monthly_repeat():
+    """Semi-monthly anchor billing must not prefill invalid 'every 2 weeks'."""
+    from payment_worksheet_bill_suggestions import (
+        _analyze_group,
+        _build_register_prefill,
+    )
+
+    txns = backblaze_usage_billing()
+    txns_dec = [t | {"amount": Decimal(t["amount"])} for t in txns]
+    metrics = _analyze_group("Backblaze", txns_dec)
+    assert metrics is not None
+    assert metrics["freq"] == "monthly"
+    prefill = _build_register_prefill(
+        metrics,
+        txns,
+        {},
+        raw_payee="Backblaze",
+    )
+    assert prefill["amount_mode"] == "intermittent"
+    assert prefill["repeat_freq"] == "monthly"
+
+
 def backblaze_usage_billing() -> list[dict[str, Any]]:
     """Two usage charges most months; one month with three — real Backblaze shape."""
     rows: list[dict[str, Any]] = []

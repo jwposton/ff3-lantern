@@ -81,6 +81,8 @@ describe("BillRegistrationSheet", () => {
           id: "utilities",
           label: "Utilities",
           sort_order: 1,
+          member_count: 0,
+          visible_count: 0,
           members: [],
         },
       ],

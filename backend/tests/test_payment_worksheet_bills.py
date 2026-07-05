@@ -19,6 +19,7 @@ from payment_worksheet_bills import (
     list_link_rules_for_bill,
     register_bill,
     register_new_bill,
+    _normalize_firefly_repeat_freq,
     _resolve_firefly_bill_amounts,
 )
 
@@ -27,6 +28,14 @@ from payment_worksheet_bills import (
 def data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     return tmp_path
+
+
+def test_normalize_firefly_repeat_freq_maps_legacy_labels():
+    assert _normalize_firefly_repeat_freq("every 2 weeks") == "weekly"
+    assert _normalize_firefly_repeat_freq("every 3 months") == "quarterly"
+    assert _normalize_firefly_repeat_freq("monthly") == "monthly"
+    assert _normalize_firefly_repeat_freq(None) == "monthly"
+    assert _normalize_firefly_repeat_freq("bogus") == "monthly"
 
 
 def test_build_bill_link_rule_body_includes_link_action():

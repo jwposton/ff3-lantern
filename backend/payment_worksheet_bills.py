@@ -75,6 +75,27 @@ def _default_bill_date() -> str:
     return first.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
+_FIREFLY_REPEAT_FREQS = frozenset(
+    {"weekly", "monthly", "quarterly", "half-year", "yearly"}
+)
+
+_LEGACY_REPEAT_FREQ = {
+    "every 2 weeks": "weekly",
+    "every 3 months": "quarterly",
+    "every 6 months": "half-year",
+    "annually": "yearly",
+    "annual": "yearly",
+}
+
+
+def _normalize_firefly_repeat_freq(value: str | None, *, default: str = "monthly") -> str:
+    """Coerce repeat_freq to values accepted by Firefly BillStore."""
+    raw = (value or default).strip().lower() or default
+    if raw in _FIREFLY_REPEAT_FREQS:
+        return raw
+    return _LEGACY_REPEAT_FREQ.get(raw, default)
+
+
 def _sanitize_optional_trigger_text(value: str, *, field_name: str) -> str:
     cleaned = _CONTROL_CHAR_RE.sub("", value or "").strip()
     if len(cleaned) > 255:
@@ -548,7 +569,7 @@ async def register_new_bill(
         "amount_min": amount_min,
         "amount_max": amount_max,
         "date": _default_bill_date(),
-        "repeat_freq": (body.repeat_freq or "monthly").strip() or "monthly",
+        "repeat_freq": _normalize_firefly_repeat_freq(body.repeat_freq),
         "active": True,
     }
     group_title = _bill_object_group_title()
@@ -788,9 +809,8 @@ async def update_linked_firefly_bill(
         "amount_min": resolved_min,
         "amount_max": resolved_max,
         "date": _default_bill_date(),
-        "repeat_freq": (
-            (repeat_freq or current.get("repeat_freq") or "monthly").strip()
-            or "monthly"
+        "repeat_freq": _normalize_firefly_repeat_freq(
+            repeat_freq or current.get("repeat_freq"),
         ),
         "active": True,
     }
