@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-07-05
+
 ### Added
 
 - **Worksheet grand total per-card breakdown** — **Due & planned** **Credit card** group nests each card under **Bills** or **Liabilities** with a collapsible chevron so card lines reconcile to the section subtotal (#79)
@@ -401,7 +403,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/jwposton/ff3-lantern/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/jwposton/ff3-lantern/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/jwposton/ff3-lantern/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/jwposton/ff3-lantern/compare/v2.1.0...v2.1.1

@@ -248,7 +248,7 @@ function buildDuePlannedRailChildren(
       continue
     }
     const cardChildren =
-      rail === "credit" && spec.cardBreakdown
+      rail === "credit" && spec.cardBreakdown && "by_credit_card" in section
         ? buildCreditCardBreakdownChildren(
             section.by_credit_card ?? [],
             spec.testIdPrefix,
