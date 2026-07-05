@@ -181,6 +181,8 @@ export type RegisterBillPayload = {
   amount_exactly?: string | null
   firefly_bill_id?: string | null
   rule_id?: string | null
+  bill_group_id?: string | null
+  show_in_group?: boolean
 }
 
 export type UpdateBillRegistryPayload = {
@@ -211,6 +213,8 @@ export type BillRegistryEditDetails = {
   amount_min: string | null
   amount_max: string | null
   repeat_freq: string | null
+  bill_group_id?: string | null
+  show_in_group?: boolean
 }
 
 export type CreditCardRow = PlannedAmountRow & {
@@ -280,6 +284,32 @@ export type FundingBucketInput = {
   label: string
   sort_order?: number
   firefly_account_ids: string[]
+}
+
+export type BillGroupMember = {
+  registry_id: number
+  row_label: string | null
+  show_in_group: boolean
+}
+
+export type BillGroup = {
+  id: string
+  label: string
+  sort_order: number
+  member_count: number
+  visible_count: number
+  members: BillGroupMember[]
+}
+
+export type BillGroupCreateInput = {
+  label: string
+  sort_order?: number
+}
+
+export type BillGroupPatchInput = {
+  label?: string
+  sort_order?: number
+  member_ids?: number[]
 }
 
 export type BillRegistrationPrefill = {
@@ -454,6 +484,56 @@ export async function deleteFundingBucket(bucketId: string): Promise<void> {
   })
   if (!res.ok) {
     await parseError(res, `Failed to delete funding bucket (${res.status})`)
+  }
+}
+
+export function billGroupsQueryKey() {
+  return ["paymentRun", "billGroups"] as const
+}
+
+export async function fetchBillGroups(): Promise<{ data: BillGroup[] }> {
+  const res = await fetch("/api/payment-run/bill-groups")
+  if (!res.ok) {
+    await parseError(res, `Failed to fetch bill groups (${res.status})`)
+  }
+  return (await res.json()) as { data: BillGroup[] }
+}
+
+export async function createBillGroup(
+  body: BillGroupCreateInput,
+): Promise<BillGroup> {
+  const res = await fetch("/api/payment-run/bill-groups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to create bill group (${res.status})`)
+  }
+  return (await res.json()) as BillGroup
+}
+
+export async function patchBillGroup(
+  groupId: string,
+  body: BillGroupPatchInput,
+): Promise<BillGroup> {
+  const res = await fetch(`/api/payment-run/bill-groups/${groupId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to update bill group (${res.status})`)
+  }
+  return (await res.json()) as BillGroup
+}
+
+export async function deleteBillGroup(groupId: string): Promise<void> {
+  const res = await fetch(`/api/payment-run/bill-groups/${groupId}`, {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to delete bill group (${res.status})`)
   }
 }
 
