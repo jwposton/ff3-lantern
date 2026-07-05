@@ -5,6 +5,8 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from datetime import date
+
 import pytest
 
 from payment_worksheet_bills import RegisterBillBody
@@ -13,6 +15,7 @@ from payment_worksheet_bill_suggestions import (
     _category_is_ignored,
     _cluster_withdrawals,
     _is_quiet_category,
+    _lookback_period_start,
     _payee_is_ignored,
     _payee_similarity,
     _merchant_from_category,
@@ -55,6 +58,11 @@ DEFAULT_IGNORED_CATEGORIES = [
     "Shopping",
     "Entertainment",
 ]
+
+
+def test_lookback_period_start_snaps_to_first_of_month() -> None:
+    assert _lookback_period_start(date(2026, 7, 5), 12) == date(2025, 7, 1)
+    assert _lookback_period_start(date(2026, 7, 5), 6) == date(2026, 1, 1)
 
 
 def empty_accounts() -> dict[str, dict[str, Any]]:

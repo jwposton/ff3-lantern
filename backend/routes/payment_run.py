@@ -29,7 +29,7 @@ from payment_worksheet_profiles import (
 )
 from payment_worksheet_bill_suggestions import (
     LOOKBACK_CHOICES,
-    _subtract_months,
+    _lookback_period_start,
     fetch_bill_suggestion_transactions,
     fetch_bill_suggestions,
     resolve_suggestion_destination_name,
@@ -1058,7 +1058,7 @@ async def discover_ignore_payee_route(
             detail="lookback_months must be 6, 12, or 24.",
         )
     period_end = date.today()
-    period_start = _subtract_months(period_end, body.lookback_months)
+    period_start = _lookback_period_start(period_end, body.lookback_months)
     try:
         splits = await client.fetch_splits(period_start.isoformat(), period_end.isoformat())
         accounts = await client.fetch_accounts()

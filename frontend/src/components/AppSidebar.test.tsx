@@ -250,7 +250,7 @@ describe("AppSidebar Manage section", () => {
     })
   })
 
-  it("shows Bill discover nav when payment_worksheet_enabled is true", async () => {
+  it("shows Bill Discovery nav when payment_worksheet_enabled is true", async () => {
     mockPendingFetch(0, 0, true)
 
     render(
@@ -264,11 +264,11 @@ describe("AppSidebar Manage section", () => {
         'a[href="/manage/payment-run/discover"]',
       )
       expect(link).toBeTruthy()
-      expect(link?.textContent).toContain("Bill discover")
+      expect(link?.textContent).toContain("Bill Discovery")
     })
   })
 
-  it("hides Bill discover nav when payment_worksheet_enabled is false", async () => {
+  it("hides Bill Discovery nav when payment_worksheet_enabled is false", async () => {
     mockPendingFetch(0, 0, false)
 
     render(
