@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bill register errors** — failed bill registration and Bill Discover adopt name the failing step (bill, link rule, or registry), return 422 for Firefly validation collisions, show a sticky alert and toast with an Open in Firefly action when a rule or bill title conflicts, and suggest an alternate name with ` - 01` (#89)
+
 ## [2.4.0] - 2026-07-05
 
 ### Added

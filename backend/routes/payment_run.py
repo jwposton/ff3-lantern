@@ -36,6 +36,7 @@ from payment_worksheet_bills import (
     BILL_GROUP_SECTIONS,
     BillRegistrationError,
     RegisterBillBody,
+    bill_registration_http_detail,
     detect_rule_link_sync,
     discover_link_rule_id,
     register_bill,
@@ -700,7 +701,10 @@ async def register_bill_route(
     try:
         return await register_bill(client, body)
     except BillRegistrationError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=bill_registration_http_detail(exc),
+        ) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

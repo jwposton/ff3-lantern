@@ -34,6 +34,19 @@ def data_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _preflight_list_response(request: httpx.Request) -> httpx.Response | None:
+    path = request.url.path
+    empty_page = {
+        "data": [],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+    if path == "/api/v1/rules" and request.method == "GET":
+        return httpx.Response(200, json=empty_page)
+    if path == "/api/v1/bills" and request.method == "GET":
+        return httpx.Response(200, json=empty_page)
+    return None
+
+
 def test_normalize_firefly_repeat_freq_maps_legacy_labels():
     assert _normalize_firefly_repeat_freq("every 2 weeks") == "weekly"
     assert _normalize_firefly_repeat_freq("every 3 months") == "quarterly"
@@ -148,6 +161,9 @@ async def test_register_wizard(data_dir, monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
+        preflight = _preflight_list_response(request)
+        if preflight is not None:
+            return preflight
         if path == "/api/v1/rule-groups" and request.method == "GET":
             return httpx.Response(
                 200,
@@ -244,6 +260,9 @@ async def test_register_intermittent_without_amount(data_dir, monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
+        preflight = _preflight_list_response(request)
+        if preflight is not None:
+            return preflight
         if path == "/api/v1/rule-groups" and request.method == "GET":
             return httpx.Response(
                 200,
@@ -329,6 +348,9 @@ async def test_register_credit_card_rail_counts_toward_cash_plan_off(data_dir, m
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
+        preflight = _preflight_list_response(request)
+        if preflight is not None:
+            return preflight
         if path == "/api/v1/rule-groups" and request.method == "GET":
             return httpx.Response(
                 200,
@@ -614,6 +636,9 @@ async def test_register_new_bill_compensates_on_rule_failure(data_dir, monkeypat
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
+        preflight = _preflight_list_response(request)
+        if preflight is not None:
+            return preflight
         if path == "/api/v1/rule-groups" and request.method == "GET":
             return httpx.Response(
                 200,
@@ -686,6 +711,9 @@ async def test_register_new_bill_triggers_link_rule(data_dir, monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
+        preflight = _preflight_list_response(request)
+        if preflight is not None:
+            return preflight
         if path == "/api/v1/rule-groups" and request.method == "GET":
             return httpx.Response(
                 200,
@@ -1112,3 +1140,240 @@ async def test_sync_link_rule_bill_name_uses_worksheet_group_when_missing():
     )
     assert seen[0]["rule_group_id"] == "group-legacy"
     assert seen[0]["actions"][0]["value"] == "Spotify Premium"
+
+
+@pytest.mark.asyncio
+async def test_register_new_bill_preflight_rule_title_collision(
+    data_dir, monkeypatch
+):
+    monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
+    bill_posts: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/rules" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "rules",
+                            "id": "70",
+                            "attributes": {
+                                "title": "Ulysses App",
+                                "triggers": [],
+                                "actions": [],
+                            },
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "POST":
+            bill_posts.append(json.loads(request.content.decode()))
+            return httpx.Response(201)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    body = RegisterBillBody(
+        mode="create_new",
+        name="Ulysses App",
+        amount="6.37",
+        amount_mode="recurring",
+        repeat_freq="monthly",
+        worksheet_section="bills",
+        payment_rail="bank",
+        funding_bucket_key="checking",
+        destination_account="Apple Services",
+        category_name="Ulysses App",
+    )
+    with pytest.raises(BillRegistrationError) as exc:
+        await register_new_bill(client, body)
+    assert exc.value.status_code == 422
+    assert exc.value.conflicting_rule_id == "70"
+    assert exc.value.firefly_rule_url == "https://firefly.example/rules/edit/70"
+    assert 'rule titled "Ulysses App"' in exc.value.detail
+    assert "subscription link" in exc.value.detail
+    assert "Ulysses App - 01" in exc.value.detail
+    assert "delete" not in exc.value.detail.lower()
+    assert "link existing" not in exc.value.detail.lower()
+    assert bill_posts == []
+
+
+@pytest.mark.asyncio
+async def test_register_new_bill_rule_create_collision_after_bill(
+    data_dir, monkeypatch
+):
+    monkeypatch.setenv(
+        "FF3LANTERN_PAYMENT_WORKSHEET_RULE_GROUP", "Payment worksheet"
+    )
+    monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
+    deleted_bills: list[str] = []
+    rules_get_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal rules_get_calls
+        path = request.url.path
+        if path == "/api/v1/rule-groups" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "rule-groups",
+                            "id": "1",
+                            "attributes": {"title": "Payment worksheet"},
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/rules" and request.method == "GET":
+            rules_get_calls += 1
+            rule_payload = {
+                "type": "rules",
+                "id": "70",
+                "attributes": {
+                    "title": "Ulysses App",
+                    "triggers": [],
+                    "actions": [],
+                },
+            }
+            data = [] if rules_get_calls == 1 else [rule_payload]
+            return httpx.Response(
+                200,
+                json={
+                    "data": data,
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "POST":
+            return httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "bill-orphan",
+                        "attributes": {"name": "Ulysses App"},
+                    }
+                },
+            )
+        if path == "/api/v1/bills/bill-orphan" and request.method == "DELETE":
+            deleted_bills.append("bill-orphan")
+            return httpx.Response(204)
+        if path == "/api/v1/rules" and request.method == "POST":
+            return httpx.Response(
+                422,
+                json={"message": "This name is already in use."},
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    body = RegisterBillBody(
+        mode="create_new",
+        name="Ulysses App",
+        amount="6.37",
+        amount_mode="recurring",
+        repeat_freq="monthly",
+        worksheet_section="bills",
+        payment_rail="bank",
+        funding_bucket_key="checking",
+        destination_account="Apple Services",
+        category_name="Ulysses App",
+    )
+    with pytest.raises(BillRegistrationError) as exc:
+        await register_new_bill(client, body)
+    assert exc.value.status_code == 422
+    assert exc.value.detail.startswith("Failed to create link rule:")
+    assert exc.value.conflicting_rule_id == "70"
+    assert deleted_bills == ["bill-orphan"]
+
+
+@pytest.mark.asyncio
+async def test_register_new_bill_firefly_bill_step_error_prefix(data_dir, monkeypatch):
+    monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/rules" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path == "/api/v1/bills" and request.method == "POST":
+            return httpx.Response(503, text="upstream unavailable")
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    body = RegisterBillBody(
+        mode="create_new",
+        name="Water",
+        amount="50.00",
+        amount_mode="recurring",
+        repeat_freq="monthly",
+        worksheet_section="bills",
+        payment_rail="bank",
+        funding_bucket_key="checking",
+        description_contains="CITY WATER",
+    )
+    with pytest.raises(BillRegistrationError) as exc:
+        await register_new_bill(client, body)
+    assert exc.value.status_code == 502
+    assert exc.value.detail.startswith("Failed to create Firefly bill:")

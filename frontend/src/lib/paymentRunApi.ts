@@ -751,6 +751,30 @@ export async function updateDiscoverSettings(
   return (await res.json()) as Pick<DiscoverSettingsEnvelope, "ignored_categories">
 }
 
+type BillRegistrationErrorDetail = {
+  message?: string
+  conflicting_rule_id?: string
+  firefly_rule_url?: string
+  conflicting_bill_id?: string
+  firefly_bill_url?: string
+}
+
+export class BillRegistrationApiError extends Error {
+  readonly conflictingRuleId?: string
+  readonly fireflyRuleUrl?: string
+  readonly conflictingBillId?: string
+  readonly fireflyBillUrl?: string
+
+  constructor(message: string, extras: BillRegistrationErrorDetail = {}) {
+    super(message)
+    this.name = "BillRegistrationApiError"
+    this.conflictingRuleId = extras.conflicting_rule_id
+    this.fireflyRuleUrl = extras.firefly_rule_url
+    this.conflictingBillId = extras.conflicting_bill_id
+    this.fireflyBillUrl = extras.firefly_bill_url
+  }
+}
+
 export async function registerBill(
   body: RegisterBillPayload,
 ): Promise<BillRegistryRow> {
@@ -760,7 +784,19 @@ export async function registerBill(
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    await parseError(res, `Failed to register bill (${res.status})`)
+    const payload = (await res.json().catch(() => ({}))) as {
+      detail?: string | BillRegistrationErrorDetail
+    }
+    const { detail } = payload
+    if (detail && typeof detail === "object" && typeof detail.message === "string") {
+      throw new BillRegistrationApiError(detail.message, detail)
+    }
+    if (typeof detail === "string" && detail.trim()) {
+      throw new BillRegistrationApiError(detail)
+    }
+    throw new BillRegistrationApiError(
+      `Failed to register bill (${res.status})`,
+    )
   }
   return (await res.json()) as BillRegistryRow
 }
