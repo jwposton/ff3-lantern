@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Income line on bar charts** — Spending and Cash Flow bar reports show a green monthly Income line (bank inflows) with legend toggle and tooltip; drilldown charts unchanged (#48)
+- **Budget vs average tile modes** — dashboard tile supports ranking by total spend or change vs 12-month average, and displaying bars as dollars or percent of average; preferences persist in the browser (#58)
+
+### Fixed
+
+- **Budget vs average percent mode** — budgets with no 12-month average show an amber bar capped at 100% (labeled with this month's dollars) instead of a misleading blue percentage; zero-spend rows stay empty (#58)
+- **Budget vs average chart order** — dollars mode sorts rows by the larger of current-month spend and 12-month average; percent mode sorts by ratio (#58)
+- **Total spend rank** — top 15 uses the higher of current-month spend or 12-month average, so zero-current budgets with a strong average (e.g. Healthcare) still appear (#58)
 
 ### Changed
 

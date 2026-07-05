@@ -64,19 +64,47 @@ vi.mock("@/components/BudgetCurrentVsAverageChart", () => ({
     chartTitle,
     chartSubtitle,
     sortedNames,
+    rankMode,
+    displayMode,
+    onRankModeChange,
+    onDisplayModeChange,
     onSelect,
   }: {
     chartTitle?: string
     chartSubtitle?: string
     sortedNames?: string[]
+    rankMode?: string
+    displayMode?: string
+    onRankModeChange?: (mode: string) => void
+    onDisplayModeChange?: (mode: string) => void
     onSelect?: (name: string) => void
   }) => (
     <div data-testid="budget-current-vs-average-chart">
       <span>{chartTitle}</span>
       <span>{chartSubtitle}</span>
+      <span data-testid="rank-mode">{rankMode}</span>
+      <span data-testid="display-mode">{displayMode}</span>
       {sortedNames?.map((name) => (
         <span key={name}>{name}</span>
       ))}
+      {onRankModeChange ? (
+        <button
+          type="button"
+          data-testid="rank-total-spend"
+          onClick={() => onRankModeChange("total-spend")}
+        >
+          Rank total spend
+        </button>
+      ) : null}
+      {onDisplayModeChange ? (
+        <button
+          type="button"
+          data-testid="display-percent"
+          onClick={() => onDisplayModeChange("percent-of-average")}
+        >
+          Display percent
+        </button>
+      ) : null}
       {onSelect ? (
         <button
           type="button"
@@ -108,6 +136,7 @@ describe("DashboardTiles", () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2024-01-15T12:00:00"))
     mockNavigate.mockReset()
+    localStorage.clear()
   })
 
   it("shows skeleton placeholders while loading", () => {
@@ -185,6 +214,11 @@ describe("DashboardTiles", () => {
     expect(screen.getAllByText("Spending by budget").length).toBe(2)
     expect(screen.getByText("Cash flow by budget")).toBeTruthy()
     expect(screen.getByText("Budget vs 12-month average")).toBeTruthy()
+    expect(
+      screen.getByText("January 2024 · Largest changes vs 12-month average"),
+    ).toBeTruthy()
+    expect(screen.getByTestId("rank-mode").textContent).toBe("change-vs-average")
+    expect(screen.getByTestId("display-mode").textContent).toBe("dollars")
     expect(screen.getByTestId("spending-pie-current-month")).toBeTruthy()
     expect(screen.getByTestId("spending-pie-selected-period")).toBeTruthy()
     expect(screen.getByTestId("cash-flow-pie-selected-period")).toBeTruthy()
@@ -290,6 +324,41 @@ describe("DashboardTiles", () => {
     )
 
     expect(screen.getByText("Credit card interest")).toBeTruthy()
+  })
+
+  it("updates rank and display modes from tile controls", () => {
+    render(
+      <MemoryRouter>
+        <DashboardTiles
+          rangeRows={spendingRowsForTotal}
+          rangeStart="2024-01-01"
+          rangeEnd="2024-01-31"
+          averageRows={JANUARY_CASH_FLOW_ROWS}
+          averageStart="2023-01-01"
+          averageEnd="2024-01-31"
+          isRangeLoading={false}
+          isAverageLoading={false}
+          isError={false}
+          onRetry={() => {}}
+        />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByTestId("rank-total-spend"))
+    fireEvent.click(screen.getByTestId("display-percent"))
+    expect(
+      screen.getByText("January 2024 · Top budgets by current or average spend"),
+    ).toBeTruthy()
+    expect(screen.getByTestId("rank-mode").textContent).toBe("total-spend")
+    expect(screen.getByTestId("display-mode").textContent).toBe(
+      "percent-of-average",
+    )
+    expect(localStorage.getItem("ff3-dashboard-budget-vs-average-rank-mode")).toBe(
+      "total-spend",
+    )
+    expect(
+      localStorage.getItem("ff3-dashboard-budget-vs-average-display-mode"),
+    ).toBe("percent-of-average")
   })
 
   it("navigates to spending bar when bar row is selected", () => {

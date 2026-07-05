@@ -66,11 +66,11 @@ function incomeAwareItemTooltipFormatter(
     const lines = [
       `${record.seriesName}: ${formatCurrency(tooltipValue(record.value))}`,
     ]
-    const appendIncome =
+    if (
       incomeVisible &&
       record.seriesName !== INCOME_LINE_LABEL &&
       typeof record.dataIndex === "number"
-    if (appendIncome) {
+    ) {
       lines.push(
         `${INCOME_LINE_LABEL}: ${formatCurrency(monthlyIncome[record.dataIndex] ?? 0)}`,
       )
