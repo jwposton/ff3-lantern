@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Worksheet grand total breakdowns** — footer shows sub-lines for owed (liabilities, revolving, optional real estate/loans), due (cash vs credit card), and planned (cash vs credit) (#76)
+
 ### Changed
 
 - **Bill registration (Link existing)** — empty state no longer shows redundant helper text above the “no bills found” message (#46)

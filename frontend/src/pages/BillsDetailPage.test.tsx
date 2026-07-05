@@ -37,7 +37,17 @@ const EMPTY_WORKSHEET: PaymentWorksheetEnvelope = {
     liabilities: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
     credit_cards: { planned_cash: "0.00" },
   },
-  grand_totals: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
+  grand_totals: {
+    owed: "0.00",
+    due: "0.00",
+    planned_cash: "0.00",
+    planned_total: "0.00",
+    breakdown: {
+      owed: { liabilities: "0.00", revolving: "0.00" },
+      due: { cash: "0.00", credit: "0.00" },
+      planned: { cash: "0.00", credit: "0.00" },
+    },
+  },
   shortfall: false,
   totals: {
     reported_balance: "5000.00",

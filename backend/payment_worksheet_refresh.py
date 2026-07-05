@@ -369,6 +369,12 @@ async def run_refresh(
 
         owed = abs(_decimal_amount(attrs.get("current_balance")))
         loan_profile = parse_loan_profile_from_notes(notes)
+        split = (loan_profile or {}).get("split") or {}
+        escrow_amount = _decimal_amount(split.get("escrow_amount"))
+        has_escrow = escrow_amount > 0 or any(
+            (component.get("role") == "escrow")
+            for component in (split.get("components") or [])
+        )
         payment_amount = _decimal_amount(
             draft_planned_amount(loan_profile, worksheet_profile)
         )
@@ -382,6 +388,9 @@ async def run_refresh(
             "owed": _format_decimal(owed),
             "est_interest": display["est_interest"],
             "remaining_payments": display["remaining_payments"],
+            "account_role": attrs.get("account_role"),
+            "liability_type": attrs.get("liability_type"),
+            "has_escrow": has_escrow,
         }
 
         row_key = liability_row_key(account_id)

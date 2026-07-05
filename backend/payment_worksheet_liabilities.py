@@ -23,6 +23,17 @@ def is_liability_account(attrs: dict[str, Any]) -> bool:
     return raw_type in ("liabilities", "liability") or "liabilit" in raw_type
 
 
+def is_real_estate_liability(row: dict[str, Any]) -> bool:
+    """Classify liability account owed as real estate (mortgage/escrow), not display names."""
+    role = (row.get("account_role") or "").replace("_", "").lower()
+    if role == "mortgage":
+        return True
+    liability_type = (row.get("liability_type") or "").lower()
+    if liability_type in ("mortgage", "realestate", "real_estate"):
+        return True
+    return bool(row.get("has_escrow"))
+
+
 def is_liability_summary(summary: dict[str, Any]) -> bool:
     raw_type = (summary.get("type") or "").lower()
     raw_role = (summary.get("role") or "").replace(" ", "").lower()
