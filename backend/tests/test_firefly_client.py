@@ -389,6 +389,125 @@ def test_fetch_rules_returns_id_and_title():
     ]
 
 
+def test_fetch_rule_returns_detail():
+    payload = {
+        "data": {
+            "type": "rules",
+            "id": "7",
+            "attributes": {
+                "title": "Water bill",
+                "trigger": "store-journal",
+                "active": True,
+                "strict": False,
+                "rule_group_id": "3",
+                "triggers": [
+                    {"type": "description_contains", "value": "CITY", "active": True},
+                ],
+                "actions": [
+                    {"type": "link_to_bill", "value": "Water bill", "active": True},
+                ],
+            },
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/rules/7"):
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    rule = asyncio.run(client.fetch_rule("7"))
+    assert rule["id"] == "7"
+    assert rule["title"] == "Water bill"
+    assert rule["rule_group_id"] == "3"
+    assert rule["actions"][0]["value"] == "Water bill"
+
+
+def test_fetch_rule_resolves_group_from_included():
+    payload = {
+        "data": {
+            "type": "rules",
+            "id": "7",
+            "attributes": {
+                "title": "Water bill",
+                "trigger": "store-journal",
+                "active": True,
+                "strict": False,
+                "triggers": [],
+                "actions": [
+                    {"type": "link_to_bill", "value": "Water bill", "active": True},
+                ],
+            },
+            "relationships": {
+                "rule_group": {"data": {"type": "rule_groups", "id": "3"}},
+            },
+        },
+        "included": [
+            {
+                "type": "rule_groups",
+                "id": "3",
+                "attributes": {"title": "Payment worksheet"},
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/rules/7"):
+            assert request.url.params.get("include") == "ruleGroup"
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    rule = asyncio.run(client.fetch_rule("7"))
+    assert rule["rule_group_id"] == "3"
+    assert rule["rule_group_title"] == "Payment worksheet"
+
+
+def test_update_rule_puts_body():
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/rules/7" and request.method == "PUT":
+            seen.append(json.loads(request.content.decode()))
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "7",
+                        "attributes": {"title": seen[-1]["title"]},
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    body = {
+        "title": "Renamed bill",
+        "rule_group_id": "3",
+        "trigger": "store-journal",
+        "active": True,
+        "strict": False,
+        "triggers": [],
+        "actions": [{"type": "link_to_bill", "value": "Renamed bill", "active": True}],
+    }
+    result = asyncio.run(client.update_rule("7", body))
+    assert result == {"id": "7", "title": "Renamed bill"}
+    assert seen[0]["actions"][0]["value"] == "Renamed bill"
+
+
 def test_create_rule_posts_active_body():
     seen: list[dict] = []
 

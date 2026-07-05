@@ -219,6 +219,48 @@ def _map_rule_entry(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _included_index(included: list[dict[str, Any]] | None) -> dict[tuple[str, str], dict[str, Any]]:
+    index: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in included or []:
+        item_id = item.get("id")
+        item_type = item.get("type")
+        if item_id is not None and item_type:
+            index[(str(item_type), str(item_id))] = item
+    return index
+
+
+def _map_rule_detail(
+    entry: dict[str, Any],
+    *,
+    included: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    attrs = entry.get("attributes", {})
+    inc_idx = _included_index(included)
+    rule_group_id = attrs.get("rule_group_id")
+    rule_group_title = attrs.get("rule_group_title")
+    if rule_group_id is not None:
+        rule_group_id = str(rule_group_id)
+    else:
+        rel = entry.get("relationships", {}).get("rule_group", {}).get("data")
+        if rel and rel.get("id") is not None:
+            rule_group_id = str(rel["id"])
+            rel_type = str(rel.get("type") or "rule_groups")
+            inc_item = inc_idx.get((rel_type, rule_group_id))
+            if inc_item and not rule_group_title:
+                rule_group_title = inc_item.get("attributes", {}).get("title")
+    return {
+        "id": str(entry.get("id")),
+        "title": attrs.get("title"),
+        "trigger": attrs.get("trigger"),
+        "active": attrs.get("active", True),
+        "strict": attrs.get("strict", False),
+        "triggers": attrs.get("triggers") or [],
+        "actions": attrs.get("actions") or [],
+        "rule_group_id": rule_group_id,
+        "rule_group_title": rule_group_title,
+    }
+
+
 class FireflyClient:
     """Fetch accounts and transaction splits from Firefly III (no stub fallback)."""
 
@@ -352,6 +394,39 @@ class FireflyClient:
             "/api/v1/rules",
             map_item=_map_rule_entry,
         )
+
+    async def fetch_rule(self, rule_id: str) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.get(
+                f"/api/v1/rules/{rule_id}",
+                params={"include": "ruleGroup"},
+            )
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {response.text}"
+                )
+            payload = response.json()
+            return _map_rule_detail(
+                payload.get("data", {}),
+                included=payload.get("included"),
+            )
+
+    async def update_rule(
+        self, rule_id: str, rule_body: dict[str, Any]
+    ) -> dict[str, Any]:
+        async with self._build_client() as client:
+            response = await client.put(f"/api/v1/rules/{rule_id}", json=rule_body)
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Firefly API error {response.status_code}: {_format_firefly_error(response)}"
+                )
+            payload = response.json()
+            data = payload.get("data", {})
+            attrs = data.get("attributes", {})
+            return {
+                "id": str(data.get("id")),
+                "title": attrs.get("title"),
+            }
 
     async def fetch_rule_groups(self) -> list[dict[str, Any]]:
         return await self._fetch_paginated_list(

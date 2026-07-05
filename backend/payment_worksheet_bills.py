@@ -415,6 +415,158 @@ def build_bill_link_rule_body(
     }
 
 
+def link_to_bill_action_value(rule: dict[str, Any]) -> str | None:
+    for action in rule.get("actions") or []:
+        if action.get("type") == "link_to_bill":
+            value = str(action.get("value") or "").strip()
+            if value:
+                return value
+    return None
+
+
+def rule_link_sync_status(rule: dict[str, Any] | None, bill_name: str) -> str:
+    if rule is None:
+        return "rule_unavailable"
+    link_value = link_to_bill_action_value(rule)
+    if link_value is None:
+        return "missing_link_action"
+    if link_value == str(bill_name or "").strip():
+        return "synced"
+    return "out_of_sync"
+
+
+def build_rule_update_body(
+    rule: dict[str, Any],
+    *,
+    title: str,
+    actions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    rule_group_id = rule.get("rule_group_id")
+    rule_group_title = (rule.get("rule_group_title") or "").strip() or None
+    if not rule_group_id and not rule_group_title:
+        raise BillRegistrationError(
+            "Firefly rule is missing rule_group_id; cannot update.",
+            status_code=502,
+        )
+    body: dict[str, Any] = {
+        "title": title.strip(),
+        "trigger": rule.get("trigger") or "store-journal",
+        "active": rule.get("active", True),
+        "strict": rule.get("strict", False),
+        "triggers": rule.get("triggers") or [],
+        "actions": actions,
+    }
+    if rule_group_id:
+        body["rule_group_id"] = str(rule_group_id)
+    elif rule_group_title:
+        body["rule_group_title"] = rule_group_title
+    return body
+
+
+async def _ensure_rule_group_for_update(
+    client: FireflyClient, rule: dict[str, Any]
+) -> dict[str, Any]:
+    """Fill rule_group_id/title when Firefly omits them on older rules."""
+    if rule.get("rule_group_id") or (rule.get("rule_group_title") or "").strip():
+        return rule
+    group_id = await client.ensure_rule_group(_rule_group_title())
+    return {**rule, "rule_group_id": group_id}
+
+
+async def discover_link_rule_id(
+    client: FireflyClient,
+    *,
+    firefly_bill_id: str,
+    bill_name: str | None = None,
+) -> str | None:
+    """Find a bill-scoped link rule when registry rule_id is missing."""
+    try:
+        rules = await client.fetch_bill_rules(firefly_bill_id)
+    except RuntimeError:
+        return None
+    targets = {str(firefly_bill_id)}
+    if bill_name and str(bill_name).strip():
+        targets.add(str(bill_name).strip())
+    for rule in rules:
+        for action in rule.get("actions") or []:
+            if (
+                action.get("type") == "link_to_bill"
+                and str(action.get("value") or "").strip() in targets
+            ):
+                rule_id = rule.get("id")
+                if rule_id:
+                    return str(rule_id)
+    return None
+
+
+async def detect_rule_link_sync(
+    client: FireflyClient,
+    *,
+    rule_id: str | None,
+    bill_name: str,
+    rules_by_id: dict[str, dict[str, Any]] | None = None,
+) -> str | None:
+    if not rule_id or not str(rule_id).strip():
+        return None
+    rule_key = str(rule_id).strip()
+    rule = (rules_by_id or {}).get(rule_key)
+    if rule is None:
+        try:
+            rule = await client.fetch_rule(rule_key)
+        except RuntimeError:
+            return "rule_unavailable"
+    return rule_link_sync_status(rule, bill_name)
+
+
+async def sync_link_rule_bill_name(
+    client: FireflyClient,
+    *,
+    rule_id: str,
+    old_bill_name: str,
+    new_bill_name: str,
+) -> None:
+    new_name = new_bill_name.strip()
+    if not new_name:
+        raise BillRegistrationError("Bill name is required for rule sync.")
+    try:
+        rule = await client.fetch_rule(rule_id)
+    except RuntimeError as exc:
+        raise BillRegistrationError(
+            f"Failed to load Firefly rule {rule_id} for sync: {exc}",
+            status_code=502,
+        ) from exc
+
+    actions = rule.get("actions") or []
+    updated_actions: list[dict[str, Any]] = []
+    found_link = False
+    for action in actions:
+        if action.get("type") == "link_to_bill":
+            found_link = True
+            updated_actions.append(
+                {**action, "value": new_name, "active": action.get("active", True)}
+            )
+        else:
+            updated_actions.append(action)
+    if not found_link:
+        raise BillRegistrationError(
+            f"Firefly rule {rule_id} has no link_to_bill action.",
+            status_code=422,
+        )
+
+    old_name = old_bill_name.strip()
+    title = str(rule.get("title") or "").strip()
+    new_title = new_name if title == old_name else title
+    rule = await _ensure_rule_group_for_update(client, rule)
+    body = build_rule_update_body(rule, title=new_title, actions=updated_actions)
+    try:
+        await client.update_rule(rule_id, body)
+    except RuntimeError as exc:
+        raise BillRegistrationError(
+            f"Bill renamed but failed to sync import rule: {exc}",
+            status_code=502,
+        ) from exc
+
+
 def _summarize_link_rules(rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
     summarized: list[dict[str, Any]] = []
     for rule in rules:
@@ -843,11 +995,116 @@ async def update_linked_firefly_bill(
         raise BillRegistrationError(str(exc), status_code=502) from exc
 
 
+async def update_registered_bill_firefly(
+    client: FireflyClient,
+    *,
+    firefly_bill_id: str,
+    rule_id: str | None,
+    name: str | None = None,
+    amount_min: str | None = None,
+    amount_max: str | None = None,
+    repeat_freq: str | None = None,
+    amount_mode: str = "recurring",
+) -> str | None:
+    """Update Firefly bill and sync linked import rule when the name changes.
+
+    Returns the rule_id used for sync (may be newly discovered from Firefly).
+    """
+    firefly_fields = (name, amount_min, amount_max, repeat_freq)
+    if not any(value is not None for value in firefly_fields):
+        return rule_id if rule_id and str(rule_id).strip() else None
+    try:
+        current = await client.fetch_bill(firefly_bill_id)
+    except RuntimeError as exc:
+        raise BillRegistrationError(str(exc), status_code=502) from exc
+    old_name = str(current.get("name") or "").strip()
+    await update_linked_firefly_bill(
+        client,
+        firefly_bill_id=firefly_bill_id,
+        name=name,
+        amount_min=amount_min,
+        amount_max=amount_max,
+        repeat_freq=repeat_freq,
+        amount_mode=amount_mode,
+    )
+    effective_rule_id = str(rule_id).strip() if rule_id and str(rule_id).strip() else None
+    if effective_rule_id is None:
+        effective_rule_id = await discover_link_rule_id(
+            client,
+            firefly_bill_id=firefly_bill_id,
+            bill_name=old_name,
+        )
+    if (
+        name is not None
+        and effective_rule_id
+        and name.strip() != old_name
+    ):
+        await sync_link_rule_bill_name(
+            client,
+            rule_id=effective_rule_id,
+            old_bill_name=old_name,
+            new_bill_name=name.strip(),
+        )
+    return effective_rule_id
+
+
+async def repair_link_rule_for_bill(
+    client: FireflyClient,
+    *,
+    rule_id: str,
+    bill_name: str,
+) -> str:
+    """PATCH link_to_bill to current bill name; returns final sync status."""
+    bill_name = str(bill_name or "").strip()
+    if not bill_name:
+        raise BillRegistrationError("Bill name is required to repair import rule.")
+    try:
+        rule = await client.fetch_rule(rule_id)
+    except RuntimeError as exc:
+        raise BillRegistrationError(
+            f"Failed to load Firefly rule {rule_id}: {exc}",
+            status_code=502,
+        ) from exc
+    stale_name = link_to_bill_action_value(rule)
+    if stale_name is None:
+        raise BillRegistrationError(
+            f"Firefly rule {rule_id} has no link_to_bill action.",
+            status_code=422,
+        )
+    if stale_name == bill_name:
+        return "synced"
+    await sync_link_rule_bill_name(
+        client,
+        rule_id=rule_id,
+        old_bill_name=stale_name,
+        new_bill_name=bill_name,
+    )
+    return "synced"
+
+
+async def sync_registry_row_label_if_drifted(
+    registry_id: int,
+    registry: dict[str, Any],
+    bill_name: str,
+) -> tuple[dict[str, Any], bool]:
+    """Align sidecar row_label with Firefly bill name when they have drifted."""
+    bill_name = str(bill_name or "").strip()
+    current_label = str(registry.get("row_label") or "").strip()
+    if not bill_name or bill_name == current_label:
+        return registry, False
+    merged = {**registry, "id": registry_id, "row_label": bill_name}
+    await sidecar_db.update_worksheet_registry(registry_id, merged)
+    updated = await sidecar_db.get_worksheet_registry(registry_id)
+    return updated if updated is not None else merged, True
+
+
 def serialize_bill_registry_for_edit(
     registry: dict[str, Any],
     firefly_bill: dict[str, Any],
+    *,
+    rule_sync_status: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "registry_id": registry["id"],
         "row_label": registry.get("row_label"),
         "firefly_bill_id": registry.get("firefly_bill_id"),
@@ -863,3 +1120,6 @@ def serialize_bill_registry_for_edit(
         "bill_group_id": registry.get("bill_group_id"),
         "show_in_group": registry.get("show_in_group"),
     }
+    if rule_sync_status is not None:
+        payload["rule_sync_status"] = rule_sync_status
+    return payload

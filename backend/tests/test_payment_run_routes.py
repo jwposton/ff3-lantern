@@ -1056,6 +1056,229 @@ def test_update_bill_registry_persists_firefly_amounts(
         app.dependency_overrides.pop(get_firefly_client, None)
 
 
+def test_update_bill_registry_rename_syncs_rule(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-ren",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-ren",
+                "row_label": "Gas bill",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    bill_updates: list[dict] = []
+    rule_updates: list[dict] = []
+
+    class _RenameClient(FireflyClient):
+        async def fetch_bill(self, bill_id: str):
+            return {
+                "id": bill_id,
+                "name": "Gas bill",
+                "amount_min": "50.00",
+                "amount_max": "50.00",
+                "repeat_freq": "monthly",
+            }
+
+        async def update_bill(self, bill_id: str, body: dict):
+            bill_updates.append({"bill_id": bill_id, "body": body})
+            return {"id": bill_id, "attributes": body}
+
+        async def fetch_rule(self, rule_id: str):
+            assert rule_id == "rule-ren"
+            return {
+                "id": rule_id,
+                "title": "Gas bill",
+                "rule_group_id": "9",
+                "trigger": "store-journal",
+                "active": True,
+                "strict": False,
+                "triggers": [
+                    {"type": "description_contains", "value": "GAS", "active": True},
+                ],
+                "actions": [
+                    {"type": "link_to_bill", "value": "Gas bill", "active": True},
+                ],
+            }
+
+        async def update_rule(self, rule_id: str, body: dict):
+            rule_updates.append({"rule_id": rule_id, "body": body})
+            return {"id": rule_id, "title": body["title"]}
+
+    app.dependency_overrides[get_firefly_client] = lambda: _RenameClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = client.put(
+            f"/api/payment-run/bills/{reg_id}",
+            json={"name": "Gas utility"},
+        )
+        assert response.status_code == 200
+        assert len(bill_updates) == 1
+        assert bill_updates[0]["body"]["name"] == "Gas utility"
+        assert len(rule_updates) == 1
+        assert rule_updates[0]["body"]["actions"][0]["value"] == "Gas utility"
+        assert rule_updates[0]["body"]["title"] == "Gas utility"
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_update_bill_registry_amount_only_skips_rule(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-amt-only",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-amt-only",
+                "row_label": "Internet",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    class _AmountOnlyClient(FireflyClient):
+        async def fetch_bill(self, bill_id: str):
+            return {
+                "id": bill_id,
+                "name": "Internet",
+                "amount_min": "50.00",
+                "amount_max": "50.00",
+                "repeat_freq": "monthly",
+            }
+
+        async def update_bill(self, bill_id: str, body: dict):
+            return {"id": bill_id, "attributes": body}
+
+        async def fetch_rule(self, rule_id: str):
+            raise AssertionError("amount-only edit must not fetch rule")
+
+        async def update_rule(self, rule_id: str, body: dict):
+            raise AssertionError("amount-only edit must not update rule")
+
+    app.dependency_overrides[get_firefly_client] = lambda: _AmountOnlyClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = client.put(
+            f"/api/payment-run/bills/{reg_id}",
+            json={"amount_min": "79.99", "amount_max": "79.99"},
+        )
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_repair_bill_link_rule(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-repair",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-repair",
+                "row_label": "Water",
+            }
+        )
+    )
+
+    rule_updates: list[dict] = []
+
+    class _RepairClient(FireflyClient):
+        async def fetch_bill(self, bill_id: str):
+            return {
+                "id": bill_id,
+                "name": "Water utility",
+                "amount_min": "45.00",
+                "amount_max": "45.00",
+                "repeat_freq": "monthly",
+            }
+
+        async def fetch_rule(self, rule_id: str):
+            return {
+                "id": rule_id,
+                "title": "Water",
+                "rule_group_id": "9",
+                "trigger": "store-journal",
+                "active": True,
+                "strict": False,
+                "triggers": [],
+                "actions": [
+                    {"type": "link_to_bill", "value": "Water", "active": True},
+                ],
+            }
+
+        async def update_rule(self, rule_id: str, body: dict):
+            rule_updates.append(body)
+            return {"id": rule_id, "title": body["title"]}
+
+    app.dependency_overrides[get_firefly_client] = lambda: _RepairClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(500)),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = client.post(f"/api/payment-run/bills/{reg_id}/repair-rule")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is True
+        assert body["rule_sync_status"] == "synced"
+        assert rule_updates[0]["actions"][0]["value"] == "Water utility"
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
 def test_delete_bill_registry(monkeypatch, client, data_dir, payment_worksheet_env):
     import asyncio
 
@@ -1202,6 +1425,51 @@ def test_bill_history(monkeypatch, client, data_dir, payment_worksheet_env):
     )
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills/7" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "7",
+                        "attributes": {
+                            "name": "Electric",
+                            "amount_min": "50.00",
+                            "amount_max": "50.00",
+                            "repeat_freq": "monthly",
+                        },
+                    }
+                },
+            )
+        if request.url.path == "/api/v1/rules/rule-hist" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "rule-hist",
+                        "attributes": {
+                            "title": "Electric",
+                            "trigger": "store-journal",
+                            "active": True,
+                            "strict": False,
+                            "triggers": [],
+                            "actions": [
+                                {
+                                    "type": "link_to_bill",
+                                    "value": "Electric",
+                                    "active": True,
+                                }
+                            ],
+                        },
+                        "relationships": {
+                            "rule_group": {
+                                "data": {"type": "rule_groups", "id": "1"},
+                            }
+                        },
+                    }
+                },
+            )
         if request.url.path == "/api/v1/bills/7/transactions" and request.method == "GET":
             return httpx.Response(
                 200,
@@ -1270,6 +1538,99 @@ def test_bill_history(monkeypatch, client, data_dir, payment_worksheet_env):
         assert body["transactions"][0]["date"] == "2026-02-10"
         assert body["transactions"][1]["date"] == "2026-01-15"
         assert body["firefly_base_url"] == "https://firefly.example"
+        assert body["rule_sync_status"] == "synced"
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_bill_history_syncs_drifted_row_label(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-audible",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-audible",
+                "row_label": "Audible",
+            }
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills/bill-audible" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "bill-audible",
+                        "attributes": {
+                            "name": "EBook",
+                            "amount_min": "14.95",
+                            "amount_max": "14.95",
+                            "repeat_freq": "monthly",
+                        },
+                    }
+                },
+            )
+        if request.url.path == "/api/v1/rules/rule-audible" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "rule-audible",
+                        "attributes": {
+                            "title": "EBook",
+                            "rule_group_id": "1",
+                            "triggers": [],
+                            "actions": [
+                                {
+                                    "type": "link_to_bill",
+                                    "value": "EBook",
+                                    "active": True,
+                                }
+                            ],
+                        },
+                    }
+                },
+            )
+        if (
+            request.url.path == "/api/v1/bills/bill-audible/transactions"
+            and request.method == "GET"
+        ):
+            return httpx.Response(
+                200,
+                json={"data": [], "meta": {"pagination": {"current_page": 1, "total_pages": 1}}},
+            )
+        return httpx.Response(404)
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.get(f"/api/payment-run/bills/{reg_id}/history")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["name"] == "EBook"
+        assert body["row_label"] == "EBook"
+        assert body["row_label_synced"] is True
+        row = asyncio.run(sidecar_db.get_worksheet_registry(reg_id))
+        assert row is not None
+        assert row["row_label"] == "EBook"
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 
@@ -1321,6 +1682,51 @@ def test_empty_history(monkeypatch, client, data_dir, payment_worksheet_env):
     )
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills/empty-bill" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "empty-bill",
+                        "attributes": {
+                            "name": "New bill",
+                            "amount_min": "10.00",
+                            "amount_max": "10.00",
+                            "repeat_freq": "monthly",
+                        },
+                    }
+                },
+            )
+        if request.url.path == "/api/v1/rules/rule-empty" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "rule-empty",
+                        "attributes": {
+                            "title": "New bill",
+                            "trigger": "store-journal",
+                            "active": True,
+                            "strict": False,
+                            "triggers": [],
+                            "actions": [
+                                {
+                                    "type": "link_to_bill",
+                                    "value": "New bill",
+                                    "active": True,
+                                }
+                            ],
+                        },
+                        "relationships": {
+                            "rule_group": {
+                                "data": {"type": "rule_groups", "id": "1"},
+                            }
+                        },
+                    }
+                },
+            )
         if (
             request.url.path == "/api/v1/bills/empty-bill/transactions"
             and request.method == "GET"

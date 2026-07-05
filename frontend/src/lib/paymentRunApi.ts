@@ -166,11 +166,20 @@ export type BillHistoryTransaction = {
   amount: string
 }
 
+export type RuleLinkSyncStatus =
+  | "synced"
+  | "out_of_sync"
+  | "rule_unavailable"
+  | "missing_link_action"
+
 export type BillHistoryEnvelope = {
   registry_id: number
   row_label: string | null
+  row_label_synced?: boolean
+  name?: string | null
   firefly_bill_id: string
   firefly_base_url?: string
+  rule_sync_status?: RuleLinkSyncStatus
   window: { start: string; end: string }
   total: string
   calendar_average: string
@@ -255,6 +264,7 @@ export type BillRegistryEditDetails = {
   repeat_freq: string | null
   bill_group_id?: string | null
   show_in_group?: boolean
+  rule_sync_status?: RuleLinkSyncStatus
 }
 
 export type CreditCardRow = PlannedAmountRow & {
@@ -778,6 +788,19 @@ export async function updateBillRegistry(
     await parseError(res, `Failed to update bill registration (${res.status})`)
   }
   return (await res.json()) as BillRegistryRow
+}
+
+export async function repairBillLinkRule(
+  registryId: number,
+): Promise<{ ok: boolean; rule_sync_status: RuleLinkSyncStatus }> {
+  const res = await fetch(
+    `/api/payment-run/bills/${registryId}/repair-rule`,
+    { method: "POST" },
+  )
+  if (!res.ok) {
+    await parseError(res, `Failed to repair import rule (${res.status})`)
+  }
+  return (await res.json()) as { ok: boolean; rule_sync_status: RuleLinkSyncStatus }
 }
 
 export async function deleteBillRegistry(registryId: number): Promise<void> {
