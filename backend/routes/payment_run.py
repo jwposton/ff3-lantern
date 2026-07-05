@@ -327,17 +327,6 @@ async def _validate_bill_group_member_ids(
         )
 
     required_section = sections[0]
-    existing_members = await sidecar_db.list_bill_group_members(group_id)
-    for member in existing_members:
-        if member["registry_id"] in member_ids:
-            continue
-        row = await sidecar_db.get_worksheet_registry(member["registry_id"])
-        if row is None:
-            continue
-        existing_section = row.get("worksheet_section")
-        if existing_section in BILL_GROUP_SECTIONS:
-            required_section = str(existing_section)
-            break
 
     for registry_id in member_ids:
         row = await sidecar_db.get_worksheet_registry(registry_id)
