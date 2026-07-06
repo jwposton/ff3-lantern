@@ -47,6 +47,31 @@ Re-import from scratch:
 4. Run the same `demo-up.sh` on the VPS.
 5. Put Caddy/nginx in front of **port 8080** (frontend only). Do not expose Firefly (8088).
 
+| Item | Guidance |
+|------|----------|
+| **Shape** | Oracle Cloud Free Tier ARM Ampere A1: 2–4 OCPU, 8–12 GB RAM (avoid 1 GB AMD micro) |
+| **DNS** | `demo.<your-domain>` → VPS public IP |
+| **TLS** | External Caddy or nginx (Let’s Encrypt); not bundled in compose |
+| **Updates** | `git pull && docker compose pull && ./demo/demo-up.sh` on release tag |
+| **Isolation** | Separate domain from homelab; do not expose Firefly or backend API publicly |
+
+## MVP scope (#102)
+
+Shipped in **PR #105**:
+
+- `demo/docker-compose.demo.yml` + `demo-up.sh` (host-supplied sanitized data)
+- Firefly bootstrap: service PAT + browser demo user (`demo` role, no admin)
+- Demo anchor clock (`FF3LANTERN_DEMO_ANCHOR_DATE`) and UI banner
+- Firefly deep links via `FF3LANTERN_FIREFLY_PUBLIC_URL` (Firefly bound to localhost)
+- Sanitization pipeline in **[ff3lantern-demo-tools](https://github.com/jwposton/ff3lantern-demo-tools)** (private repo; no PII in git)
+- Nightly reset docs (static bundle + `demo-up.sh --reset`)
+
+Deferred to epic **#101** follow-up:
+
+- `FF3LANTERN_DEMO_MODE` read-only API + write UI disabled
+- Caddy service in compose (operators use external reverse proxy today)
+- Committed baked artifacts in `demo/` (host `DEMO_DATA_DIR` replaces this)
+
 ## Faster Firefly seed (optional)
 
 If JSON import is too slow, create a Postgres dump once after a successful local import:
