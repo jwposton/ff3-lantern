@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-07-06
+
 ### Fixed
 
 - **Loan profile amounts** — expected amount, tolerance, and escrow accept comma-formatted values (e.g. `2,979.14`) and are normalized before save (#109)
@@ -444,7 +446,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.5.1...HEAD
+[2.5.1]: https://github.com/jwposton/ff3-lantern/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/jwposton/ff3-lantern/compare/v2.4.3...v2.5.0
 [2.4.3]: https://github.com/jwposton/ff3-lantern/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/jwposton/ff3-lantern/compare/v2.4.1...v2.4.2

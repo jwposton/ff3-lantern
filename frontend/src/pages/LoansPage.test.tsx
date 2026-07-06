@@ -331,9 +331,8 @@ describe("LoansPage", () => {
     fireEvent.change(screen.getByLabelText(/Description contains/i), {
       target: { value: "Loan Provider" },
     })
-    const interestBlock = screen.getByText("interest").closest(".space-y-3")
-    expect(interestBlock).toBeTruthy()
-    fireEvent.change(within(interestBlock!).getAllByRole("combobox")[0], {
+    const interestBlock = screen.getByText("interest").closest(".space-y-3") as HTMLElement
+    fireEvent.change(within(interestBlock).getAllByRole("combobox")[0], {
       target: { value: "88" },
     })
     fireEvent.click(screen.getByRole("button", { name: /Save profile/i }))
