@@ -33,11 +33,19 @@ def _is_expense(acct: dict[str, Any]) -> bool:
     return _account_type_key(acct) in _EXPENSE_TYPES
 
 
+def _normalize_decimal_input(value: str | Decimal) -> str:
+    """Strip whitespace and thousands separators before decimal parsing."""
+    return str(value).strip().replace(",", "")
+
+
 def _format_decimal(value: str | Decimal, *, places: int = 2) -> str:
     try:
-        dec = Decimal(str(value))
+        dec = Decimal(_normalize_decimal_input(value))
     except (InvalidOperation, ValueError) as exc:
-        raise ValueError(f"invalid decimal: {value}") from exc
+        raise ValueError(
+            f'Amount "{value}" is not valid — use digits and a decimal point only '
+            f"(for example 2979.14)."
+        ) from exc
     quant = Decimal("1") if places == 0 else Decimal("0." + "0" * (places - 1) + "1")
     return str(dec.quantize(quant))
 

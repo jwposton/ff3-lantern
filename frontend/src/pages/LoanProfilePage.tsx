@@ -1,6 +1,7 @@
 import { ExternalLink } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -178,7 +179,9 @@ export function LoanProfilePage() {
       await saveLoanProfile(accountId, profile)
       navigate("/manage/loans")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed")
+      const message = err instanceof Error ? err.message : "Save failed"
+      setError(message)
+      toast.error("Could not save loan profile", { description: message })
     } finally {
       setSaving(false)
     }
@@ -249,7 +252,7 @@ export function LoanProfilePage() {
             </select>
           </label>
           <label className="block space-y-1 text-sm">
-            <span>Description contains</span>
+            <span>Description contains (required)</span>
             <input
               className="border-input w-full rounded-md border px-3 py-2"
               value={profile.match.description_contains}
@@ -262,7 +265,7 @@ export function LoanProfilePage() {
             />
           </label>
           <label className="block space-y-1 text-sm">
-            <span>Expected amount</span>
+            <span>Expected amount (required)</span>
             <input
               className="border-input w-full rounded-md border px-3 py-2"
               value={profile.match.expected_amount}
@@ -349,7 +352,13 @@ export function LoanProfilePage() {
                 <label className="block space-y-1 text-sm">
                   <span>
                     Destination account
-                    {optionalEscrow ? " (optional until escrow > 0)" : ""}
+                    {comp.role === "interest"
+                      ? " (required)"
+                      : optionalEscrow
+                        ? " (optional until escrow > 0)"
+                        : comp.role === "principal"
+                          ? " (required)"
+                          : ""}
                   </span>
                   <select
                     className={selectClassName()}
@@ -399,7 +408,17 @@ export function LoanProfilePage() {
         </p>
       )}
 
-      {error && <p className="text-destructive text-sm">{error}</p>}
+      {error ? (
+        <div
+          role="alert"
+          className="space-y-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4"
+        >
+          <p className="text-destructive text-sm font-medium">
+            Could not save loan profile
+          </p>
+          <p className="text-destructive/90 text-sm">{error}</p>
+        </div>
+      ) : null}
 
       <div className="flex gap-3">
         <Button onClick={handleSave} disabled={saving}>
