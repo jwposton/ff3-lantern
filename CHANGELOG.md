@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Loan profile amounts** — expected amount, tolerance, and escrow accept comma-formatted values (e.g. `2,979.14`) and are normalized before save (#109)
+- **Loan profile save errors** — failed save shows validation detail in a sticky alert and toast (same pattern as bill registration), not only `Failed to save loan profile (422)` (#109)
+
 ## [2.5.0] - 2026-07-06
 
 ### Added

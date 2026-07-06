@@ -103,17 +103,97 @@ export async function fetchLoan(accountId: string): Promise<LoanDetail> {
   return (await res.json()) as LoanDetail
 }
 
+/** Strip commas/whitespace and format as a two-decimal amount string for the API. */
+export function normalizeLoanAmountInput(value: string): string {
+  const cleaned = value.trim().replace(/,/g, "")
+  if (!cleaned) return ""
+  const parsed = Number.parseFloat(cleaned)
+  if (!Number.isFinite(parsed)) return cleaned
+  return parsed.toFixed(2)
+}
+
+export function normalizeLoanProfileForSave(profile: LoanProfile): LoanProfile {
+  return {
+    ...profile,
+    match: {
+      ...profile.match,
+      expected_amount: normalizeLoanAmountInput(profile.match.expected_amount),
+      amount_tolerance:
+        profile.match.amount_tolerance != null
+          ? normalizeLoanAmountInput(profile.match.amount_tolerance)
+          : profile.match.amount_tolerance,
+    },
+    split: {
+      ...profile.split,
+      escrow_amount: normalizeLoanAmountInput(profile.split.escrow_amount),
+    },
+  }
+}
+
+/** Client-side checks mirroring backend loan profile validation (enabled profiles). */
+export function validateLoanProfileForSave(profile: LoanProfile): string | null {
+  if (!profile.enabled) return null
+
+  if (!profile.match.description_contains.trim()) {
+    return "Description contains is required."
+  }
+
+  const expected = normalizeLoanAmountInput(profile.match.expected_amount)
+  if (!expected || Number.isNaN(Number(expected))) {
+    return "Expected amount must be a valid number."
+  }
+
+  const principal = profile.split.components.find((c) => c.role === "principal")
+  if (!principal?.destination_account_id.trim()) {
+    return "Principal destination account is required."
+  }
+
+  const interest = profile.split.components.find((c) => c.role === "interest")
+  if (!interest?.destination_account_id.trim()) {
+    return "Interest destination account is required."
+  }
+
+  const escrowAmount = Number.parseFloat(
+    normalizeLoanAmountInput(profile.split.escrow_amount || "0"),
+  )
+  if (escrowAmount > 0) {
+    const escrow = profile.split.components.find((c) => c.role === "escrow")
+    if (!escrow?.destination_account_id.trim()) {
+      return "Escrow destination account is required when escrow amount is greater than 0."
+    }
+  }
+
+  return null
+}
+
 export async function saveLoanProfile(
   accountId: string,
   profile: LoanProfile,
 ): Promise<{ ok: boolean; profile: LoanProfile }> {
-  const { rate_override: _omit, ...payload } = profile
+  const normalized = normalizeLoanProfileForSave(profile)
+  const validationError = validateLoanProfileForSave(normalized)
+  if (validationError) {
+    throw new Error(validationError)
+  }
+
+  const { rate_override: _omit, ...payload } = normalized
   const res = await fetch(`/api/loans/${accountId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) throw new Error(`Failed to save loan profile (${res.status})`)
+  if (!res.ok) {
+    let detail = `Failed to save loan profile (${res.status})`
+    try {
+      const json = (await res.json()) as { detail?: string }
+      if (typeof json.detail === "string" && json.detail.trim()) {
+        detail = json.detail
+      }
+    } catch {
+      // ignore parse errors
+    }
+    throw new Error(detail)
+  }
   return (await res.json()) as { ok: boolean; profile: LoanProfile }
 }
 

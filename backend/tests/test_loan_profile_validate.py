@@ -79,6 +79,23 @@ def test_expected_amount_parsed_as_decimal_string():
     assert result["match"]["amount_tolerance"] == "1.00"
 
 
+def test_comma_formatted_amounts_are_accepted():
+    profile = _valid_profile()
+    profile["match"]["expected_amount"] = "2,979.14 "
+    profile["split"]["escrow_amount"] = "1,110.34"
+    profile["split"]["components"].append(
+        {
+            "role": "escrow",
+            "type": "transfer",
+            "destination_account_id": "99",
+            "destination_account": "Escrow Payment",
+        }
+    )
+    result = validate_profile(profile, ACCOUNTS)
+    assert result["match"]["expected_amount"] == "2979.14"
+    assert result["split"]["escrow_amount"] == "1110.34"
+
+
 def test_escrow_destination_required_when_escrow_amount_positive():
     profile = _valid_profile()
     profile["split"]["escrow_amount"] = "100.00"
