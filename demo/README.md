@@ -39,21 +39,23 @@ Re-import from scratch:
 ./demo/demo-up.sh --reset
 ```
 
-## VPS deploy
+## Public deploy
+
+Works on any Linux host with Docker (VPS, cloud VM, dedicated box). Same steps as local:
 
 1. Install Docker on the host.
 2. Clone this repo (infra only).
-3. Copy `~/ff3lantern-demo-data/*` to the VPS (scp/rsync).
-4. Run the same `demo-up.sh` on the VPS.
-5. Put Caddy/nginx in front of **port 8080** (frontend only). Do not expose Firefly (8088).
+3. Copy `~/ff3lantern-demo-data/*` to the server (scp/rsync).
+4. Run the same `demo-up.sh` on the host.
+5. Put Caddy/nginx (or your provider’s load balancer / ingress) in front of **port 8080** (frontend only). Do not expose Firefly (8088) or the Lantern backend publicly.
 
 | Item | Guidance |
 |------|----------|
-| **Shape** | Oracle Cloud Free Tier ARM Ampere A1: 2–4 OCPU, 8–12 GB RAM (avoid 1 GB AMD micro) |
-| **DNS** | `demo.<your-domain>` → VPS public IP |
-| **TLS** | External Caddy or nginx (Let’s Encrypt); not bundled in compose |
+| **Sizing** | 2+ vCPU, 4–8 GB RAM minimum; first JSON import is slow and memory-heavy |
+| **DNS** | `demo.<your-domain>` → host public IP |
+| **TLS** | External reverse proxy (Caddy, nginx, Traefik, cloud LB); not bundled in compose |
 | **Updates** | `git pull && docker compose pull && ./demo/demo-up.sh` on release tag |
-| **Isolation** | Separate domain from homelab; do not expose Firefly or backend API publicly |
+| **Isolation** | Use a dedicated demo domain; keep Firefly and backend API off the public internet |
 
 ## MVP scope (#102)
 
@@ -102,7 +104,7 @@ The browser user is added to the service user’s financial group with transacti
 
 Lantern **Open in Firefly** links use `FF3LANTERN_FIREFLY_PUBLIC_URL` (default `http://127.0.0.1:8088`). Sign in with the **browser demo** row above. Lantern never exposes the service account password or token in the UI.
 
-On a VPS with Firefly behind a public path, set `FF3LANTERN_FIREFLY_PUBLIC_URL` (e.g. `https://demo.example.com/firefly`) in compose or `/etc/ff3lantern-demo.env`.
+On a public host with Firefly behind a reverse-proxy path, set `FF3LANTERN_FIREFLY_PUBLIC_URL` (e.g. `https://demo.example.com/firefly`) in compose or your env file.
 
 Override before bootstrap: `DEMO_FIREFLY_SERVICE_EMAIL`, `DEMO_FIREFLY_EMAIL`, `DEMO_FIREFLY_PASSWORD`.
 
@@ -110,7 +112,7 @@ Override before bootstrap: `DEMO_FIREFLY_SERVICE_EMAIL`, `DEMO_FIREFLY_EMAIL`, `
 
 `docker-compose.demo.yml` sets `FF3LANTERN_DEMO_ANCHOR_DATE=2026-07-05` on the **Lantern backend only**. The app treats that as “today” (worksheet month, due-date alerts, date pickers). Host OS time, Firefly, and Postgres are **not** changed — only Lantern’s logic reads the env var.
 
-## Nightly reset (VPS)
+## Nightly reset (public host)
 
 Public demo users can mutate Firefly/sidecar data. Nightly job: **`demo-up.sh --reset`** against the **static** sanitized bundle (no re-sanitize). See **[ff3lantern-demo-tools](https://github.com/jwposton/ff3lantern-demo-tools)** for systemd timer setup.
 
