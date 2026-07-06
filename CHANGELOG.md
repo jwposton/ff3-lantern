@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-07-06
+
 ### Added
 
 - **Demo anchor date** — `FF3LANTERN_DEMO_ANCHOR_DATE` pins “today” for the payment worksheet and UI (public demo compose defaults to 2026-07-05); sidebar shows a demo banner when active (#102)
@@ -437,7 +439,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.4.3...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/jwposton/ff3-lantern/compare/v2.4.3...v2.5.0
 [2.4.3]: https://github.com/jwposton/ff3-lantern/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/jwposton/ff3-lantern/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/jwposton/ff3-lantern/compare/v2.4.0...v2.4.1
