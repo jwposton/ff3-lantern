@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -14,6 +15,7 @@ import {
   parsePaymentDueDayInput,
 } from "@/lib/paymentRunFormat"
 import type { CreditCardRow, FundingBucketRollup } from "@/lib/paymentRunApi"
+import { cn } from "@/lib/utils"
 
 export type CreditCardDetailsInput = {
   funding_bucket_key: string | null
@@ -21,7 +23,48 @@ export type CreditCardDetailsInput = {
   default_planned_payment: string | null
   payment_due_day: string | null
   apr_percent: string | null
+  special_apr_percent: string | null
+  special_apr_start: string | null
+  special_apr_end: string | null
   sort_order: number | null
+}
+
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
+
+function hasPromoFieldValue(
+  rate: string,
+  start: string,
+  end: string,
+): boolean {
+  return (
+    rate.trim() !== "" || start.trim() !== "" || end.trim() !== ""
+  )
+}
+
+function CollapseToggle({
+  label,
+  expanded,
+  onToggle,
+}: {
+  label: string
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className="flex min-w-0 items-center gap-1.5 text-left text-sm font-medium"
+      aria-expanded={expanded}
+      onClick={onToggle}
+    >
+      {expanded ? (
+        <ChevronDown className="size-3.5 shrink-0" aria-hidden />
+      ) : (
+        <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+      )}
+      <span className="truncate">{label}</span>
+    </button>
+  )
 }
 
 type CreditCardSheetProps = {
@@ -46,6 +89,10 @@ export function CreditCardSheet({
   const [defaultPay, setDefaultPay] = useState("")
   const [dueDay, setDueDay] = useState("")
   const [aprPercent, setAprPercent] = useState("")
+  const [specialAprPercent, setSpecialAprPercent] = useState("")
+  const [specialAprStart, setSpecialAprStart] = useState("")
+  const [specialAprEnd, setSpecialAprEnd] = useState("")
+  const [specialRateExpanded, setSpecialRateExpanded] = useState(false)
   const [sortOrder, setSortOrder] = useState("")
   const [saving, setSaving] = useState(false)
   const [excluding, setExcluding] = useState(false)
@@ -53,11 +100,18 @@ export function CreditCardSheet({
 
   useEffect(() => {
     if (!open || !row) return
+    const rate = row.special_apr_percent ?? ""
+    const start = row.special_apr_start ?? ""
+    const end = row.special_apr_end ?? ""
     setBucketKey(row.funding_bucket_key ?? "")
     setCreditLimit(row.credit_limit ?? "")
     setDefaultPay(row.default_planned_payment ?? "")
     setDueDay(row.payment_due_day ?? "")
     setAprPercent(row.apr_percent ?? "")
+    setSpecialAprPercent(rate)
+    setSpecialAprStart(start)
+    setSpecialAprEnd(end)
+    setSpecialRateExpanded(hasPromoFieldValue(rate, start, end))
     setSortOrder(
       row.sort_order != null && row.sort_order !== undefined
         ? String(row.sort_order)
@@ -65,6 +119,31 @@ export function CreditCardSheet({
     )
     setError(null)
   }, [open, row])
+
+  function validatePromoBundle(): string | null {
+    const rate = specialAprPercent.trim()
+    const start = specialAprStart.trim()
+    const end = specialAprEnd.trim()
+    const anyFilled = hasPromoFieldValue(rate, start, end)
+
+    if (!anyFilled) {
+      return null
+    }
+
+    if (!rate || !start || !end) {
+      return "Special rate requires promo APR, start date, and end date together."
+    }
+
+    if (!DATE_REGEX.test(start) || !DATE_REGEX.test(end)) {
+      return "Promo dates must be in YYYY-MM-DD format."
+    }
+
+    if (start > end) {
+      return "Promo start date must be on or before end date."
+    }
+
+    return null
+  }
 
   async function handleSave() {
     if (!row) return
@@ -74,6 +153,18 @@ export function CreditCardSheet({
       setError("Payment due day must be between 1 and 31.")
       return
     }
+
+    const promoError = validatePromoBundle()
+    if (promoError) {
+      setError(promoError)
+      return
+    }
+
+    const rate = specialAprPercent.trim()
+    const start = specialAprStart.trim()
+    const end = specialAprEnd.trim()
+    const promoFilled = hasPromoFieldValue(rate, start, end)
+
     setSaving(true)
     setError(null)
     try {
@@ -84,6 +175,9 @@ export function CreditCardSheet({
           defaultPay.trim() === "" ? null : defaultPay.trim(),
         payment_due_day: paymentDueDay,
         apr_percent: aprPercent.trim() === "" ? null : aprPercent.trim(),
+        special_apr_percent: promoFilled ? rate : null,
+        special_apr_start: promoFilled ? start : null,
+        special_apr_end: promoFilled ? end : null,
         sort_order:
           sortOrder.trim() === ""
             ? null
@@ -97,6 +191,13 @@ export function CreditCardSheet({
     } finally {
       setSaving(false)
     }
+  }
+
+  function handleClearSpecialRate() {
+    setSpecialAprPercent("")
+    setSpecialAprStart("")
+    setSpecialAprEnd("")
+    setError(null)
   }
 
   async function handleExclude() {
@@ -125,6 +226,11 @@ export function CreditCardSheet({
 
   const cardName = row?.name ?? row?.account_id ?? "Credit card"
   const busy = saving || excluding
+  const showClearSpecialRate = hasPromoFieldValue(
+    specialAprPercent,
+    specialAprStart,
+    specialAprEnd,
+  )
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -222,6 +328,80 @@ export function CreditCardSheet({
             <p className="text-muted-foreground text-xs">
               Worksheet reference only — not shown in Firefly for asset cards.
             </p>
+          </div>
+
+          <div className="space-y-2 rounded-md border p-3">
+            <CollapseToggle
+              label="Special rate"
+              expanded={specialRateExpanded}
+              onToggle={() => setSpecialRateExpanded((current) => !current)}
+            />
+            {specialRateExpanded ? (
+              <div className={cn("space-y-3 pt-1")}>
+                <div className="space-y-1">
+                  <label
+                    className="text-sm font-medium"
+                    htmlFor="cc-special-apr"
+                  >
+                    Promo APR %
+                  </label>
+                  <Input
+                    id="cc-special-apr"
+                    inputMode="decimal"
+                    value={specialAprPercent}
+                    onChange={(event) =>
+                      setSpecialAprPercent(event.target.value)
+                    }
+                    placeholder="e.g. 0"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label
+                    className="text-sm font-medium"
+                    htmlFor="cc-special-start"
+                  >
+                    Promo start
+                  </label>
+                  <Input
+                    id="cc-special-start"
+                    value={specialAprStart}
+                    onChange={(event) =>
+                      setSpecialAprStart(event.target.value)
+                    }
+                    placeholder="YYYY-MM-DD"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label
+                    className="text-sm font-medium"
+                    htmlFor="cc-special-end"
+                  >
+                    Promo end
+                  </label>
+                  <Input
+                    id="cc-special-end"
+                    value={specialAprEnd}
+                    onChange={(event) => setSpecialAprEnd(event.target.value)}
+                    placeholder="YYYY-MM-DD"
+                  />
+                </div>
+                {showClearSpecialRate ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleClearSpecialRate}
+                    disabled={busy}
+                  >
+                    Clear special rate
+                  </Button>
+                ) : null}
+                <p className="text-muted-foreground text-xs">
+                  Optional promotional APR window. All three fields are required
+                  together when setting a special rate.
+                </p>
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-1">

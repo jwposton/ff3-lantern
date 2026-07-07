@@ -377,6 +377,11 @@ export type CreditCardRow = PlannedAmountRow & {
   default_planned_payment: string | null
   payment_due_day: string | null
   apr_percent: string | null
+  special_apr_percent?: string | null
+  special_apr_start?: string | null
+  special_apr_end?: string | null
+  promo_active?: boolean
+  effective_apr_percent?: string | null
   sort_order?: number | null
   owed: string
   new_total: string
@@ -1040,6 +1045,9 @@ export async function putAccountWorksheet(
     default_planned_payment?: string | null
     payment_due_day?: string | null
     apr_percent?: string | null
+    special_apr_percent?: string | null
+    special_apr_start?: string | null
+    special_apr_end?: string | null
     sort_order?: number | null
   },
 ): Promise<{ account_id: string; profile: Record<string, unknown> }> {
