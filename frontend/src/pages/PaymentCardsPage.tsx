@@ -6,6 +6,7 @@ import { MetricBlock } from "@/components/MetricBlock"
 import { CreditCardSheet } from "@/components/payment-run/CreditCardSheet"
 import type { CreditCardDetailsInput } from "@/components/payment-run/CreditCardSheet"
 import { ManageCardsSheet } from "@/components/payment-run/ManageCardsSheet"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -23,6 +24,7 @@ import {
   sumCardBalances,
 } from "@/lib/creditCardHistory"
 import { formatDisplayAmount } from "@/lib/formatDisplay"
+import { formatInterestPercent } from "@/lib/paymentRunFormat"
 import {
   currentMonthKey,
   putAccountWorksheet,
@@ -270,12 +272,24 @@ export function PaymentCardsPage() {
                 className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
               >
                 <div className="min-w-0 space-y-1">
-                  <Link
-                    to={`/manage/payment-run/cards/${encodeURIComponent(row.account_id)}`}
-                    className="font-medium text-primary underline-offset-2 hover:underline"
-                  >
-                    {row.name ?? row.account_id}
-                  </Link>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <Link
+                      to={`/manage/payment-run/cards/${encodeURIComponent(row.account_id)}`}
+                      className="font-medium text-primary underline-offset-2 hover:underline"
+                    >
+                      {row.name ?? row.account_id}
+                    </Link>
+                    {row.promo_active ? (
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 text-[10px]"
+                      >
+                        {row.special_apr_percent
+                          ? `${formatInterestPercent(row.special_apr_percent)} promo`
+                          : "Promo"}
+                      </Badge>
+                    ) : null}
+                  </div>
                   <p className="text-muted-foreground text-xs">
                     {bucketLabel(row.funding_bucket_key)}
                     {" · "}

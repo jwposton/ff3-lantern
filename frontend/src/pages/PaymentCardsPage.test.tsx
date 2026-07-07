@@ -37,6 +37,32 @@ function mockCardsPageFetch() {
         { status: 200 },
       )
     }
+    if (url.includes("/api/payment-run/credit-cards/4/history")) {
+      return new Response(
+        JSON.stringify({
+          account: {
+            account_id: "4",
+            name: "Amex",
+            owed: "500.00",
+            apr_percent: "22.99",
+            credit_limit: "5000.00",
+            payment_due_day: "1",
+            funding_bucket_key: "checking",
+          },
+          window: { start: "2025-07-01", end: "2026-07-06" },
+          stats_window: { start: "2025-07", end: "2026-07" },
+          totals: {
+            charges: "0",
+            fees: "0",
+            interest: "0",
+            payments: "0",
+          },
+          monthly: [],
+          transactions: [],
+        }),
+        { status: 200 },
+      )
+    }
     if (url.includes("/api/payment-run/credit-cards/3/history")) {
       return new Response(
         JSON.stringify({
@@ -88,6 +114,31 @@ function mockCardsPageFetch() {
               planned_amount: "200.00",
               planned_amount_override: false,
               paid_at: null,
+              promo_active: true,
+              special_apr_percent: "0.00",
+              special_apr_start: "2026-07-01",
+              special_apr_end: "2026-09-30",
+            },
+            {
+              account_id: "4",
+              row_key: "cc:4",
+              name: "Amex",
+              owed: "500.00",
+              apr_percent: "22.99",
+              funding_bucket_key: "checking",
+              credit_limit: "5000.00",
+              default_planned_payment: "100.00",
+              payment_due_day: "1",
+              new_total: "0.00",
+              interest_accrued: "0.00",
+              fees: "0.00",
+              last_payment_date: null,
+              last_payment_amount: "0.00",
+              new_transactions: [],
+              planned_amount: "100.00",
+              planned_amount_override: false,
+              paid_at: null,
+              promo_active: false,
             },
           ],
           excluded_credit_cards: [],
@@ -141,13 +192,33 @@ describe("PaymentCardsPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Total balance")).toBeTruthy()
-      expect(screen.getByText("1,250.50")).toBeTruthy()
+      expect(screen.getByText("1,750.50")).toBeTruthy()
       expect(screen.getByText("89.99")).toBeTruthy()
       expect(screen.getByText("Chase VISA")).toBeTruthy()
       expect(screen.getByText(/APR 19\.99%/)).toBeTruthy()
     })
 
-    const viewLink = screen.getByRole("link", { name: "View" })
-    expect(viewLink.getAttribute("href")).toBe("/manage/payment-run/cards/3")
+    const viewLinks = screen.getAllByRole("link", { name: "View" })
+    expect(viewLinks[0]?.getAttribute("href")).toBe("/manage/payment-run/cards/3")
+  })
+
+  it("shows promo badge when promo_active is true and omits it when false", async () => {
+    mockCardsPageFetch()
+
+    render(
+      <TestProviders>
+        <PaymentCardsPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Chase VISA")).toBeTruthy()
+      expect(screen.getByText("0% promo")).toBeTruthy()
+      expect(screen.getByText("Amex")).toBeTruthy()
+    })
+
+    const promoBadges = screen.getAllByText("0% promo")
+    expect(promoBadges).toHaveLength(1)
+    expect(screen.queryByText(/22\.99% promo/)).toBeNull()
   })
 })
