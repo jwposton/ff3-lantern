@@ -192,6 +192,34 @@ Table `funding_buckets`:
 | `sort_order` | `1` |
 | `firefly_account_ids` | `["42", "87"]` — summed at refresh |
 
+## Special / promo APR windows
+
+Credit card profiles may include an optional **special rate** window alongside regular `apr_percent`:
+
+| Field | Format | Purpose |
+|-------|--------|---------|
+| `special_apr_percent` | Decimal string (same rules as `apr_percent`) | Promotional purchase APR while the window is active |
+| `special_apr_start` | `YYYY-MM-DD` (inclusive) | First day the promo applies |
+| `special_apr_end` | `YYYY-MM-DD` (inclusive) | Last day the promo applies |
+
+**Edit surface:** **Card Details** / **Edit settings** opens `CreditCardSheet` — collapsible **Special rate** section with rate + start/end dates and **Clear special rate**. All three fields must be set together on save; clearing all three removes the promo.
+
+**Month anchors:**
+
+| Surface | Month used |
+|---------|------------|
+| Worksheet credit cards table + balance-weighted APR footer | Selected worksheet month |
+| CC hub list promo badge | Current calendar month |
+| Card detail header promo line | Current calendar month |
+
+A promo is **active** for a month when that calendar month overlaps the inclusive start–end range by at least one day (partial-month overlap counts as full-month active for display and weighted APR).
+
+**Worksheet display:** The APR column always shows regular `apr_percent`. When the promo is active for the worksheet month, the cell gets subtle emphasis and a hover tooltip `{promo}% until {end_date}`; when inactive for that month, the cell is unchanged even if promo fields exist on the profile.
+
+**Weighted subtotal:** Footer balance-weighted APR uses `effective_apr_percent` from the API (promo rate when active for the worksheet month, otherwise regular APR).
+
+**Hub and detail:** Read-only indicators — hub list shows a compact promo badge; card detail header appends e.g. `0% promo through Sep 30, 2026` when the promo is active for the current month.
+
 ## Worksheet section placement (user-configurable for bills)
 
 Three scroll sections on the page: **Credit cards**, **Bills**, **Liabilities**. Placement rules:
@@ -558,7 +586,7 @@ Mirrors the spreadsheet habit of **bolding a row when paid**, using FF3 Lantern 
 - **Planned / mark paid** — persists in sidecar; recalculates remainings when `planned_amount` changes only.
 - **Mark paid** — toggle checkbox; semibold + tint on row (see **Paid vs unpaid** above); no effect on user balance, outflow tallies, subtotals, grand total, or remaining.
 - **New expand** — chevron on **New** column opens inline activity table (right-aligned under dollar columns); links to Firefly when configured.
-- **Card Details** — pencil opens sheet for bucket, limit, due day, APR, default planned pay, exclude; writes `payment_worksheet.v1` to Firefly notes.
+- **Card Details** — pencil opens sheet for bucket, limit, due day, APR, optional special rate window, default planned pay, exclude; writes `payment_worksheet.v1` to Firefly notes.
 - **Manage cards** — restore excluded credit card asset accounts to the worksheet.
 
 ## GSD delivery phases (suggested)
