@@ -9,7 +9,7 @@ import {
   mainCheckingWithdrawal,
   salaryDeposit,
 } from "@/test/fixtures/omniRows"
-import { buildBarChartData, barChartDataToLineSeries, buildMonthlyIncomeTotals, filterRowsForDrilldown, TOTAL_LABEL } from "@/lib/barChart"
+import { buildBarChartData, barChartDataToLineSeries, buildMonthlyIncomeTotals, buildSplitBarChartData, filterRowsForDrilldown, TOTAL_LABEL } from "@/lib/barChart"
 import { CC_PAYMENT_BUDGET_LABEL } from "@/lib/cashFlowLabels"
 import { isCashFlowOutflow, isSpendingExpense } from "@/lib/spending"
 
@@ -72,6 +72,38 @@ describe("buildBarChartData", () => {
     expect(result.stacks).not.toContain("Entertainment")
     expect(result.data["2026-01"]?.["Food"]).toBeCloseTo(50, 2)
     expect(result.data["2026-01"]?.["Transport"]).toBeCloseTo(30, 2)
+  })
+
+  it("drill: filters category stacks by paymentRail", () => {
+    const rows = [
+      makeRow({
+        date: "2026-01-10",
+        budget: "Essentials",
+        category: "Food",
+        amount: "50.00",
+      }),
+      {
+        ...creditCardWithdrawal,
+        date: "2026-01-11",
+        budget: "Essentials",
+        category: "Food",
+        amount: "100.00",
+      },
+    ].filter(isSpendingExpense)
+
+    const cashResult = buildBarChartData(rows, ["month", "category"], {
+      start: "2026-01-01",
+      end: "2026-01-31",
+      filter: { budget: "Essentials", paymentRail: "cash" },
+    })
+    expect(cashResult.data["2026-01"]?.["Food"]).toBeCloseTo(50, 2)
+
+    const creditResult = buildBarChartData(rows, ["month", "category"], {
+      start: "2026-01-01",
+      end: "2026-01-31",
+      filter: { budget: "Essentials", paymentRail: "credit" },
+    })
+    expect(creditResult.data["2026-01"]?.["Food"]).toBeCloseTo(100, 2)
   })
 
   it("uncategorized: null budget maps to Uncategorized stack", () => {
@@ -247,6 +279,67 @@ describe("filterRowsForDrilldown", () => {
     )
     expect(filtered).toHaveLength(1)
     expect(filtered[0]?.destination_account).toBe("Store A")
+  })
+
+  it("filters by paymentRail cash and credit", () => {
+    const rows = [
+      makeRow({
+        date: "2026-01-10",
+        budget: "Essentials",
+        amount: "50.00",
+      }),
+      creditCardWithdrawal,
+    ].filter(isSpendingExpense)
+
+    const cashOnly = filterRowsForDrilldown(
+      rows,
+      { budget: "Essentials", paymentRail: "cash" },
+      false,
+    )
+    expect(cashOnly).toHaveLength(1)
+    expect(cashOnly[0]?.source_role).toBe("Default account")
+
+    const creditOnly = filterRowsForDrilldown(
+      rows,
+      { paymentRail: "credit" },
+      false,
+    )
+    expect(creditOnly).toHaveLength(1)
+    expect(creditOnly[0]?.source_role).toBe("Credit card")
+  })
+})
+
+describe("buildSplitBarChartData", () => {
+  it("splits cash and credit stacks per month with shared budget order", () => {
+    const rows = [
+      makeRow({
+        date: "2026-01-10",
+        budget: "Essentials",
+        amount: "50.00",
+      }),
+      {
+        ...creditCardWithdrawal,
+        date: "2026-01-15",
+        budget: "Fun",
+        amount: "100.00",
+      },
+      makeRow({
+        date: "2026-02-01",
+        budget: "Essentials",
+        amount: "25.00",
+      }),
+    ].filter(isSpendingExpense)
+
+    const result = buildSplitBarChartData(rows, {
+      start: "2026-01-01",
+      end: "2026-02-28",
+    })
+
+    expect(result.stacks).toEqual(["Fun", "Essentials"])
+    expect(result.cashData["2026-01"]?.["Essentials"]).toBeCloseTo(50, 2)
+    expect(result.creditData["2026-01"]?.["Fun"]).toBeCloseTo(100, 2)
+    expect(result.cashData["2026-02"]?.["Essentials"]).toBeCloseTo(25, 2)
+    expect(result.creditData["2026-02"]?.["Essentials"]).toBe(0)
   })
 })
 

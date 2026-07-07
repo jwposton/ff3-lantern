@@ -9,6 +9,7 @@ export function SpendingBarPage() {
       mainChartTitle="Spending by month"
       emptyMessage="No spending in this date range"
       yAxisName="Spending"
+      enablePaymentRailSplit
     />
   )
 }

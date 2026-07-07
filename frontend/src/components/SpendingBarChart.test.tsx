@@ -288,4 +288,55 @@ describe("SpendingBarChart", () => {
 
     expect(onSelect).not.toHaveBeenCalled()
   })
+
+  it("split mode: bar click passes budget and payment rail", () => {
+    const onSelect = vi.fn()
+    const splitChartData = {
+      months: ["2026-01"],
+      stacks: ["Groceries", "Transport"],
+      cashData: { "2026-01": { Groceries: 100, Transport: 50 } },
+      creditData: { "2026-01": { Groceries: 20, Transport: 10 } },
+    }
+
+    render(
+      <SpendingBarChart
+        viewMode="split"
+        chartData={sampleChartData}
+        splitChartData={splitChartData}
+        loading={false}
+        emptyMessage="No data"
+        onSelect={onSelect}
+      />,
+    )
+
+    capturedOnEvents?.click?.({ seriesName: "Groceries", seriesIndex: 0 })
+    expect(onSelect).toHaveBeenCalledWith("Groceries", "cash")
+
+    capturedOnEvents?.click?.({ seriesName: "Transport", seriesIndex: 3 })
+    expect(onSelect).toHaveBeenCalledWith("Transport", "credit")
+  })
+
+  it("split mode: legend click drills combined budget without rail", () => {
+    const onSelect = vi.fn()
+    const splitChartData = {
+      months: ["2026-01"],
+      stacks: ["Groceries"],
+      cashData: { "2026-01": { Groceries: 100 } },
+      creditData: { "2026-01": { Groceries: 20 } },
+    }
+
+    render(
+      <SpendingBarChart
+        viewMode="split"
+        chartData={sampleChartData}
+        splitChartData={splitChartData}
+        loading={false}
+        emptyMessage="No data"
+        onSelect={onSelect}
+      />,
+    )
+
+    capturedOnEvents?.legendselectchanged?.({ name: "Groceries" })
+    expect(onSelect).toHaveBeenCalledWith("Groceries")
+  })
 })

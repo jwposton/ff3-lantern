@@ -24,15 +24,18 @@ vi.mock("@/components/SpendingBarChart", () => ({
     emptyMessage,
     loading,
     onSelect,
+    headerControls,
   }: {
     emptyMessage: string
     loading: boolean
-    onSelect: (budget: string) => void
+    onSelect: (budget: string, rail?: string) => void
+    headerControls?: React.ReactNode
   }) =>
     loading ? (
       <div data-testid="chart-loading" />
     ) : (
       <div>
+        {headerControls}
         <div data-testid="empty-message">{emptyMessage}</div>
         <button
           type="button"
@@ -41,13 +44,29 @@ vi.mock("@/components/SpendingBarChart", () => ({
         >
           Select budget
         </button>
+        <button
+          type="button"
+          data-testid="select-budget-cash"
+          onClick={() => onSelect("Groceries", "cash")}
+        >
+          Select cash rail
+        </button>
       </div>
     ),
 }))
 
 vi.mock("@/components/BudgetReportDrilldown", () => ({
-  BudgetReportDrilldown: ({ budget }: { budget: string }) => (
-    <div data-testid="drilldown">{budget}</div>
+  BudgetReportDrilldown: ({
+    budget,
+    paymentRail,
+  }: {
+    budget: string
+    paymentRail?: string
+  }) => (
+    <div data-testid="drilldown">
+      {budget}
+      {paymentRail ? `:${paymentRail}` : ""}
+    </div>
   ),
 }))
 
@@ -144,6 +163,66 @@ describe("BudgetBarReportPage", () => {
     renderPage(
       <BudgetBarReportPage filter={alwaysTrue} {...pageProps} />,
       "/reports/spending?start=2026-01-01&end=2026-01-31&budget=Groceries",
+    )
+
+    expect(screen.getByTestId("drilldown").textContent).toBe("Groceries")
+  })
+
+  it("shows view controls and selects split mode", () => {
+    renderPage(
+      <BudgetBarReportPage
+        filter={alwaysTrue}
+        {...pageProps}
+        enablePaymentRailSplit
+      />,
+      "/reports/spending?start=2026-01-01&end=2026-01-31",
+    )
+
+    expect(screen.getByRole("group", { name: "Spending chart view" })).toBeTruthy()
+    const splitButton = screen.getByRole("button", { name: "Cash & Credit" })
+    fireEvent.click(splitButton)
+    expect(splitButton.getAttribute("aria-pressed")).toBe("true")
+  })
+
+  it("drills with payment rail when bar selection includes rail", () => {
+    renderPage(
+      <BudgetBarReportPage
+        filter={alwaysTrue}
+        {...pageProps}
+        enablePaymentRailSplit
+      />,
+      "/reports/spending?start=2026-01-01&end=2026-01-31&view=split",
+    )
+
+    fireEvent.click(screen.getByTestId("select-budget-cash"))
+    expect(screen.getByTestId("drilldown").textContent).toBe("Groceries:cash")
+  })
+
+  it("clears payment rail from drilldown when switching to Combined view", () => {
+    renderPage(
+      <BudgetBarReportPage
+        filter={alwaysTrue}
+        {...pageProps}
+        enablePaymentRailSplit
+      />,
+      "/reports/spending?start=2026-01-01&end=2026-01-31&view=split",
+    )
+
+    fireEvent.click(screen.getByTestId("select-budget-cash"))
+    expect(screen.getByTestId("drilldown").textContent).toBe("Groceries:cash")
+
+    fireEvent.click(screen.getByRole("button", { name: "Combined" }))
+    expect(screen.getByTestId("drilldown").textContent).toBe("Groceries")
+  })
+
+  it("ignores stale rail param when view is Combined", () => {
+    renderPage(
+      <BudgetBarReportPage
+        filter={alwaysTrue}
+        {...pageProps}
+        enablePaymentRailSplit
+      />,
+      "/reports/spending?start=2026-01-01&end=2026-01-31&budget=Groceries&rail=cash",
     )
 
     expect(screen.getByTestId("drilldown").textContent).toBe("Groceries")
