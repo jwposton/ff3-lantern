@@ -3554,6 +3554,35 @@ def test_put_worksheet_promo_partial_rejected(
         app.dependency_overrides.clear()
 
 
+def test_put_worksheet_promo_partial_null_rejected(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from routes import payment_run as payment_run_mod
+    from main import app
+
+    month = current_month_key()
+    asyncio.run(_seed_worksheet_snapshot(month))
+    handler, _ = _cc1_firefly_handler()
+
+    app.dependency_overrides[payment_run_mod.get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    try:
+        response = client.put(
+            "/api/payment-run/accounts/cc1/worksheet",
+            params={"month": month},
+            json={"special_apr_percent": None},
+        )
+        assert response.status_code == 422
+        assert "all-or-nothing" in response.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_put_worksheet_promo_clear_all_null(
     monkeypatch, client, data_dir, payment_worksheet_env
 ):

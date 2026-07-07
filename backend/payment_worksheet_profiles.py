@@ -7,6 +7,7 @@ from typing import Any
 
 import app_clock
 import sidecar_db
+from app_clock import current_month_key
 from firefly_client import FireflyClient, _normalize_account_role, _normalize_account_type
 
 PAYMENT_WORKSHEET_MARKER = "<!-- ff3lantern:payment_worksheet.v1 -->"
@@ -162,10 +163,6 @@ def is_funding_bucket_eligible_summary(summary: dict[str, Any]) -> bool:
         summary.get("type") == "Asset account"
         and summary.get("role") != "Credit card"
     )
-
-
-import app_clock
-from app_clock import current_month_key
 
 
 async def patch_worksheet_refresh_profile(

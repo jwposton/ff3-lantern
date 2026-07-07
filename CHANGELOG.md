@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Special/promo APR windows (worksheet UI)** — configure promo rate and dates in the credit card settings sheet; active promos highlight the regular APR with a tooltip and shift the balance-weighted APR subtotal (#107)
 - **Special/promo APR windows (hub and detail)** — configure promo rate and dates on the card profile; the worksheet highlights active promos for the selected month and uses the promo rate in the balance-weighted APR subtotal; the CC hub and card detail pages show active promos for the current calendar month (#107)
 
+### Fixed
+
+- **Promo APR resilience** — malformed stored promo dates no longer crash the worksheet API; partial promo clears via API are rejected per all-or-nothing rules (#107)
+
 ## [2.6.1] - 2026-07-07
 
 ### Added

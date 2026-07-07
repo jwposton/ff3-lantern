@@ -24,8 +24,11 @@ def _month_bounds(month_key: str) -> tuple[date, date]:
 def promo_active_for_month(month_key: str, start: str, end: str) -> bool:
     """True when the worksheet month overlaps the inclusive promo date range (D-05/D-06)."""
     month_start, month_end = _month_bounds(month_key)
-    promo_start = date.fromisoformat(start)
-    promo_end = date.fromisoformat(end)
+    try:
+        promo_start = date.fromisoformat(start)
+        promo_end = date.fromisoformat(end)
+    except ValueError:
+        return False
     return month_start <= promo_end and month_end >= promo_start
 
 
@@ -60,15 +63,28 @@ def resolve_credit_card_promo(
     }
 
 
+def _normalize_promo_value(value: Any) -> Any:
+    if value is not None and str(value).strip() == "":
+        return None
+    return value
+
+
 def validate_promo_bundle(updates: dict[str, Any]) -> None:
     """Reject partial promo config; allow clearing all three fields together (D-12)."""
-    present = [
-        key
-        for key in PROMO_FIELD_KEYS
-        if key in updates and updates[key] is not None
-    ]
-    if not present:
+    for key in PROMO_FIELD_KEYS:
+        if key in updates:
+            updates[key] = _normalize_promo_value(updates[key])
+
+    touched = [key for key in PROMO_FIELD_KEYS if key in updates]
+    if not touched:
         return
+
+    if len(touched) == len(PROMO_FIELD_KEYS) and all(
+        updates.get(key) is None for key in PROMO_FIELD_KEYS
+    ):
+        return
+
+    present = [key for key in PROMO_FIELD_KEYS if updates.get(key) is not None]
     if len(present) != len(PROMO_FIELD_KEYS):
         raise ValueError(
             "Promo rate requires all-or-nothing: special_apr_percent, "

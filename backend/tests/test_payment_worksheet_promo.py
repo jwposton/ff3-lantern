@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from payment_worksheet_promo import (
+    PROMO_FIELD_KEYS,
     promo_active_for_month,
     resolve_credit_card_promo,
     validate_promo_bundle,
@@ -110,3 +111,36 @@ def test_validate_promo_bundle_allows_clear_all_null() -> None:
             "special_apr_end": None,
         }
     )
+
+
+def test_promo_active_for_month_invalid_date_returns_false() -> None:
+    assert promo_active_for_month("2026-07", "bad", "2026-09-30") is False
+
+
+def test_resolve_credit_card_promo_invalid_stored_dates() -> None:
+    profile = {
+        "apr_percent": "24.99",
+        "special_apr_percent": "0.00",
+        "special_apr_start": "bad",
+        "special_apr_end": "2026-09-30",
+    }
+    resolved = resolve_credit_card_promo(profile, "2026-07")
+    assert resolved == {
+        "promo_active": False,
+        "effective_apr_percent": "24.99",
+    }
+
+
+def test_validate_promo_bundle_rejects_partial_null_clear() -> None:
+    with pytest.raises(ValueError, match="all-or-nothing"):
+        validate_promo_bundle({"special_apr_percent": None})
+
+
+def test_validate_promo_bundle_normalizes_empty_strings_to_clear() -> None:
+    updates = {
+        "special_apr_percent": "",
+        "special_apr_start": "",
+        "special_apr_end": "",
+    }
+    validate_promo_bundle(updates)
+    assert all(updates[key] is None for key in PROMO_FIELD_KEYS)

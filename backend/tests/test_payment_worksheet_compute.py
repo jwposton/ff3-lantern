@@ -255,6 +255,36 @@ async def test_build_worksheet_envelope_promo_inactive_without_config(data_dir):
 
 
 @pytest.mark.asyncio
+async def test_build_worksheet_envelope_promo_invalid_stored_dates(data_dir):
+    balances = {
+        "buckets": {},
+        "credit_cards": {
+            "cc1": {
+                "name": "Chase VISA",
+                "apr_percent": "24.99",
+                "special_apr_percent": "0.00",
+                "special_apr_start": "bad",
+                "special_apr_end": "2026-09-30",
+                "owed": "1200.00",
+                "new_total": "150.00",
+                "interest_accrued": "25.00",
+                "fees": "0.00",
+            }
+        },
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month="2026-07",
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    card = envelope["credit_cards"][0]
+    assert card["promo_active"] is False
+    assert card["effective_apr_percent"] == "24.99"
+
+
+@pytest.mark.asyncio
 async def test_assemble_credit_cards_skips_profile_only_stubs(data_dir):
     await sidecar_db.upsert_worksheet_refresh(
         month="2026-07",
