@@ -14,7 +14,7 @@ import app_clock
 import firefly_reference_cache
 from firefly_client import firefly_public_base_url
 import sidecar_db
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
 from firefly_client import FireflyClient
@@ -56,6 +56,7 @@ from loan_split_infer import infer_loan_profile, merge_inferred_profile
 from payment_worksheet_bill_history import (
     bill_history_date_window,
     compute_bill_history_stats,
+    parse_history_query_date_range,
 )
 from payment_worksheet_cc_history import (
     cc_history_date_window,
@@ -91,6 +92,29 @@ def require_payment_worksheet() -> None:
         raise HTTPException(
             status_code=404, detail="Payment worksheet is not enabled."
         )
+
+
+def _resolve_history_query_range(
+    start: str | None,
+    end: str | None,
+    *,
+    default_window,
+    today: date,
+) -> tuple[str, str, str | None, str | None]:
+    """Return fetch window and optional custom stats range from query params."""
+    if start is None and end is None:
+        fetch_start, fetch_end = default_window(today)
+        return fetch_start, fetch_end, None, None
+    if start is None or end is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Both start and end are required when filtering by date.",
+        )
+    try:
+        range_start, range_end = parse_history_query_date_range(start, end)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return range_start, range_end, range_start, range_end
 
 
 def get_firefly_client() -> FireflyClient:
@@ -1041,14 +1065,21 @@ async def _require_worksheet_liability(
 @router.get("/payment-run/credit-cards/{account_id}/history")
 async def credit_card_history(
     account_id: str,
+    start: str | None = Query(None, description="Start date YYYY-MM-DD"),
+    end: str | None = Query(None, description="End date YYYY-MM-DD"),
     _: None = Depends(require_payment_worksheet),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     _, profile, attrs = await _require_worksheet_credit_card(client, account_id)
     today = app_clock.today()
-    start, end = cc_history_date_window(today)
+    fetch_start, fetch_end, range_start, range_end = _resolve_history_query_range(
+        start,
+        end,
+        default_window=cc_history_date_window,
+        today=today,
+    )
     try:
-        splits = await client.fetch_splits(start, end)
+        splits = await client.fetch_splits(fetch_start, fetch_end)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     rows = splits_to_cc_history_transactions(
@@ -1057,8 +1088,19 @@ async def credit_card_history(
         interest_cats=interest_categories(),
         fee_cats=fee_categories(),
     )
-    stats = compute_cc_history_stats(rows, today=today)
+    stats = compute_cc_history_stats(
+        rows,
+        today=today,
+        range_start=range_start,
+        range_end=range_end,
+    )
     transactions = sorted(rows, key=lambda row: row.get("date") or "", reverse=True)
+    if range_start and range_end:
+        transactions = [
+            row
+            for row in transactions
+            if range_start <= str(row.get("date") or "") <= range_end
+        ]
     owed = abs(Decimal(str(attrs.get("current_balance") or "0")))
     payload: dict[str, Any] = {
         "account": {
@@ -1071,7 +1113,7 @@ async def credit_card_history(
             or _due_day_from_monthly_payment_date(attrs.get("monthly_payment_date")),
             "funding_bucket_key": profile.get("funding_bucket_key"),
         },
-        "window": {"start": start, "end": end},
+        "window": {"start": fetch_start, "end": fetch_end},
         **stats,
         "transactions": transactions,
     }
@@ -1084,6 +1126,8 @@ async def credit_card_history(
 @router.get("/payment-run/liabilities/{account_id}/history")
 async def liability_history(
     account_id: str,
+    start: str | None = Query(None, description="Start date YYYY-MM-DD"),
+    end: str | None = Query(None, description="End date YYYY-MM-DD"),
     _: None = Depends(require_payment_worksheet),
     client: FireflyClient = Depends(get_firefly_client),
 ):
@@ -1091,10 +1135,15 @@ async def liability_history(
         client, account_id
     )
     today = app_clock.today()
-    start, end = liability_history_date_window(today)
+    fetch_start, fetch_end, range_start, range_end = _resolve_history_query_range(
+        start,
+        end,
+        default_window=liability_history_date_window,
+        today=today,
+    )
     loan_configured = bool(loan_profile and loan_profile.get("enabled"))
     try:
-        splits = await client.fetch_splits(start, end)
+        splits = await client.fetch_splits(fetch_start, fetch_end)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     try:
@@ -1118,8 +1167,19 @@ async def liability_history(
         merge_inferred_profile(loan_profile, inferred) if inferred else loan_profile
     )
     anchor_journal_count = count_liability_anchor_journals(splits, account_id)
-    stats = compute_liability_history_stats(rows, today=today)
+    stats = compute_liability_history_stats(
+        rows,
+        today=today,
+        range_start=range_start,
+        range_end=range_end,
+    )
     transactions = sorted(rows, key=lambda row: row.get("date") or "", reverse=True)
+    if range_start and range_end:
+        transactions = [
+            row
+            for row in transactions
+            if range_start <= str(row.get("date") or "") <= range_end
+        ]
     owed = abs(Decimal(str(attrs.get("current_balance") or "0")))
     payment_amount = Decimal(draft_planned_amount(loan_profile, worksheet_profile))
     display = compute_liability_display_fields(
@@ -1137,7 +1197,7 @@ async def liability_history(
             "funding_bucket_key": worksheet_profile.get("funding_bucket_key"),
             "loan_configured": loan_configured,
         },
-        "window": {"start": start, "end": end},
+        "window": {"start": fetch_start, "end": fetch_end},
         **stats,
         "transactions": transactions,
         "suggested_profile": suggested_profile,

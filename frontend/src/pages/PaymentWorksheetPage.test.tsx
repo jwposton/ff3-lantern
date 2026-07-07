@@ -408,7 +408,7 @@ describe("PaymentWorksheetPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Payment Worksheet" })).toBeTruthy()
+      expect(screen.getByRole("heading", { name: "Bill Pay Worksheet" })).toBeTruthy()
     })
 
     const refreshCalls = fetchSpy.mock.calls.filter(
@@ -636,7 +636,7 @@ describe("PaymentWorksheetPage", () => {
     })
   })
 
-  it("shows Find bills cross-link when payment worksheet is enabled", async () => {
+  it("shows Find bills button when payment worksheet is enabled", async () => {
     mockPaymentFetch({ envelope: EMPTY_ENVELOPE, paymentEnabled: true })
 
     render(
@@ -646,12 +646,12 @@ describe("PaymentWorksheetPage", () => {
     )
 
     await waitFor(() => {
-      const link = screen.getByRole("link", { name: "Find bills →" })
+      const link = screen.getByRole("link", { name: "Find bills" })
       expect(link.getAttribute("href")).toBe("/manage/payment-run/discover")
     })
   })
 
-  it("hides Find bills cross-link when payment worksheet is disabled", async () => {
+  it("hides Find bills button when payment worksheet is disabled", async () => {
     mockPaymentFetch({ envelope: EMPTY_ENVELOPE, paymentEnabled: false })
 
     render(
@@ -661,7 +661,7 @@ describe("PaymentWorksheetPage", () => {
     )
 
     await waitFor(() => {
-      expect(screen.queryByRole("link", { name: "Find bills →" })).toBeNull()
+      expect(screen.queryByRole("link", { name: "Find bills" })).toBeNull()
     })
   })
 })

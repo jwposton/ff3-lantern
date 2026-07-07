@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useCreditCardPortfolioHistories } from "@/hooks/useCreditCardHistory"
+import { useDateRange } from "@/context/DateRangeContext"
 import { useHealth } from "@/hooks/useHealth"
 import {
   paymentRunQueryKey,
@@ -30,6 +31,7 @@ import {
 
 export function PaymentCardsPage() {
   const month = currentMonthKey()
+  const { committedRange } = useDateRange()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
@@ -46,7 +48,7 @@ export function PaymentCardsPage() {
     () => creditCards.map((row) => row.account_id),
     [creditCards],
   )
-  const portfolioQueries = useCreditCardPortfolioHistories(accountIds)
+  const portfolioQueries = useCreditCardPortfolioHistories(accountIds, committedRange)
   const portfolioLoading =
     accountIds.length > 0 && portfolioQueries.some((query) => query.isPending)
   const portfolioError = portfolioQueries.some((query) => query.isError)

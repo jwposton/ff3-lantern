@@ -27,4 +27,11 @@ describe("pathnameUsesGlobalDateRange", () => {
     expect(pathnameUsesGlobalDateRange("/reports/cash-flow/mom")).toBe(false)
     expect(pathnameUsesGlobalDateRange("/about")).toBe(false)
   })
+
+  it("shows on credit card and liability analytics routes", () => {
+    expect(pathnameUsesGlobalDateRange("/manage/payment-run/cards")).toBe(true)
+    expect(pathnameUsesGlobalDateRange("/manage/payment-run/cards/3")).toBe(true)
+    expect(pathnameUsesGlobalDateRange("/manage/liabilities")).toBe(true)
+    expect(pathnameUsesGlobalDateRange("/manage/liabilities/42")).toBe(true)
+  })
 })

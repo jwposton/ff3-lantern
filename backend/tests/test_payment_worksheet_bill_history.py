@@ -10,6 +10,7 @@ from payment_worksheet_bill_history import (
     bill_history_stats_month_range,
     compute_bill_history_stats,
     compute_trailing_monthly_average,
+    parse_history_query_date_range,
     rows_have_current_month_payment,
 )
 
@@ -24,6 +25,20 @@ def test_bill_history_date_window_year_rollover():
     start, end = bill_history_date_window(date(2026, 2, 15))
     assert start == "2025-02-01"
     assert end == "2026-02-15"
+
+
+def test_parse_history_query_date_range_valid():
+    assert parse_history_query_date_range("2026-01-01", "2026-06-30") == (
+        "2026-01-01",
+        "2026-06-30",
+    )
+
+
+def test_parse_history_query_date_range_rejects_inverted():
+    import pytest
+
+    with pytest.raises(ValueError, match="on or before"):
+        parse_history_query_date_range("2026-06-30", "2026-01-01")
 
 
 def test_bill_history_stats_month_range_when_current_month_has_payment():

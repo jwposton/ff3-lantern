@@ -15,6 +15,7 @@ import {
   creditCardHistoryQueryKey,
   useCreditCardHistory,
 } from "@/hooks/useCreditCardHistory"
+import { useDateRange } from "@/context/DateRangeContext"
 import { useHealth } from "@/hooks/useHealth"
 import {
   paymentRunQueryKey,
@@ -31,6 +32,7 @@ import {
 export function CreditCardDetailPage() {
   const { accountId } = useParams()
   const month = currentMonthKey()
+  const { committedRange } = useDateRange()
   const queryClient = useQueryClient()
   const { data: health, isPending: healthPending } = useHealth()
   const { data: worksheet, isPending: worksheetPending } =
@@ -40,7 +42,7 @@ export function CreditCardDetailPage() {
     isPending: historyPending,
     isError: historyError,
     refetch: refetchHistory,
-  } = useCreditCardHistory(accountId ?? null)
+  } = useCreditCardHistory(accountId ?? null, committedRange)
   const [cardSheetOpen, setCardSheetOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -63,7 +65,7 @@ export function CreditCardDetailPage() {
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
     if (accountId) {
       await queryClient.invalidateQueries({
-        queryKey: creditCardHistoryQueryKey(accountId),
+        queryKey: creditCardHistoryQueryKey(accountId, committedRange),
       })
     }
   }

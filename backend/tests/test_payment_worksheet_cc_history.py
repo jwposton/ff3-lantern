@@ -140,6 +140,25 @@ def test_stats_aggregate_by_month():
     assert june["payments"] == "300.00"
 
 
+def test_stats_respect_custom_date_range():
+    rows = splits_to_cc_history_transactions(
+        _fixture_splits(),
+        "3",
+        interest_cats=["Credit Card Interest"],
+        fee_cats=["Late Fee(s)"],
+    )
+    stats = compute_cc_history_stats(
+        rows,
+        today=date(2026, 7, 15),
+        range_start="2026-07-01",
+        range_end="2026-07-15",
+    )
+    assert stats["stats_window"] == {"start": "2026-07", "end": "2026-07"}
+    assert stats["totals"]["charges"] == "89.99"
+    assert stats["totals"]["payments"] == "500.00"
+    assert len(stats["monthly"]) == 1
+
+
 def test_payment_excluded_from_charges():
     rows = splits_to_cc_history_transactions(
         _fixture_splits(),

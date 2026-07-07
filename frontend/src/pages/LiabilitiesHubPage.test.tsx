@@ -4,6 +4,7 @@ import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 
+import { DateRangeProvider } from "@/context/DateRangeContext"
 import { LiabilitiesHubPage } from "./LiabilitiesHubPage"
 
 function TestProviders({ children }: { children: ReactNode }) {
@@ -13,13 +14,15 @@ function TestProviders({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/manage/liabilities"]}>
-        <Routes>
-          <Route path="/manage/liabilities" element={children} />
-          <Route
-            path="/manage/liabilities/:accountId"
-            element={<div>Liability detail</div>}
-          />
-        </Routes>
+        <DateRangeProvider>
+          <Routes>
+            <Route path="/manage/liabilities" element={children} />
+            <Route
+              path="/manage/liabilities/:accountId"
+              element={<div>Liability detail</div>}
+            />
+          </Routes>
+        </DateRangeProvider>
       </MemoryRouter>
     </QueryClientProvider>
   )

@@ -31,6 +31,18 @@ export function previousMonthToDate(now: Date = referenceDate()): DateRange {
   return [formatDateLocal(startDate), end]
 }
 
+export function last12Months(now: Date = referenceDate()): DateRange {
+  const end = formatDateLocal(now)
+  const startDate = new Date(now.getFullYear(), now.getMonth() - 12, now.getDate())
+  return [formatDateLocal(startDate), end]
+}
+
+export function last24Months(now: Date = referenceDate()): DateRange {
+  const end = formatDateLocal(now)
+  const startDate = new Date(now.getFullYear(), now.getMonth() - 24, now.getDate())
+  return [formatDateLocal(startDate), end]
+}
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 export function validateDateString(value: string): boolean {
