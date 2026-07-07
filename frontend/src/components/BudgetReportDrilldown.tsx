@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { OmniRow } from "@/types/NormalizedTransaction"
 import { filterRowsForDrilldown } from "@/lib/barChart"
+import type { PaymentRail } from "@/lib/spendingRail"
 import {
   buildDrilldownFireflySearch,
   openFireflySearch,
@@ -23,6 +24,7 @@ export type BudgetReportDrilldownProps = {
   start: string
   end: string
   budget: string
+  paymentRail?: PaymentRail
   chartType: "bar" | "line"
   useCashFlowLabels?: boolean
   yAxisName: string
@@ -35,6 +37,7 @@ export function BudgetReportDrilldown({
   start,
   end,
   budget,
+  paymentRail,
   chartType,
   useCashFlowLabels = false,
   yAxisName,
@@ -51,7 +54,7 @@ export function BudgetReportDrilldown({
     setSelectedCategory(null)
     setSelectedPayee(null)
     setPageIndex(0)
-  }, [budget, start, end])
+  }, [budget, paymentRail, start, end])
 
   useEffect(() => {
     setSelectedPayee(null)
@@ -65,10 +68,11 @@ export function BudgetReportDrilldown({
   const tableFilter = useMemo(
     () => ({
       budget,
+      ...(paymentRail != null ? { paymentRail } : {}),
       ...(selectedCategory != null ? { category: selectedCategory } : {}),
       ...(selectedPayee != null ? { payee: selectedPayee } : {}),
     }),
-    [budget, selectedCategory, selectedPayee],
+    [budget, paymentRail, selectedCategory, selectedPayee],
   )
 
   const tableRows = useMemo(
@@ -133,6 +137,7 @@ export function BudgetReportDrilldown({
         start={start}
         end={end}
         budget={budget}
+        paymentRail={paymentRail}
         stackField="category"
         chartType={chartType}
         useCashFlowLabels={useCashFlowLabels}
@@ -149,6 +154,7 @@ export function BudgetReportDrilldown({
           end={end}
           budget={budget}
           category={selectedCategory}
+          paymentRail={paymentRail}
           stackField="payee"
           chartType={chartType}
           useCashFlowLabels={useCashFlowLabels}

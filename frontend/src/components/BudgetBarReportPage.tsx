@@ -4,10 +4,21 @@ import { useSearchParams } from "react-router-dom"
 import { BudgetReportDrilldown } from "@/components/BudgetReportDrilldown"
 import { ReportPageHeader } from "@/components/ReportPageHeader"
 import { SpendingBarChart } from "@/components/SpendingBarChart"
+import { SpendingBarViewControls } from "@/components/SpendingBarViewControls"
 import { Button } from "@/components/ui/button"
 import { useDateRange } from "@/context/DateRangeContext"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
-import { buildBarChartData, buildMonthlyIncomeTotals } from "@/lib/barChart"
+import {
+  buildBarChartData,
+  buildMonthlyIncomeTotals,
+  buildSplitBarChartData,
+} from "@/lib/barChart"
+import type { PaymentRail } from "@/lib/spendingRail"
+import {
+  parseSpendingBarViewMode,
+  spendingBarViewSearchParam,
+  type SpendingBarViewMode,
+} from "@/lib/spendingBarView"
 import type { OmniRow } from "@/types/NormalizedTransaction"
 
 export type BudgetBarReportPageProps = {
@@ -17,6 +28,8 @@ export type BudgetBarReportPageProps = {
   emptyMessage: string
   yAxisName: string
   useCashFlowLabels?: boolean
+  /** Enables Combined vs Cash & Credit view on the spending bar chart. */
+  enablePaymentRailSplit?: boolean
 }
 
 export function BudgetBarReportPage({
@@ -26,6 +39,7 @@ export function BudgetBarReportPage({
   emptyMessage,
   yAxisName,
   useCashFlowLabels = false,
+  enablePaymentRailSplit = false,
 }: BudgetBarReportPageProps) {
   const { committedRange } = useDateRange()
   const { start: committedStart, end: committedEnd } = committedRange
@@ -34,11 +48,26 @@ export function BudgetBarReportPage({
     useNormalizedTransactions(committedStart, committedEnd)
 
   const [selectedBudget, setSelectedBudget] = useState<string | null>(null)
+  const [selectedPaymentRail, setSelectedPaymentRail] =
+    useState<PaymentRail | null>(null)
+  const [viewMode, setViewMode] = useState<SpendingBarViewMode>("combined")
   const prevRangeRef = useRef({ start: committedStart, end: committedEnd })
 
   useEffect(() => {
     setSelectedBudget(searchParams.get("budget"))
-  }, [searchParams])
+    const parsedView = enablePaymentRailSplit
+      ? parseSpendingBarViewMode(searchParams.get("view"))
+      : "combined"
+    if (enablePaymentRailSplit) {
+      setViewMode(parsedView)
+    }
+    const rail = searchParams.get("rail")
+    setSelectedPaymentRail(
+      parsedView === "split" && (rail === "cash" || rail === "credit")
+        ? rail
+        : null,
+    )
+  }, [searchParams, enablePaymentRailSplit])
 
   useEffect(() => {
     const prev = prevRangeRef.current
@@ -46,9 +75,18 @@ export function BudgetBarReportPage({
     prevRangeRef.current = { start: committedStart, end: committedEnd }
 
     setSelectedBudget(null)
-    if (searchParams.has("budget")) {
-      const next = new URLSearchParams(searchParams)
+    setSelectedPaymentRail(null)
+    const next = new URLSearchParams(searchParams)
+    let changed = false
+    if (next.has("budget")) {
       next.delete("budget")
+      changed = true
+    }
+    if (next.has("rail")) {
+      next.delete("rail")
+      changed = true
+    }
+    if (changed) {
       setSearchParams(next, { replace: true })
     }
   }, [committedStart, committedEnd, searchParams, setSearchParams])
@@ -67,10 +105,67 @@ export function BudgetBarReportPage({
     [sliceRows, committedStart, committedEnd, useCashFlowLabels],
   )
 
+  const splitChartData = useMemo(
+    () =>
+      buildSplitBarChartData(sliceRows, {
+        start: committedStart,
+        end: committedEnd,
+        useCashFlowLabels,
+      }),
+    [sliceRows, committedStart, committedEnd, useCashFlowLabels],
+  )
+
   const monthlyIncome = useMemo(
     () => buildMonthlyIncomeTotals(allRows, committedStart, committedEnd),
     [allRows, committedStart, committedEnd],
   )
+
+  function syncDrillToUrl(budget: string | null, rail: PaymentRail | null) {
+    const next = new URLSearchParams(searchParams)
+    if (budget != null) {
+      next.set("budget", budget)
+    } else {
+      next.delete("budget")
+    }
+    if (rail != null) {
+      next.set("rail", rail)
+    } else {
+      next.delete("rail")
+    }
+    setSearchParams(next, { replace: true })
+  }
+
+  function handleBudgetSelect(budget: string, paymentRail?: PaymentRail) {
+    setSelectedBudget(budget)
+    setSelectedPaymentRail(paymentRail ?? null)
+    syncDrillToUrl(budget, paymentRail ?? null)
+  }
+
+  function handleClearBudget() {
+    setSelectedBudget(null)
+    setSelectedPaymentRail(null)
+    syncDrillToUrl(null, null)
+  }
+
+  function handleViewModeChange(mode: SpendingBarViewMode) {
+    setViewMode(mode)
+    if (mode === "combined") {
+      setSelectedPaymentRail(null)
+    }
+    const next = new URLSearchParams(searchParams)
+    const viewParam = spendingBarViewSearchParam(mode)
+    if (viewParam != null) {
+      next.set("view", viewParam)
+    } else {
+      next.delete("view")
+    }
+    if (mode === "combined") {
+      next.delete("rail")
+    }
+    setSearchParams(next, { replace: true })
+  }
+
+  const activeViewMode = enablePaymentRailSplit ? viewMode : "combined"
 
   return (
     <div className="space-y-8">
@@ -103,25 +198,37 @@ export function BudgetBarReportPage({
       ) : (
         <div className="space-y-8">
           <SpendingBarChart
+            viewMode={activeViewMode}
             chartData={budgetChartData}
+            splitChartData={splitChartData}
             loading={isPending}
             emptyMessage={emptyMessage}
-            onSelect={setSelectedBudget}
+            onSelect={handleBudgetSelect}
             chartTitle={mainChartTitle}
             yAxisName={yAxisName}
             monthlyIncome={monthlyIncome}
+            headerControls={
+              enablePaymentRailSplit ? (
+                <SpendingBarViewControls
+                  viewMode={activeViewMode}
+                  onViewModeChange={handleViewModeChange}
+                  disabled={isPending}
+                />
+              ) : undefined
+            }
           />
           {selectedBudget != null && (
             <BudgetReportDrilldown
               rows={sliceRows}
               budget={selectedBudget}
+              paymentRail={selectedPaymentRail ?? undefined}
               start={committedStart}
               end={committedEnd}
               chartType="bar"
               useCashFlowLabels={useCashFlowLabels}
               yAxisName={yAxisName}
               fireflyBaseUrl={data?.firefly_base_url}
-              onClearBudget={() => setSelectedBudget(null)}
+              onClearBudget={handleClearBudget}
             />
           )}
         </div>

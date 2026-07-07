@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Spending bar Cash & Credit view** — switch the Spending bar chart between Combined (default) and Cash & Credit to compare bank vs card spending side by side per month; bar clicks drill by budget and rail (category/payee subcharts respect and label the rail), legend clicks drill combined budget totals; switching back to Combined clears a stale `rail` URL param (#111)
+
 ## [2.5.1] - 2026-07-06
 
 ### Fixed

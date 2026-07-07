@@ -4,6 +4,11 @@ import {
   cashFlowBudgetLabel,
   cashFlowCategoryLabel,
 } from "@/lib/cashFlowLabels"
+import {
+  isSpendingCashRail,
+  isSpendingCreditRail,
+  type PaymentRail,
+} from "@/lib/spendingRail"
 import { isCashFlowInflow } from "@/lib/spending"
 import { enumerateMonths, monthKey } from "@/lib/trends"
 
@@ -13,6 +18,13 @@ export type BarChartData = {
   months: string[]
   stacks: string[]
   data: Record<string, Record<string, number>>
+}
+
+export type SplitBarChartData = {
+  months: string[]
+  stacks: string[]
+  cashData: Record<string, Record<string, number>>
+  creditData: Record<string, Record<string, number>>
 }
 
 export type TrendLineSeries = {
@@ -34,6 +46,7 @@ export type DrilldownFilter = {
   budget?: string
   category?: string
   payee?: string
+  paymentRail?: PaymentRail
 }
 
 export type StackDimension = "budget" | "category" | "payee"
@@ -105,6 +118,12 @@ export function filterRowsForDrilldown(
     ) {
       return false
     }
+    if (filter.paymentRail === "cash" && !isSpendingCashRail(row)) {
+      return false
+    }
+    if (filter.paymentRail === "credit" && !isSpendingCreditRail(row)) {
+      return false
+    }
     return true
   })
 }
@@ -152,6 +171,72 @@ export function buildBarChartData(
   }
 
   return { months, stacks, data }
+}
+
+export function buildSplitBarChartData(
+  rows: OmniRow[],
+  options: BuildBarChartOptions,
+): SplitBarChartData {
+  const months = enumerateMonths(options.start, options.end)
+  const useCashFlowLabels = options.useCashFlowLabels === true
+
+  let filtered = rows
+  if (options.filter) {
+    filtered = filterRowsForDrilldown(filtered, options.filter, useCashFlowLabels)
+  }
+
+  const stackTotals = new Map<string, number>()
+  for (const row of filtered) {
+    const stack = stackLabel(row, "budget", useCashFlowLabels)
+    stackTotals.set(
+      stack,
+      (stackTotals.get(stack) ?? 0) + parseAmount(row.amount),
+    )
+  }
+
+  const stacks = [...stackTotals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([name]) => name)
+
+  const emptyMonthStacks = (): Record<string, number> =>
+    Object.fromEntries(stacks.map((stack) => [stack, 0]))
+
+  const cashData: Record<string, Record<string, number>> = {}
+  const creditData: Record<string, Record<string, number>> = {}
+  for (const month of months) {
+    cashData[month] = emptyMonthStacks()
+    creditData[month] = emptyMonthStacks()
+  }
+
+  for (const row of filtered) {
+    const month = monthKey(row.date)
+    if (!cashData[month]) continue
+    const stack = stackLabel(row, "budget", useCashFlowLabels)
+    if (cashData[month][stack] === undefined) continue
+    const amount = parseAmount(row.amount)
+    if (isSpendingCashRail(row)) {
+      cashData[month][stack] += amount
+    } else if (isSpendingCreditRail(row)) {
+      creditData[month][stack] += amount
+    }
+  }
+
+  return { months, stacks, cashData, creditData }
+}
+
+function hasNonZeroSplitStacks(chartData: SplitBarChartData): boolean {
+  const { months, stacks, cashData, creditData } = chartData
+  return stacks.some((stack) =>
+    months.some(
+      (month) =>
+        (cashData[month]?.[stack] ?? 0) > 0 ||
+        (creditData[month]?.[stack] ?? 0) > 0,
+    ),
+  )
+}
+
+export function splitBarChartIsEmpty(chartData: SplitBarChartData): boolean {
+  return !hasNonZeroSplitStacks(chartData)
 }
 
 /** Monthly bank inflow totals aligned with {@link enumerateMonths} for chart overlays. */

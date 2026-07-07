@@ -4,10 +4,11 @@ import type { EChartsOption } from "echarts"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import type { BarChartData } from "@/lib/barChart"
+import type { BarChartData, SplitBarChartData } from "@/lib/barChart"
 import {
   INCOME_LINE_COLOR,
   INCOME_LINE_LABEL,
+  splitBarChartIsEmpty,
 } from "@/lib/barChart"
 import { CHART_COLORS } from "@/lib/chartColors"
 import { categoryAxisColumnStripes } from "@/lib/chartStripes"
@@ -15,15 +16,23 @@ import {
   chartGridWithVerticalLegend,
   verticalRightLegend,
 } from "@/lib/chartLegend"
+import type { PaymentRail } from "@/lib/spendingRail"
+import type { SpendingBarViewMode } from "@/lib/spendingBarView"
 import { formatCurrency } from "@/lib/spending"
 
+const CASH_STACK = "cash"
+const CREDIT_STACK = "credit"
+
 type SpendingBarChartProps = {
+  viewMode?: SpendingBarViewMode
   chartData: BarChartData
+  splitChartData?: SplitBarChartData
   loading: boolean
   emptyMessage: string
-  onSelect: (budget: string) => void
+  onSelect: (budget: string, paymentRail?: PaymentRail) => void
   chartTitle?: string
   yAxisName?: string
+  headerControls?: React.ReactNode
   /** Monthly bank inflow totals (same length as chartData.months). Enables income line overlay. */
   monthlyIncome?: number[]
 }
@@ -79,6 +88,44 @@ function incomeAwareItemTooltipFormatter(
   }
 }
 
+function splitItemTooltipFormatter(
+  monthlyIncome: number[],
+  incomeVisible: boolean,
+  stackCount: number,
+  railLabel: (rail: PaymentRail) => string,
+) {
+  return (params: unknown): string => {
+    const item = Array.isArray(params) ? params[0] : params
+    if (!item || typeof item !== "object") return ""
+    const record = item as {
+      seriesName?: string
+      name?: string
+      value?: unknown
+      dataIndex?: number
+      seriesIndex?: number
+    }
+    const period = String(record.name ?? "")
+    const rail =
+      typeof record.seriesIndex === "number"
+        ? railFromSplitSeriesIndex(record.seriesIndex, stackCount)
+        : null
+    const lines = [
+      rail != null ? railLabel(rail) : "",
+      `${record.seriesName}: ${formatCurrency(tooltipValue(record.value))}`,
+    ].filter(Boolean)
+    if (
+      incomeVisible &&
+      record.seriesName !== INCOME_LINE_LABEL &&
+      typeof record.dataIndex === "number"
+    ) {
+      lines.push(
+        `${INCOME_LINE_LABEL}: ${formatCurrency(monthlyIncome[record.dataIndex] ?? 0)}`,
+      )
+    }
+    return `${period}\n${lines.join("\n")}`
+  }
+}
+
 function hasNonZeroStacks(chartData: BarChartData): boolean {
   const { months, stacks, data } = chartData
   return stacks.some((stack) =>
@@ -86,34 +133,70 @@ function hasNonZeroStacks(chartData: BarChartData): boolean {
   )
 }
 
-export function SpendingBarChart({
-  chartData,
-  loading,
-  emptyMessage,
-  onSelect,
-  chartTitle = "Spending by month",
-  yAxisName = "Spending",
-  monthlyIncome,
-}: SpendingBarChartProps) {
-  const { months, stacks, data } = chartData
-  const showIncomeLine = monthlyIncome != null
-  const isEmpty = !loading && !hasNonZeroStacks(chartData)
-  const chartRef = useRef<ReactECharts>(null)
-  const [incomeLegendVisible, setIncomeLegendVisible] = useState(true)
+function railFromSplitSeriesIndex(
+  seriesIndex: number,
+  stackCount: number,
+): PaymentRail {
+  return seriesIndex < stackCount ? "cash" : "credit"
+}
 
-  const option = useMemo((): EChartsOption => {
+function buildCombinedSeries(
+  chartData: BarChartData,
+): Array<Record<string, unknown>> {
+  const { months, stacks, data } = chartData
+  const monthlyTotals = months.map((month) =>
+    stacks.reduce((sum, stack) => sum + (data[month]?.[stack] ?? 0), 0),
+  )
+
+  return stacks.map((stack, idx) => {
+    const isTopStack = idx === stacks.length - 1 && stacks.length > 0
+    return {
+      name: stack,
+      type: "bar" as const,
+      stack: "total",
+      barMaxWidth: 38,
+      data: months.map((month) => data[month]?.[stack] ?? 0),
+      itemStyle: {
+        color: CHART_COLORS[idx % CHART_COLORS.length],
+      },
+      emphasis: { focus: "series" as const },
+      ...(isTopStack
+        ? {
+            label: {
+              show: true,
+              position: "top" as const,
+              fontSize: 12,
+              color: "hsl(240 5% 65%)",
+              formatter: (params: { dataIndex: number }) =>
+                formatCurrency(monthlyTotals[params.dataIndex] ?? 0),
+              offset: [0, -4],
+            },
+          }
+        : {}),
+    }
+  })
+}
+
+function buildSplitSeries(
+  splitChartData: SplitBarChartData,
+): Array<Record<string, unknown>> {
+  const { months, stacks, cashData, creditData } = splitChartData
+  const series: Array<Record<string, unknown>> = []
+
+  for (const rail of [CASH_STACK, CREDIT_STACK] as const) {
+    const railData = rail === CASH_STACK ? cashData : creditData
     const monthlyTotals = months.map((month) =>
-      stacks.reduce((sum, stack) => sum + (data[month]?.[stack] ?? 0), 0),
+      stacks.reduce((sum, stack) => sum + (railData[month]?.[stack] ?? 0), 0),
     )
 
-    const echartsSeries = stacks.map((stack, idx) => {
+    stacks.forEach((stack, idx) => {
       const isTopStack = idx === stacks.length - 1 && stacks.length > 0
-      return {
+      series.push({
         name: stack,
         type: "bar" as const,
-        stack: "total",
-        barMaxWidth: 38,
-        data: months.map((month) => data[month]?.[stack] ?? 0),
+        stack: rail,
+        barMaxWidth: 28,
+        data: months.map((month) => railData[month]?.[stack] ?? 0),
         itemStyle: {
           color: CHART_COLORS[idx % CHART_COLORS.length],
         },
@@ -123,7 +206,7 @@ export function SpendingBarChart({
               label: {
                 show: true,
                 position: "top" as const,
-                fontSize: 12,
+                fontSize: 11,
                 color: "hsl(240 5% 65%)",
                 formatter: (params: { dataIndex: number }) =>
                   formatCurrency(monthlyTotals[params.dataIndex] ?? 0),
@@ -131,8 +214,41 @@ export function SpendingBarChart({
               },
             }
           : {}),
-      }
+      })
     })
+  }
+
+  return series
+}
+
+export function SpendingBarChart({
+  viewMode = "combined",
+  chartData,
+  splitChartData,
+  loading,
+  emptyMessage,
+  onSelect,
+  chartTitle = "Spending by month",
+  yAxisName = "Spending",
+  headerControls,
+  monthlyIncome,
+}: SpendingBarChartProps) {
+  const isSplit = viewMode === "split" && splitChartData != null
+  const { months, stacks } = isSplit ? splitChartData : chartData
+  const showIncomeLine = monthlyIncome != null
+  const isEmpty =
+    !loading &&
+    (isSplit
+      ? splitBarChartIsEmpty(splitChartData)
+      : !hasNonZeroStacks(chartData))
+  const chartRef = useRef<ReactECharts>(null)
+  const [incomeLegendVisible, setIncomeLegendVisible] = useState(true)
+  const stackCount = stacks.length
+
+  const option = useMemo((): EChartsOption => {
+    const echartsSeries = isSplit
+      ? buildSplitSeries(splitChartData)
+      : buildCombinedSeries(chartData)
 
     const legendLabels = showIncomeLine
       ? [...stacks, INCOME_LINE_LABEL]
@@ -158,7 +274,17 @@ export function SpendingBarChart({
       tooltip: {
         trigger: "item",
         formatter: showIncomeLine
-          ? incomeAwareItemTooltipFormatter(monthlyIncome, incomeLegendVisible)
+          ? isSplit
+            ? splitItemTooltipFormatter(
+                monthlyIncome,
+                incomeLegendVisible,
+                stackCount,
+                (rail) => (rail === "cash" ? "Cash" : "Credit"),
+              )
+            : incomeAwareItemTooltipFormatter(
+                monthlyIncome,
+                incomeLegendVisible,
+              )
           : itemTooltipFormatter,
       },
       legend: {
@@ -185,14 +311,32 @@ export function SpendingBarChart({
       },
       series: [...echartsSeries, ...incomeSeries],
     }
-  }, [months, stacks, data, yAxisName, showIncomeLine, monthlyIncome, incomeLegendVisible])
+  }, [
+    isSplit,
+    splitChartData,
+    chartData,
+    months,
+    stacks,
+    yAxisName,
+    showIncomeLine,
+    monthlyIncome,
+    incomeLegendVisible,
+    stackCount,
+  ])
 
   const handleChartClick = useCallback(
-    (params: { seriesName?: string }) => {
+    (params: { seriesName?: string; seriesIndex?: number }) => {
       if (!params?.seriesName || params.seriesName === INCOME_LINE_LABEL) return
+      if (isSplit && typeof params.seriesIndex === "number") {
+        onSelect(
+          params.seriesName,
+          railFromSplitSeriesIndex(params.seriesIndex, stackCount),
+        )
+        return
+      }
       onSelect(params.seriesName)
     },
-    [onSelect],
+    [onSelect, isSplit, stackCount],
   )
 
   const handleLegendSelectChanged = useCallback(
@@ -234,8 +378,9 @@ export function SpendingBarChart({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
         <CardTitle className="text-base">{chartTitle}</CardTitle>
+        {headerControls}
       </CardHeader>
       <CardContent>
         {isEmpty ? (

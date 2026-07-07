@@ -10,6 +10,7 @@ import {
   buildBarChartData,
   type StackDimension,
 } from "@/lib/barChart"
+import { paymentRailLabel, type PaymentRail } from "@/lib/spendingRail"
 import { CHART_COLORS } from "@/lib/chartColors"
 import { categoryAxisColumnStripes } from "@/lib/chartStripes"
 import {
@@ -24,6 +25,7 @@ export type BudgetDrilldownChartProps = {
   end: string
   budget: string
   category?: string | null
+  paymentRail?: PaymentRail
   stackField: Extract<StackDimension, "category" | "payee">
   chartType: "bar" | "line"
   useCashFlowLabels?: boolean
@@ -70,6 +72,7 @@ export function BudgetDrilldownChart({
   end,
   budget,
   category = null,
+  paymentRail,
   stackField,
   chartType,
   useCashFlowLabels = false,
@@ -88,23 +91,31 @@ export function BudgetDrilldownChart({
         filter: {
           budget,
           ...(category != null ? { category } : {}),
+          ...(paymentRail != null ? { paymentRail } : {}),
         },
         useCashFlowLabels,
       }),
-    [rows, start, end, budget, category, stackField, useCashFlowLabels],
+    [rows, start, end, budget, category, paymentRail, stackField, useCashFlowLabels],
   )
 
   const isEmpty = !hasNonZeroStacks(months, stacks, data)
 
+  const railSuffix =
+    paymentRail != null ? ` · ${paymentRailLabel(paymentRail)}` : ""
+
   const title =
     stackField === "category"
-      ? `${budget} by category`
-      : `${category} by payee`
+      ? `${budget} by category${railSuffix}`
+      : `${category} by payee${railSuffix}`
 
   const emptyMessage =
     stackField === "category"
-      ? "No category spending for this budget in this date range"
-      : "No payee spending for this category in this date range"
+      ? paymentRail != null
+        ? `No ${paymentRailLabel(paymentRail).toLowerCase()} category spending for this budget in this date range`
+        : "No category spending for this budget in this date range"
+      : paymentRail != null
+        ? `No ${paymentRailLabel(paymentRail).toLowerCase()} payee spending for this category in this date range`
+        : "No payee spending for this category in this date range"
 
   const option = useMemo((): EChartsOption => {
     if (chartType === "line") {
