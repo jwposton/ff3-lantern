@@ -84,6 +84,7 @@ export function shouldHighlightCreditCardDue(
 export type CreditCardSubtotalInput = {
   credit_limit: string | null
   apr_percent: string | null
+  effective_apr_percent?: string | null
   owed: string
   last_payment_amount: string
   new_total: string
@@ -277,7 +278,8 @@ export function computeCreditCardSubtotals(
   for (const row of rows) {
     const rowOwed = Math.abs(parseAmount(row.owed))
     const rowLimit = parseAmount(row.credit_limit)
-    const rowApr = parseAmount(row.apr_percent)
+    const rateForWeight = row.effective_apr_percent ?? row.apr_percent
+    const rowApr = parseAmount(rateForWeight)
 
     owed += rowOwed
     creditLimit += rowLimit
@@ -288,7 +290,7 @@ export function computeCreditCardSubtotals(
     plannedAmount += parseAmount(row.planned_amount)
     if (row.paid_at) paidCount += 1
 
-    if (rowOwed > 0 && row.apr_percent && Number.isFinite(rowApr)) {
+    if (rowOwed > 0 && rateForWeight && Number.isFinite(rowApr)) {
       aprWeightedSum += rowOwed * rowApr
       aprWeightTotal += rowOwed
     }

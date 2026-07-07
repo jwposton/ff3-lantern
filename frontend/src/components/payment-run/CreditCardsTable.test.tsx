@@ -1,9 +1,15 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import type { ReactElement } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
 
 import { CreditCardsTable } from "./CreditCardsTable"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import type { CreditCardRow } from "@/lib/paymentRunApi"
+
+function renderTable(ui: ReactElement) {
+  return render(<TooltipProvider>{ui}</TooltipProvider>)
+}
 
 const BASE_ROW: CreditCardRow = {
   account_id: "42",
@@ -64,7 +70,7 @@ describe("CreditCardsTable", () => {
   })
 
   it("shows expand control only when new transactions exist", () => {
-    render(
+    renderTable(
       <CreditCardsTable
         rows={[
           BASE_ROW,
@@ -97,7 +103,7 @@ describe("CreditCardsTable", () => {
   })
 
   it("expands inline activity table for New transactions", () => {
-    render(
+    renderTable(
       <CreditCardsTable
         rows={[BASE_ROW]}
         buckets={[]}
@@ -128,7 +134,7 @@ describe("CreditCardsTable", () => {
   })
 
   it("sorts new transactions by budget then category by default", () => {
-    render(
+    renderTable(
       <CreditCardsTable
         rows={[
           {
@@ -191,7 +197,7 @@ describe("CreditCardsTable", () => {
   })
 
   it("sorts new transactions by amount when Amount header is clicked", () => {
-    render(
+    renderTable(
       <CreditCardsTable
         rows={[BASE_ROW]}
         buckets={[]}
@@ -221,20 +227,72 @@ describe("CreditCardsTable", () => {
 
   it("links per-row Manage to card detail deep link, not cards hub", () => {
     render(
-      <MemoryRouter>
-        <CreditCardsTable
+      <TooltipProvider>
+        <MemoryRouter>
+          <CreditCardsTable
           rows={[BASE_ROW]}
           buckets={[]}
           month="2026-07"
           onPlannedBlur={async () => {}}
           onPaidChange={async () => {}}
         />
-      </MemoryRouter>,
+        </MemoryRouter>
+      </TooltipProvider>,
     )
 
     const manageLink = screen.getByRole("link", { name: "Manage Chase VISA" })
     expect(manageLink.getAttribute("href")).toBe(
       "/manage/payment-run/cards/42",
     )
+  })
+
+  it("shows promo tooltip with rate and end date when promo_active", () => {
+    renderTable(
+      <CreditCardsTable
+        rows={[
+          {
+            ...BASE_ROW,
+            promo_active: true,
+            special_apr_percent: "0",
+            special_apr_end: "2026-09-30",
+            effective_apr_percent: "0",
+          },
+        ]}
+        buckets={[]}
+        month="2026-07"
+        onPlannedBlur={async () => {}}
+        onPaidChange={async () => {}}
+        onEditDetails={() => {}}
+      />,
+    )
+
+    expect(screen.getByTestId("apr-promo-emphasis").textContent).toBe("24.99%")
+    expect(screen.getByTestId("apr-promo-tooltip-trigger").getAttribute("aria-label")).toBe(
+      "0% until 2026-09-30",
+    )
+  })
+
+  it("renders plain APR without promo accent when promo_active is false", () => {
+    renderTable(
+      <CreditCardsTable
+        rows={[
+          {
+            ...BASE_ROW,
+            promo_active: false,
+            special_apr_percent: "0",
+            special_apr_start: "2026-07-01",
+            special_apr_end: "2026-09-30",
+          },
+        ]}
+        buckets={[]}
+        month="2026-06"
+        onPlannedBlur={async () => {}}
+        onPaidChange={async () => {}}
+        onEditDetails={() => {}}
+      />,
+    )
+
+    expect(screen.queryByTestId("apr-promo-emphasis")).toBeNull()
+    expect(screen.queryByTestId("apr-promo-tooltip-trigger")).toBeNull()
   })
 })

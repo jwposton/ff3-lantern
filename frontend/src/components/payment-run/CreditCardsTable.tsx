@@ -21,6 +21,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { formatDisplayAmount, formatDisplayDate } from "@/lib/formatDisplay"
 import { buildFireflyAccountUrl, buildFireflyTransactionUrl } from "@/lib/fireflyLinks"
 import {
@@ -371,6 +376,56 @@ function NewActivitySubTable({
   )
 }
 
+function formatPromoTooltipCopy(
+  specialAprPercent: string | null | undefined,
+  specialAprEnd: string | null | undefined,
+): string | null {
+  if (!specialAprPercent || !specialAprEnd) return null
+  return `${formatInterestPercent(specialAprPercent)} until ${specialAprEnd}`
+}
+
+function AprCell({ row }: { row: CreditCardRow }) {
+  const displayApr = formatInterestPercent(row.apr_percent)
+
+  if (!row.promo_active) {
+    return <>{displayApr}</>
+  }
+
+  const tooltipCopy = formatPromoTooltipCopy(
+    row.special_apr_percent,
+    row.special_apr_end,
+  )
+
+  const emphasizedApr = (
+    <span
+      className="inline-block rounded-sm px-1 ring-1 ring-amber-500/30"
+      data-testid="apr-promo-emphasis"
+    >
+      {displayApr}
+    </span>
+  )
+
+  if (!tooltipCopy) {
+    return emphasizedApr
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={tooltipCopy}
+          data-testid="apr-promo-tooltip-trigger"
+        >
+          {emphasizedApr}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{tooltipCopy}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function CreditCardsTable({
   rows,
   buckets,
@@ -623,7 +678,7 @@ export function CreditCardsTable({
                       {formatPaymentDueDay(row.payment_due_day)}
                     </TableCell>
                     <TableCell className={cn("text-right tabular-nums", XL_COL)}>
-                      {formatInterestPercent(row.apr_percent)}
+                      <AprCell row={row} />
                     </TableCell>
                     <TableCell className={cn("text-right tabular-nums", XL_COL)}>
                       {formatUtilPercent(row.owed, row.credit_limit)}

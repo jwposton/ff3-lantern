@@ -74,6 +74,25 @@ describe("paymentRunFormat", () => {
     expect(totals.portfolio_util).toBeCloseTo(26.666, 2)
   })
 
+  it("uses effective_apr_percent for balance-weighted APR when promo active", () => {
+    const totals = computeCreditCardSubtotals([
+      {
+        credit_limit: "10000",
+        apr_percent: "24.99",
+        effective_apr_percent: "0",
+        owed: "1000",
+        last_payment_amount: "0",
+        new_total: "0",
+        interest_accrued: "0",
+        fees: "0",
+        planned_amount: "0",
+        paid_at: null,
+      },
+    ])
+
+    expect(totals.weighted_apr).toBe(0)
+  })
+
   it("treats unset planned amount as soft zero", () => {
     const row = { planned_amount: "0.00", planned_amount_override: false }
     expect(isSoftPlannedAmount(row)).toBe(true)
