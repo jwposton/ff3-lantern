@@ -234,7 +234,7 @@ export function CreditCardSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="sm:max-w-md">
+      <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-md">
         <SheetHeader>
           <SheetTitle>{cardName}</SheetTitle>
           <SheetDescription>
@@ -244,7 +244,7 @@ export function CreditCardSheet({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="space-y-4 px-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4">
           <div className="space-y-1">
             <label className="text-sm font-medium" htmlFor="cc-bucket">
               Cash account
