@@ -455,7 +455,7 @@ describe("BillDiscoverPage", () => {
     )
 
     await waitFor(() => {
-      const link = screen.getByRole("link", { name: "← Payment Worksheet" })
+      const link = screen.getByRole("link", { name: "← Bill Pay Worksheet" })
       expect(link.getAttribute("href")).toBe("/manage/payment-run")
     })
   })

@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useDateRange } from "@/context/DateRangeContext"
 import { useHealth } from "@/hooks/useHealth"
 import { useLoans } from "@/hooks/useLoans"
 import {
@@ -33,6 +34,7 @@ import {
 export function LiabilityDetailPage() {
   const { accountId } = useParams()
   const month = currentMonthKey()
+  const { committedRange } = useDateRange()
   const queryClient = useQueryClient()
   const { data: health, isPending: healthPending } = useHealth()
   const { data: worksheet, isPending: worksheetPending } =
@@ -43,7 +45,7 @@ export function LiabilityDetailPage() {
     isPending: historyPending,
     isError: historyError,
     refetch: refetchHistory,
-  } = useLiabilityHistory(accountId ?? null)
+  } = useLiabilityHistory(accountId ?? null, committedRange)
   const [liabilitySheetOpen, setLiabilitySheetOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -77,7 +79,7 @@ export function LiabilityDetailPage() {
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
     if (accountId) {
       await queryClient.invalidateQueries({
-        queryKey: liabilityHistoryQueryKey(accountId),
+        queryKey: liabilityHistoryQueryKey(accountId, committedRange),
       })
     }
   }

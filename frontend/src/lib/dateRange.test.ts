@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 
 import {
   isValidRange,
+  last12Months,
+  last24Months,
   monthToDate,
   parseStoredRange,
   previousMonthToDate,
@@ -24,6 +26,14 @@ describe("date presets", () => {
 
   it("previousMonthToDate returns first of previous month through today", () => {
     expect(previousMonthToDate(FIXED_NOW)).toEqual(["2024-05-01", "2024-06-15"])
+  })
+
+  it("last12Months returns same day 12 months ago through today", () => {
+    expect(last12Months(FIXED_NOW)).toEqual(["2023-06-15", "2024-06-15"])
+  })
+
+  it("last24Months returns same day 24 months ago through today", () => {
+    expect(last24Months(FIXED_NOW)).toEqual(["2022-06-15", "2024-06-15"])
   })
 })
 

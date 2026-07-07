@@ -91,6 +91,31 @@ def _month_in_stats_range(month_key: str, start_month: str, end_month: str) -> b
     return start_month <= month_key <= end_month
 
 
+def parse_history_query_date_range(start: str, end: str) -> tuple[str, str]:
+    """Validate optional history API date range (max 3 years, YYYY-MM-DD)."""
+    from datetime import datetime
+
+    try:
+        start_dt = datetime.strptime(start, "%Y-%m-%d").date()
+        end_dt = datetime.strptime(end, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError("Dates must be in YYYY-MM-DD format.") from exc
+    if start_dt > end_dt:
+        raise ValueError("start must be on or before end.")
+    if (end_dt - start_dt).days > 1095:
+        raise ValueError("Date range cannot exceed 3 years.")
+    return start, end
+
+
+def date_range_to_stats_window(start: str, end: str) -> tuple[str, str]:
+    """Inclusive YYYY-MM month keys covering a date range."""
+    return start[:7], end[:7]
+
+
+def row_date_in_range(row_date: str, range_start: str, range_end: str) -> bool:
+    return bool(row_date) and range_start <= row_date <= range_end
+
+
 def _month_key_tuple(month_key: str) -> tuple[int, int] | None:
     if len(month_key) != 7 or month_key[4] != "-":
         return None

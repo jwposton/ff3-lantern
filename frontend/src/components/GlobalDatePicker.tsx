@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input"
 import { useDateRange } from "@/context/DateRangeContext"
 import {
   isValidRange,
+  last12Months,
+  last24Months,
   monthToDate,
   previousMonthToDate,
   validateDateString,
@@ -16,6 +18,8 @@ const PRESETS = [
   { label: "MTD", getRange: monthToDate },
   { label: "Prev MTD", getRange: previousMonthToDate },
   { label: "YTD", getRange: yearToDate },
+  { label: "12 Mo", getRange: last12Months },
+  { label: "24 Mo", getRange: last24Months },
 ] as const
 
 function todayString(): string {
@@ -49,7 +53,7 @@ export function GlobalDatePicker() {
             size="sm"
             onClick={() => {
               const [start, end] = getRange()
-              setDraftRange(start, end)
+              applyRange(start, end)
             }}
           >
             {label}

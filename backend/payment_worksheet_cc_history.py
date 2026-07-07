@@ -11,6 +11,8 @@ import app_clock
 from payment_worksheet_bill_history import (
     bill_history_date_window,
     bill_history_stats_month_range,
+    date_range_to_stats_window,
+    row_date_in_range,
     rows_have_current_month_payment,
 )
 from payment_worksheet_cc import classify_cc_activity_category, is_credit_card_payment_flow
@@ -141,16 +143,25 @@ def splits_to_cc_history_transactions(
 def compute_cc_history_stats(
     rows: list[dict[str, Any]],
     today: date | None = None,
+    *,
+    range_start: str | None = None,
+    range_end: str | None = None,
 ) -> dict[str, Any]:
     """Aggregate CC history rows into monthly series and totals."""
     if today is None:
         today = app_clock.today()
-    payment_rows = [row for row in rows if row.get("kind") == "payment"]
-    current_month_has_payment = rows_have_current_month_payment(payment_rows, today)
-    stats_start, stats_end = bill_history_stats_month_range(
-        today,
-        current_month_has_payment=current_month_has_payment,
-    )
+    use_custom_range = range_start is not None and range_end is not None
+    if use_custom_range:
+        stats_start, stats_end = date_range_to_stats_window(range_start, range_end)
+    else:
+        payment_rows = [row for row in rows if row.get("kind") == "payment"]
+        current_month_has_payment = rows_have_current_month_payment(
+            payment_rows, today
+        )
+        stats_start, stats_end = bill_history_stats_month_range(
+            today,
+            current_month_has_payment=current_month_has_payment,
+        )
     monthly: dict[str, dict[str, Decimal]] = defaultdict(
         lambda: {
             "charges": Decimal("0"),
@@ -168,8 +179,14 @@ def compute_cc_history_stats(
         "net_change": Decimal("0"),
     }
     for row in rows:
-        month_key = str(row.get("date") or "")[:7]
+        row_date = str(row.get("date") or "")
+        month_key = row_date[:7]
         if len(month_key) != 7:
+            continue
+        if use_custom_range:
+            if not row_date_in_range(row_date, range_start, range_end):
+                continue
+        elif not _month_in_stats_range(month_key, stats_start, stats_end):
             continue
         kind = row.get("kind")
         amount = _decimal_amount(row.get("amount"))
@@ -182,9 +199,8 @@ def compute_cc_history_stats(
             bucket = "fees"
         else:
             bucket = "charges"
-        if _month_in_stats_range(month_key, stats_start, stats_end):
-            monthly[month_key][bucket] += amount
-            totals[bucket] += amount
+        monthly[month_key][bucket] += amount
+        totals[bucket] += amount
     for month_key, values in monthly.items():
         net = _net_change(values["charges"], values["interest"], values["payments"])
         values["net_change"] = net

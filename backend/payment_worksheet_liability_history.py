@@ -21,6 +21,8 @@ from loan_split_infer import infer_loan_profile, infer_sibling_destinations_by_r
 from payment_worksheet_bill_history import (
     bill_history_date_window,
     bill_history_stats_month_range,
+    date_range_to_stats_window,
+    row_date_in_range,
     rows_have_current_month_payment,
 )
 
@@ -109,15 +111,22 @@ def build_liability_history_transactions(
 def compute_liability_history_stats(
     rows: list[dict[str, Any]],
     today: date | None = None,
+    *,
+    range_start: str | None = None,
+    range_end: str | None = None,
 ) -> dict[str, Any]:
     """Aggregate liability payment rows into monthly series and totals."""
     if today is None:
         today = app_clock.today()
-    current_month_has_payment = rows_have_current_month_payment(rows, today)
-    stats_start, stats_end = bill_history_stats_month_range(
-        today,
-        current_month_has_payment=current_month_has_payment,
-    )
+    use_custom_range = range_start is not None and range_end is not None
+    if use_custom_range:
+        stats_start, stats_end = date_range_to_stats_window(range_start, range_end)
+    else:
+        current_month_has_payment = rows_have_current_month_payment(rows, today)
+        stats_start, stats_end = bill_history_stats_month_range(
+            today,
+            current_month_has_payment=current_month_has_payment,
+        )
     monthly: dict[str, dict[str, Decimal]] = defaultdict(
         lambda: {
             "principal": Decimal("0"),
@@ -132,15 +141,19 @@ def compute_liability_history_stats(
         "total_payment": Decimal("0"),
     }
     for row in rows:
-        month_key = str(row.get("date") or "")[:7]
+        row_date = str(row.get("date") or "")
+        month_key = row_date[:7]
         if len(month_key) != 7:
+            continue
+        if use_custom_range:
+            if not row_date_in_range(row_date, range_start, range_end):
+                continue
+        elif not (stats_start <= month_key <= stats_end):
             continue
         principal = _decimal_amount(row.get("principal"))
         interest = _decimal_amount(row.get("interest"))
         escrow = _decimal_amount(row.get("escrow"))
         total_payment = _decimal_amount(row.get("amount"))
-        if not (stats_start <= month_key <= stats_end):
-            continue
         monthly[month_key]["principal"] += principal
         monthly[month_key]["interest"] += interest
         monthly[month_key]["escrow"] += escrow

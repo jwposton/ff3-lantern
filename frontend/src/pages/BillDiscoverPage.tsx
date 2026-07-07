@@ -211,7 +211,7 @@ export function BillDiscoverPage() {
           to="/manage/payment-run"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Payment Worksheet
+          ← Bill Pay Worksheet
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight">Bill Discovery</h1>
         <p className="text-muted-foreground text-sm">

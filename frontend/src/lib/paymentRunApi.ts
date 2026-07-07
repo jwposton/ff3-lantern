@@ -805,9 +805,16 @@ export async function fetchBillHistory(
 
 export async function fetchCreditCardHistory(
   accountId: string,
+  range?: { start: string; end: string },
 ): Promise<CreditCardHistoryEnvelope> {
+  const params = new URLSearchParams()
+  if (range) {
+    params.set("start", range.start)
+    params.set("end", range.end)
+  }
+  const query = params.toString()
   const res = await fetch(
-    `/api/payment-run/credit-cards/${encodeURIComponent(accountId)}/history`,
+    `/api/payment-run/credit-cards/${encodeURIComponent(accountId)}/history${query ? `?${query}` : ""}`,
   )
   if (!res.ok) {
     await parseError(res, `Failed to fetch credit card history (${res.status})`)
@@ -817,9 +824,16 @@ export async function fetchCreditCardHistory(
 
 export async function fetchLiabilityHistory(
   accountId: string,
+  range?: { start: string; end: string },
 ): Promise<LiabilityHistoryEnvelope> {
+  const params = new URLSearchParams()
+  if (range) {
+    params.set("start", range.start)
+    params.set("end", range.end)
+  }
+  const query = params.toString()
   const res = await fetch(
-    `/api/payment-run/liabilities/${encodeURIComponent(accountId)}/history`,
+    `/api/payment-run/liabilities/${encodeURIComponent(accountId)}/history${query ? `?${query}` : ""}`,
   )
   if (!res.ok) {
     await parseError(res, `Failed to fetch liability history (${res.status})`)

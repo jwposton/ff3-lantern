@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Global date picker on CC and liability analytics** — credit card and liability hub and detail KPI pages use the shell date picker; history APIs accept optional `start`/`end` query params (#122)
+- **Date picker 12 Mo and 24 Mo presets** — rolling 12- and 24-month shortcuts join MTD, Prev MTD, and YTD
+
+### Changed
+
+- **Date picker presets** — MTD, Prev MTD, YTD, 12 Mo, and 24 Mo apply immediately on click; **Apply** is only needed for custom date inputs
+- **Bill Pay Worksheet** — worksheet page title renamed from Payment Worksheet; Bill Discovery back link updated to match
+- **Find bills control** — worksheet header **Find bills** is now an outline button (was a text link)
+
 ## [2.6.0] - 2026-07-07
 
 ### Fixed

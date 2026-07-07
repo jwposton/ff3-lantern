@@ -321,14 +321,14 @@ export function PaymentWorksheetPage() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight">
-                Payment Worksheet
+                Bill Pay Worksheet
               </h1>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
                     className="text-muted-foreground hover:text-foreground inline-flex rounded-sm"
-                    aria-label="Payment worksheet help"
+                    aria-label="Bill pay worksheet help"
                   >
                     <CircleHelp className="size-4" aria-hidden />
                   </button>
@@ -351,12 +351,9 @@ export function PaymentWorksheetPage() {
               >
                 {formatRefreshedAt(data?.refreshed_at)}
               </span>
-              <Link
-                to="/manage/payment-run/discover"
-                className="text-sm font-medium text-primary"
-              >
-                Find bills →
-              </Link>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/manage/payment-run/discover">Find bills</Link>
+              </Button>
               <Button
                 type="button"
                 variant="outline"

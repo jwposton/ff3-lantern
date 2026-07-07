@@ -1785,6 +1785,19 @@ def test_credit_card_history(monkeypatch, client, data_dir, payment_worksheet_en
         assert len(body["transactions"]) == 4
         assert body["transactions"][0]["date"] == "2026-07-14"
         assert body["firefly_base_url"] == "https://firefly.example"
+
+        ranged = client.get(
+            "/api/payment-run/credit-cards/3/history",
+            params={"start": "2026-07-01", "end": "2026-07-15"},
+        )
+        assert ranged.status_code == 200
+        ranged_body = ranged.json()
+        assert ranged_body["window"] == {"start": "2026-07-01", "end": "2026-07-15"}
+        assert ranged_body["stats_window"] == {"start": "2026-07", "end": "2026-07"}
+        assert all(
+            "2026-07-01" <= row["date"] <= "2026-07-15"
+            for row in ranged_body["transactions"]
+        )
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 

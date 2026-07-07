@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useDateRange } from "@/context/DateRangeContext"
 import { useHealth } from "@/hooks/useHealth"
 import { useLoans } from "@/hooks/useLoans"
 import { useLiabilityPortfolioHistories } from "@/hooks/useLiabilityHistory"
@@ -31,6 +32,7 @@ import {
 
 export function LiabilitiesHubPage() {
   const month = currentMonthKey()
+  const { committedRange } = useDateRange()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
@@ -71,7 +73,7 @@ export function LiabilitiesHubPage() {
     () => liabilityAccounts.map((row) => row.account_id!),
     [liabilityAccounts],
   )
-  const portfolioQueries = useLiabilityPortfolioHistories(accountIds)
+  const portfolioQueries = useLiabilityPortfolioHistories(accountIds, committedRange)
   const portfolioLoading =
     accountIds.length > 0 && portfolioQueries.some((query) => query.isPending)
   const portfolioError = portfolioQueries.some((query) => query.isError)
