@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-07-07
+
 ### Fixed
 
 - **Liability payment history** — liability detail and hub anchor on payments into the liability account, read interest/escrow from sibling splits in the same journal, and infer component destinations from expense payees when no loan profile is saved (#112)
@@ -463,7 +465,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.5.1...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/jwposton/ff3-lantern/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/jwposton/ff3-lantern/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/jwposton/ff3-lantern/compare/v2.4.3...v2.5.0
 [2.4.3]: https://github.com/jwposton/ff3-lantern/compare/v2.4.2...v2.4.3
