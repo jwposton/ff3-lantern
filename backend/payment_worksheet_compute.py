@@ -8,6 +8,7 @@ from typing import Any
 
 import sidecar_db
 from payment_worksheet_liabilities import is_real_estate_liability, liability_row_key
+from payment_worksheet_promo import resolve_credit_card_promo
 
 
 UNASSIGNED_CREDIT_CARD_ID = "__unassigned__"
@@ -525,6 +526,7 @@ def compute_grand_totals(
 
 
 def _assemble_credit_cards(
+    month: str,
     refresh_snapshot: dict[str, Any] | None,
     worksheet_state: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -540,6 +542,13 @@ def _assemble_credit_cards(
             continue
         row_key = cc_row_key(account_id)
         state = state_by_key.get(row_key, {})
+        promo_profile = {
+            "apr_percent": snapshot.get("apr_percent"),
+            "special_apr_percent": snapshot.get("special_apr_percent"),
+            "special_apr_start": snapshot.get("special_apr_start"),
+            "special_apr_end": snapshot.get("special_apr_end"),
+        }
+        promo_resolved = resolve_credit_card_promo(promo_profile, month)
         cards.append(
             {
                 "account_id": account_id,
@@ -549,6 +558,11 @@ def _assemble_credit_cards(
                 "funding_bucket_key": snapshot.get("funding_bucket_key"),
                 "default_planned_payment": snapshot.get("default_planned_payment"),
                 "apr_percent": snapshot.get("apr_percent"),
+                "special_apr_percent": snapshot.get("special_apr_percent"),
+                "special_apr_start": snapshot.get("special_apr_start"),
+                "special_apr_end": snapshot.get("special_apr_end"),
+                "promo_active": promo_resolved["promo_active"],
+                "effective_apr_percent": promo_resolved["effective_apr_percent"],
                 "payment_due_day": snapshot.get("payment_due_day"),
                 "sort_order": snapshot.get("sort_order"),
                 "owed": snapshot.get("owed", "0.00"),
@@ -728,7 +742,7 @@ async def build_worksheet_envelope(month: str) -> dict[str, Any]:
         refreshed_at = refresh_row["refreshed_at"]
         refresh_snapshot = json.loads(refresh_row["balances_json"])
 
-    credit_cards = _assemble_credit_cards(refresh_snapshot, worksheet_state)
+    credit_cards = _assemble_credit_cards(month, refresh_snapshot, worksheet_state)
     excluded_credit_cards = _assemble_excluded_credit_cards(refresh_snapshot)
     excluded_liabilities = _assemble_excluded_liabilities(refresh_snapshot)
     liability_accounts = _assemble_liability_accounts(refresh_snapshot, worksheet_state)

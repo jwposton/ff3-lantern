@@ -186,6 +186,75 @@ async def test_build_worksheet_envelope_with_refresh(data_dir):
 
 
 @pytest.mark.asyncio
+async def test_build_worksheet_envelope_promo_resolution(data_dir):
+    balances = {
+        "buckets": {},
+        "credit_cards": {
+            "cc1": {
+                "name": "Chase VISA",
+                "apr_percent": "24.99",
+                "special_apr_percent": "0.00",
+                "special_apr_start": "2026-07-01",
+                "special_apr_end": "2026-09-30",
+                "owed": "1200.00",
+                "new_total": "150.00",
+                "interest_accrued": "25.00",
+                "fees": "0.00",
+            }
+        },
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month="2026-07",
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+    await sidecar_db.upsert_worksheet_refresh(
+        month="2026-06",
+        refreshed_at="2026-06-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+
+    in_window = await build_worksheet_envelope("2026-07")
+    card = in_window["credit_cards"][0]
+    assert card["promo_active"] is True
+    assert card["effective_apr_percent"] == "0.00"
+    assert card["apr_percent"] == "24.99"
+
+    out_of_window = await build_worksheet_envelope("2026-06")
+    card_out = out_of_window["credit_cards"][0]
+    assert card_out["promo_active"] is False
+    assert card_out["effective_apr_percent"] == "24.99"
+
+
+@pytest.mark.asyncio
+async def test_build_worksheet_envelope_promo_inactive_without_config(data_dir):
+    balances = {
+        "buckets": {},
+        "credit_cards": {
+            "cc1": {
+                "name": "Chase VISA",
+                "apr_percent": "24.99",
+                "owed": "1200.00",
+                "new_total": "150.00",
+                "interest_accrued": "25.00",
+                "fees": "0.00",
+            }
+        },
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month="2026-07",
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    card = envelope["credit_cards"][0]
+    assert card["promo_active"] is False
+    assert card["effective_apr_percent"] == "24.99"
+    assert card.get("special_apr_percent") is None
+
+
+@pytest.mark.asyncio
 async def test_assemble_credit_cards_skips_profile_only_stubs(data_dir):
     await sidecar_db.upsert_worksheet_refresh(
         month="2026-07",
