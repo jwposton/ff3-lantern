@@ -22,7 +22,9 @@ import {
   usePaymentWorksheet,
 } from "@/hooks/usePaymentWorksheet"
 import { creditCardNetChangeClassName, formatStatsWindowCaption } from "@/lib/creditCardHistory"
+import { formatDemoAnchorLabel } from "@/lib/appClock"
 import { formatDisplayAmount } from "@/lib/formatDisplay"
+import { formatInterestPercent } from "@/lib/paymentRunFormat"
 import {
   currentMonthKey,
   putAccountWorksheet,
@@ -111,6 +113,12 @@ export function CreditCardDetailPage() {
   const apr =
     history?.account.apr_percent ?? worksheetRow?.apr_percent ?? null
   const statsCaption = formatStatsWindowCaption(history?.stats_window)
+  const promoSubtitle =
+    worksheetRow?.promo_active &&
+    worksheetRow.special_apr_percent &&
+    worksheetRow.special_apr_end
+      ? ` · ${formatInterestPercent(worksheetRow.special_apr_percent)} promo through ${formatDemoAnchorLabel(worksheetRow.special_apr_end)}`
+      : ""
 
   return (
     <div className="space-y-6">
@@ -129,6 +137,7 @@ export function CreditCardDetailPage() {
             <p className="text-muted-foreground text-sm">
               Balance {formatDisplayAmount(owed)}
               {apr ? ` · APR ${apr}%` : ""}
+              {promoSubtitle}
               {" · "}
               {bucketLabel(
                 history?.account.funding_bucket_key ??

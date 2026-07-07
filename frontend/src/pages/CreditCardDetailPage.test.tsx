@@ -1,0 +1,202 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import type { ReactNode } from "react"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { MemoryRouter, Route, Routes } from "react-router-dom"
+
+import { DateRangeProvider } from "@/context/DateRangeContext"
+import { CreditCardDetailPage } from "./CreditCardDetailPage"
+
+vi.mock("@/components/payment-run/CreditCardActivityChart", () => ({
+  CreditCardActivityChart: () => <div>Activity chart</div>,
+}))
+
+function TestProviders({
+  children,
+  accountId = "3",
+}: {
+  children: ReactNode
+  accountId?: string
+}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter
+        initialEntries={[`/manage/payment-run/cards/${accountId}`]}
+      >
+        <DateRangeProvider>
+          <Routes>
+            <Route
+              path="/manage/payment-run/cards/:accountId"
+              element={children}
+            />
+          </Routes>
+        </DateRangeProvider>
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+}
+
+function worksheetEnvelope(creditCards: Record<string, unknown>[]) {
+  return {
+    month: "2026-07",
+    buckets: [{ id: "checking", label: "Checking" }],
+    credit_cards: creditCards,
+    excluded_credit_cards: [],
+    bills: [],
+    liabilities: [],
+    excluded_liabilities: [],
+    bill_groups: [],
+    section_subtotals: {
+      bills: { owed: "0", due: "0", planned_cash: "0" },
+      liabilities: { owed: "0", due: "0", planned_cash: "0" },
+      credit_cards: { planned_cash: "0" },
+    },
+    grand_totals: {
+      owed: { liabilities: "0", revolving: "0" },
+      due: { cash: "0", credit: "0" },
+      planned: {
+        cash: "0",
+        credit: "0",
+        liabilities: {
+          cash: { due: "0", planned: "0" },
+          credit: { due: "0", planned: "0" },
+        },
+        credit_card_pmts: {
+          cash: { due: "0", planned: "0" },
+          credit: { due: "0", planned: "0" },
+        },
+      },
+    },
+    shortfall: false,
+    totals: {
+      reported_balance: "0",
+      user_balance: "0",
+      remaining: "0",
+    },
+  }
+}
+
+const BASE_CARD = {
+  account_id: "3",
+  row_key: "cc:3",
+  name: "Chase VISA",
+  owed: "1250.50",
+  apr_percent: "19.99",
+  funding_bucket_key: "checking",
+  credit_limit: "10000.00",
+  default_planned_payment: "200.00",
+  payment_due_day: "15",
+  new_total: "0.00",
+  interest_accrued: "0.00",
+  fees: "0.00",
+  last_payment_date: null,
+  last_payment_amount: "0.00",
+  new_transactions: [],
+  planned_amount: "200.00",
+  planned_amount_override: false,
+  paid_at: null,
+}
+
+function mockCreditCardDetailFetch(
+  creditCards: Record<string, unknown>[],
+  accountId = "3",
+) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input)
+    if (url.includes("/health")) {
+      return new Response(
+        JSON.stringify({ status: "ok", payment_worksheet_enabled: true }),
+        { status: 200 },
+      )
+    }
+    if (url.includes(`/api/payment-run/credit-cards/${accountId}/history`)) {
+      return new Response(
+        JSON.stringify({
+          account: {
+            account_id: accountId,
+            name: "Chase VISA",
+            owed: "1250.50",
+            apr_percent: "19.99",
+            credit_limit: "10000.00",
+            payment_due_day: "15",
+            funding_bucket_key: "checking",
+          },
+          window: { start: "2025-07-01", end: "2026-07-06" },
+          stats_window: { start: "2025-07", end: "2026-07" },
+          totals: {
+            charges: "89.99",
+            fees: "35.00",
+            interest: "24.50",
+            payments: "500.00",
+          },
+          monthly: [],
+          transactions: [],
+        }),
+        { status: 200 },
+      )
+    }
+    if (url.includes("/api/payment-run?")) {
+      return new Response(JSON.stringify(worksheetEnvelope(creditCards)), {
+        status: 200,
+      })
+    }
+    return new Response("not found", { status: 404 })
+  })
+}
+
+describe("CreditCardDetailPage", () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it("shows promo phrase in header subtitle when promo_active is true", async () => {
+    mockCreditCardDetailFetch([
+      {
+        ...BASE_CARD,
+        promo_active: true,
+        special_apr_percent: "0.00",
+        special_apr_start: "2026-07-01",
+        special_apr_end: "2026-09-30",
+      },
+    ])
+
+    render(
+      <TestProviders>
+        <CreditCardDetailPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText(/0% promo through September 30, 2026/)).toBeTruthy()
+      expect(screen.getByText(/APR 19\.99%/)).toBeTruthy()
+    })
+  })
+
+  it("omits promo phrase when promo_active is false", async () => {
+    mockCreditCardDetailFetch([
+      {
+        ...BASE_CARD,
+        promo_active: false,
+        special_apr_percent: "0.00",
+        special_apr_start: "2026-07-01",
+        special_apr_end: "2026-09-30",
+      },
+    ])
+
+    render(
+      <TestProviders>
+        <CreditCardDetailPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText(/APR 19\.99%/)).toBeTruthy()
+    })
+
+    expect(screen.queryByText(/promo through/)).toBeNull()
+  })
+})
