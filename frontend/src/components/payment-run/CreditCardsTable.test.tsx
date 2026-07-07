@@ -295,4 +295,47 @@ describe("CreditCardsTable", () => {
     expect(screen.queryByTestId("apr-promo-emphasis")).toBeNull()
     expect(screen.queryByTestId("apr-promo-tooltip-trigger")).toBeNull()
   })
+
+  it("trusts backend promo_active per envelope row (D-16)", () => {
+    const sharedPromoProfile = {
+      special_apr_percent: "0",
+      special_apr_start: "2026-07-01",
+      special_apr_end: "2026-09-30",
+    }
+
+    renderTable(
+      <CreditCardsTable
+        rows={[
+          {
+            ...BASE_ROW,
+            row_key: "cc:42-july",
+            name: "Chase VISA (July)",
+            ...sharedPromoProfile,
+            promo_active: true,
+            effective_apr_percent: "0",
+          },
+          {
+            ...BASE_ROW,
+            row_key: "cc:42-june",
+            account_id: "43",
+            name: "Chase VISA (June)",
+            ...sharedPromoProfile,
+            promo_active: false,
+          },
+        ]}
+        buckets={[]}
+        month="2026-07"
+        onPlannedBlur={async () => {}}
+        onPaidChange={async () => {}}
+        onEditDetails={() => {}}
+      />,
+    )
+
+    // promo_active is authoritative from API — identical raw promo fields, different months.
+    expect(screen.getAllByTestId("apr-promo-emphasis").length).toBe(1)
+    expect(screen.getAllByTestId("apr-promo-tooltip-trigger").length).toBe(1)
+    expect(
+      screen.getByTestId("apr-promo-tooltip-trigger").getAttribute("aria-label"),
+    ).toBe("0% until 2026-09-30")
+  })
 })
