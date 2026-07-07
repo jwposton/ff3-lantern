@@ -221,7 +221,7 @@ describe("AppSidebar Manage section", () => {
     })
   })
 
-  it("hides Payment Worksheet nav when payment_worksheet_enabled is false", async () => {
+  it("hides Bill Pay nav when payment_worksheet_enabled is false", async () => {
     mockPendingFetch(0, 0, false)
 
     render(
@@ -233,10 +233,11 @@ describe("AppSidebar Manage section", () => {
     await waitFor(() => {
       expect(screen.getByText("Manage")).toBeTruthy()
     })
+    expect(screen.queryByText("Bill Pay")).toBeNull()
     expect(document.querySelector('a[href="/manage/payment-run"]')).toBeNull()
   })
 
-  it("shows Payment Worksheet nav when payment_worksheet_enabled is true", async () => {
+  it("shows Bill Pay group when payment_worksheet_enabled is true", async () => {
     mockPendingFetch(0, 0, true)
 
     render(
@@ -246,11 +247,13 @@ describe("AppSidebar Manage section", () => {
     )
 
     await waitFor(() => {
+      expect(screen.getByText("Bill Pay")).toBeTruthy()
       expect(document.querySelector('a[href="/manage/payment-run"]')).toBeTruthy()
+      expect(screen.getByText("Worksheet")).toBeTruthy()
     })
   })
 
-  it("shows Bill Discovery nav when payment_worksheet_enabled is true", async () => {
+  it("shows Bill Discovery under Bill Pay when payment_worksheet_enabled is true", async () => {
     mockPendingFetch(0, 0, true)
 
     render(
@@ -268,7 +271,7 @@ describe("AppSidebar Manage section", () => {
     })
   })
 
-  it("hides Bill Discovery nav when payment_worksheet_enabled is false", async () => {
+  it("hides Bill Discovery when payment_worksheet_enabled is false", async () => {
     mockPendingFetch(0, 0, false)
 
     render(
@@ -300,7 +303,7 @@ describe("AppSidebar Manage section", () => {
     expect(document.querySelector('a[href="/manage/bills"]')).toBeNull()
   })
 
-  it("shows Bills nav when payment_worksheet_enabled is true", async () => {
+  it("shows Bills under Bill Pay when payment_worksheet_enabled is true", async () => {
     mockPendingFetch(0, 0, true)
 
     render(
@@ -311,10 +314,17 @@ describe("AppSidebar Manage section", () => {
 
     await waitFor(() => {
       expect(document.querySelector('a[href="/manage/bills"]')).toBeTruthy()
+      expect(
+        document.querySelector('a[href="/manage/payment-run/cards"]'),
+      ).toBeTruthy()
+      expect(document.querySelector('a[href="/manage/liabilities"]')).toBeTruthy()
+      expect(
+        document.querySelector('a[href="/manage/payment-run/buckets"]'),
+      ).toBeTruthy()
     })
   })
 
-  it("shows Payment setup nav when payment_worksheet_enabled is true", async () => {
+  it("does not show retired Payment setup nav", async () => {
     mockPendingFetch(0, 0, true)
 
     render(
@@ -324,25 +334,7 @@ describe("AppSidebar Manage section", () => {
     )
 
     await waitFor(() => {
-      const link = document.querySelector(
-        'a[href="/manage/payment-run/setup"]',
-      )
-      expect(link).toBeTruthy()
-      expect(link?.textContent).toContain("Payment setup")
-    })
-  })
-
-  it("hides Payment setup nav when payment_worksheet_enabled is false", async () => {
-    mockPendingFetch(0, 0, false)
-
-    render(
-      <TestProviders>
-        <AppSidebar />
-      </TestProviders>,
-    )
-
-    await waitFor(() => {
-      expect(screen.getByText("Manage")).toBeTruthy()
+      expect(screen.getByText("Bill Pay")).toBeTruthy()
     })
     expect(
       document.querySelector('a[href="/manage/payment-run/setup"]'),

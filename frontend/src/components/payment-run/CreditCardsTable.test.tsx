@@ -234,7 +234,7 @@ describe("CreditCardsTable", () => {
 
     const manageLink = screen.getByRole("link", { name: "Manage Chase VISA" })
     expect(manageLink.getAttribute("href")).toBe(
-      "/manage/payment-run/cards?account=42",
+      "/manage/payment-run/cards/42",
     )
   })
 })

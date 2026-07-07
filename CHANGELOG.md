@@ -7,8 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Liability payment history** — liability detail and hub anchor on payments into the liability account, read interest/escrow from sibling splits in the same journal, and infer component destinations from expense payees when no loan profile is saved (#112)
+- **Loan profile inference** — loan profile editor auto-prefills destinations, categories, budgets, and escrow amount from payment history when unconfigured (`suggested_profile` on `GET /api/loans/{id}`); split queue merges inferred destinations (#112)
+
 ### Added
 
+- **CC and liability history APIs** — `GET /api/payment-run/credit-cards/{id}/history` and `GET /api/payment-run/liabilities/{id}/history` return 12-month charges, fees, interest, payments (cards) or principal/interest splits (loans) with monthly series and transaction lists for analytics management pages (#112, #113, #114)
+- **Bill Pay sidebar group** — Manage sidebar groups Worksheet, Bills, Bill Discovery, Credit cards, Liabilities, and Cash accounts under **Bill Pay**; Payment setup launcher retired (redirects to Worksheet) (#119)
+- **Credit card hub analytics** — Credit cards hub shows portfolio KPIs (balance, charges, fees, interest, payments) and per-card balance/APR with links to detail pages (#115)
+- **Credit card net change** — credit card hub and detail show **Net change** (charges + interest − payments), color-coded red when positive and green when negative (#112)
+- **Credit card detail page** — Per-card KPIs, monthly activity chart, transaction history, and worksheet overlay edit (#117)
+- **Liabilities hub analytics** — Liabilities hub shows portfolio KPIs (balance, principal, interest, total payments) and per-account balance with links to detail pages (#116)
+- **Liability detail page** — Per-loan principal vs interest KPIs, monthly payment chart, payment transaction table, worksheet overlay, and loan profile link (#118)
+- **Bill discovery config on Bills hub** — Ignored categories and payees for Bill Discovery are configured from the Bills page (#119)
 - **Spending bar Cash & Credit view** — switch the Spending bar chart between Combined (default) and Cash & Credit to compare bank vs card spending side by side per month; bar clicks drill by budget and rail (category/payee subcharts respect and label the rail), legend clicks drill combined budget totals; switching back to Combined clears a stale `rail` URL param (#111)
 
 ## [2.5.1] - 2026-07-06

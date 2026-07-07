@@ -11,6 +11,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { BillRegistrationSheet, type BillRegistrationEditTarget } from "@/components/payment-run/BillRegistrationSheet"
+import { BillDiscoveryConfigSection } from "@/components/payment-run/BillDiscoveryConfigSection"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -730,6 +731,8 @@ export function BillsDetailPage() {
         fireflyBaseUrl={worksheetData?.firefly_base_url}
         onSubmit={handleRegisterBill}
       />
+
+      <BillDiscoveryConfigSection />
     </div>
   )
 }

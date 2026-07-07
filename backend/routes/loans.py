@@ -14,7 +14,13 @@ from loan_matcher import amount_outside_tolerance
 from loan_profile_validate import validate_profile
 from loan_profiles import parse_loan_profile_from_notes, write_loan_profile
 from loan_splits import apply_loan_split, apply_penny_adjust_to_amounts
+from loan_split_infer import (
+    infer_loan_profile,
+    merge_inferred_profile,
+    profile_is_incomplete,
+)
 from loan_splits_queue import build_pending_loan_splits, find_pending_match
+from payment_worksheet_bill_history import bill_history_date_window
 
 router = APIRouter()
 
@@ -164,14 +170,68 @@ async def get_loan(
         raise HTTPException(status_code=404, detail="Account is not a liability.")
     notes = attrs.get("notes") or ""
     profile = parse_loan_profile_from_notes(notes)
+    start, end = bill_history_date_window()
+    suggested_profile = profile
+    inference_available = False
+    try:
+        splits = await client.fetch_splits(start, end)
+        accounts = await client.fetch_accounts()
+        inferred = infer_loan_profile(
+            splits,
+            account_id=account_id,
+            liability_name=str(attrs.get("name") or account_id),
+            accounts=accounts,
+        )
+        if inferred is not None:
+            suggested_profile = merge_inferred_profile(profile, inferred)
+        inference_available = inferred is not None
+    except Exception:
+        suggested_profile = profile
     return {
         "account_id": account_id,
         "name": attrs.get("name"),
         "current_balance": attrs.get("current_balance"),
         "interest": attrs.get("interest"),
         "profile": profile,
+        "suggested_profile": suggested_profile,
+        "profile_incomplete": profile_is_incomplete(profile),
+        "inference_available": inference_available,
         "enabled": bool(profile and profile.get("enabled")),
     }
+
+
+@router.get("/loans/{account_id}/inferred-profile")
+async def get_inferred_loan_profile(
+    account_id: str,
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    try:
+        acct = await client.fetch_account(account_id)
+        accounts = await client.fetch_accounts()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch Firefly data: {exc}",
+        ) from exc
+    attrs = acct.get("attributes", {})
+    if not _is_liability_account(attrs):
+        raise HTTPException(status_code=404, detail="Account is not a liability.")
+    start, end = bill_history_date_window()
+    try:
+        splits = await client.fetch_splits(start, end)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    inferred = infer_loan_profile(
+        splits,
+        account_id=account_id,
+        liability_name=str(attrs.get("name") or account_id),
+        accounts=accounts,
+    )
+    if inferred is None:
+        return {"profile": None}
+    notes = attrs.get("notes") or ""
+    existing = parse_loan_profile_from_notes(notes)
+    return {"profile": merge_inferred_profile(existing, inferred)}
 
 
 class LoanProfileBody(BaseModel):

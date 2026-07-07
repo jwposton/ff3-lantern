@@ -1,11 +1,12 @@
 import {
   BarChart3,
+  CreditCard,
   Info,
   Landmark,
   LayoutDashboard,
+  PiggyBank,
   Receipt,
   ScanSearch,
-  Settings2,
   Table,
   Tags,
   TrendingUp,
@@ -84,33 +85,44 @@ const baseManageNavItems = [
   },
 ] as const
 
-const paymentWorksheetNavItem = {
-  to: "/manage/payment-run",
-  label: "Payment Worksheet",
-  icon: Wallet,
-  end: true,
-} as const
-
-const paymentSetupNavItem = {
-  to: "/manage/payment-run/setup",
-  label: "Payment setup",
-  icon: Settings2,
-  end: true,
-} as const
-
-const billDiscoverNavItem = {
-  to: "/manage/payment-run/discover",
-  label: "Bill Discovery",
-  icon: ScanSearch,
-  end: true,
-} as const
-
-const billsNavItem = {
-  to: "/manage/bills",
-  label: "Bills",
-  icon: Receipt,
-  end: false,
-} as const
+const billPayNavItems = [
+  {
+    to: "/manage/payment-run",
+    label: "Worksheet",
+    icon: Wallet,
+    end: true,
+  },
+  {
+    to: "/manage/bills",
+    label: "Bills",
+    icon: Receipt,
+    end: false,
+  },
+  {
+    to: "/manage/payment-run/discover",
+    label: "Bill Discovery",
+    icon: ScanSearch,
+    end: true,
+  },
+  {
+    to: "/manage/payment-run/cards",
+    label: "Credit cards",
+    icon: CreditCard,
+    end: false,
+  },
+  {
+    to: "/manage/liabilities",
+    label: "Liabilities",
+    icon: Landmark,
+    end: false,
+  },
+  {
+    to: "/manage/payment-run/buckets",
+    label: "Cash accounts",
+    icon: PiggyBank,
+    end: true,
+  },
+] as const
 
 function formatBadgeCount(count: number): string {
   return count > 99 ? "99+" : String(count)
@@ -226,25 +238,26 @@ function SidebarLogoToggle() {
   )
 }
 
+function BillPayNavGroup() {
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>Bill Pay</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          <NavItems items={billPayNavItems} />
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  )
+}
+
 function ManageNavItems({
   categorizeCount,
   loanSplitCount,
-  paymentWorksheetEnabled,
 }: {
   categorizeCount: number
   loanSplitCount: number
-  paymentWorksheetEnabled: boolean
 }) {
-  const manageNavItems = paymentWorksheetEnabled
-    ? [
-        ...baseManageNavItems,
-        paymentWorksheetNavItem,
-        paymentSetupNavItem,
-        billDiscoverNavItem,
-        billsNavItem,
-      ]
-    : baseManageNavItems
-
   const badgeCounts: Record<string, number> = {
     "/manage/categorize": categorizeCount,
     "/manage/loans/queue": loanSplitCount,
@@ -252,7 +265,7 @@ function ManageNavItems({
 
   return (
     <>
-      {manageNavItems.map((item) => (
+      {baseManageNavItems.map((item) => (
         <ManageNavItem
           key={item.to}
           {...item}
@@ -308,11 +321,11 @@ export function AppSidebar() {
               <ManageNavItems
                 categorizeCount={categorizeCount}
                 loanSplitCount={loanSplitCount}
-                paymentWorksheetEnabled={paymentWorksheetEnabled}
               />
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {paymentWorksheetEnabled ? <BillPayNavGroup /> : null}
       </SidebarContent>
       <SidebarFooter>
         <div className="flex items-center justify-center px-2 py-1 group-data-[collapsible=icon]:hidden">

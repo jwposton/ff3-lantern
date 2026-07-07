@@ -11,6 +11,7 @@ import { useLoan, useLoanMeta } from "@/hooks/useLoans"
 import { useNormalizedTransactions } from "@/hooks/useNormalizedTransactions"
 import { buildFireflyAccountUrl } from "@/lib/fireflyLinks"
 import {
+  fetchInferredLoanProfile,
   saveLoanProfile,
   type LoanAccountOption,
   type LoanProfile,
@@ -142,6 +143,7 @@ export function LoanProfilePage() {
   )
   const [profile, setProfile] = useState<LoanProfile>(emptyProfile())
   const [saving, setSaving] = useState(false)
+  const [inferring, setInferring] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const categories = meta?.categories ?? []
@@ -149,11 +151,15 @@ export function LoanProfilePage() {
   const escrowAmount = parseFloat(profile.split.escrow_amount || "0")
 
   useEffect(() => {
-    if (data?.profile) {
-      setProfile(normalizeProfile(data.profile, accountId ?? "", data.name ?? ""))
-    } else if (data && accountId) {
-      setProfile(normalizeProfile(emptyProfile(), accountId, data.name ?? ""))
+    if (!data || !accountId) return
+    const base = data.profile
+      ? normalizeProfile(data.profile, accountId, data.name ?? "")
+      : normalizeProfile(emptyProfile(), accountId, data.name ?? "")
+    if (data.inference_available && data.suggested_profile) {
+      setProfile(normalizeProfile(data.suggested_profile, accountId, data.name ?? ""))
+      return
     }
+    setProfile(base)
   }, [data, accountId])
 
   function updateComponent(
@@ -169,6 +175,30 @@ export function LoanProfilePage() {
         ),
       },
     }))
+  }
+
+  async function handleInferFromPayments() {
+    if (!accountId) return
+    setInferring(true)
+    setError(null)
+    try {
+      const { profile: inferred } = await fetchInferredLoanProfile(accountId)
+      if (!inferred) {
+        toast.message("No split payment history found for this loan account yet.")
+        return
+      }
+      setProfile(
+        normalizeProfile(inferred, accountId, data?.name ?? ""),
+      )
+      toast.success("Filled profile from payment history")
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not infer loan profile."
+      setError(message)
+      toast.error(message)
+    } finally {
+      setInferring(false)
+    }
   }
 
   async function handleSave() {
@@ -212,6 +242,12 @@ export function LoanProfilePage() {
           )}
         </h1>
         <p className="text-muted-foreground text-sm">Loan profile editor</p>
+        {data.inference_available && data.profile_incomplete ? (
+          <p className="text-muted-foreground text-xs">
+            Prefilled from payment history into this liability account — review and
+            save.
+          </p>
+        ) : null}
       </div>
 
       <Card>
@@ -420,9 +456,17 @@ export function LoanProfilePage() {
         </div>
       ) : null}
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <Button onClick={handleSave} disabled={saving}>
           Save profile
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={inferring}
+          onClick={() => void handleInferFromPayments()}
+        >
+          {inferring ? "Inferring…" : "Infer from payments"}
         </Button>
         <Button asChild variant="outline">
           <Link to="/manage/loans">Cancel</Link>

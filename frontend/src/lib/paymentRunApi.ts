@@ -189,6 +189,108 @@ export type BillHistoryEnvelope = {
   transactions: BillHistoryTransaction[]
 }
 
+export type CreditCardHistoryTransactionKind =
+  | "charge"
+  | "interest"
+  | "fee"
+  | "payment"
+
+export type CreditCardHistoryTransaction = {
+  journal_id: string | null
+  date: string
+  description: string
+  payee: string | null
+  category: string | null
+  budget: string | null
+  kind: CreditCardHistoryTransactionKind
+  amount: string
+}
+
+export type CreditCardHistoryMonthly = {
+  month: string
+  charges: string
+  fees: string
+  interest: string
+  payments: string
+  net_change: string
+}
+
+export type CreditCardHistoryTotals = {
+  charges: string
+  fees: string
+  interest: string
+  payments: string
+  net_change: string
+}
+
+export type CreditCardHistoryAccount = {
+  account_id: string
+  name: string | null
+  owed: string
+  apr_percent: string | null
+  credit_limit: string | null
+  payment_due_day: string | null
+  funding_bucket_key: string | null
+}
+
+export type CreditCardHistoryEnvelope = {
+  account: CreditCardHistoryAccount
+  firefly_base_url?: string
+  window: { start: string; end: string }
+  stats_window: { start: string; end: string }
+  totals: CreditCardHistoryTotals
+  monthly: CreditCardHistoryMonthly[]
+  transactions: CreditCardHistoryTransaction[]
+}
+
+export type LiabilityHistoryTransaction = {
+  journal_id: string | null
+  date: string
+  description: string
+  amount: string
+  principal: string
+  interest: string
+  escrow: string
+}
+
+export type LiabilityHistoryMonthly = {
+  month: string
+  principal: string
+  interest: string
+  escrow: string
+  total_payment: string
+}
+
+export type LiabilityHistoryTotals = {
+  principal: string
+  interest: string
+  total_payment: string
+}
+
+export type LiabilityHistoryAccount = {
+  account_id: string
+  name: string | null
+  owed: string
+  est_interest: string | null
+  funding_bucket_key: string | null
+  loan_configured: boolean
+}
+
+export type LiabilityHistoryEnvelope = {
+  account: LiabilityHistoryAccount
+  firefly_base_url?: string
+  window: { start: string; end: string }
+  stats_window: { start: string; end: string }
+  totals: LiabilityHistoryTotals
+  monthly: LiabilityHistoryMonthly[]
+  transactions: LiabilityHistoryTransaction[]
+  suggested_profile?: Record<string, unknown> | null
+  history_meta?: {
+    anchor_journal_count: number
+    requires_liability_split: boolean
+  }
+}
+
 export type BillRegistryRow = {
   id: number
   firefly_bill_id: string | null
@@ -699,6 +801,30 @@ export async function fetchBillHistory(
     await parseError(res, `Failed to fetch bill history (${res.status})`)
   }
   return (await res.json()) as BillHistoryEnvelope
+}
+
+export async function fetchCreditCardHistory(
+  accountId: string,
+): Promise<CreditCardHistoryEnvelope> {
+  const res = await fetch(
+    `/api/payment-run/credit-cards/${encodeURIComponent(accountId)}/history`,
+  )
+  if (!res.ok) {
+    await parseError(res, `Failed to fetch credit card history (${res.status})`)
+  }
+  return (await res.json()) as CreditCardHistoryEnvelope
+}
+
+export async function fetchLiabilityHistory(
+  accountId: string,
+): Promise<LiabilityHistoryEnvelope> {
+  const res = await fetch(
+    `/api/payment-run/liabilities/${encodeURIComponent(accountId)}/history`,
+  )
+  if (!res.ok) {
+    await parseError(res, `Failed to fetch liability history (${res.status})`)
+  }
+  return (await res.json()) as LiabilityHistoryEnvelope
 }
 
 export async function fetchBillSuggestions(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 
 import httpx
 import pytest
@@ -1672,6 +1673,320 @@ def test_bill_history_not_found(monkeypatch, client, data_dir, payment_worksheet
         assert response.status_code == 404
         assert response.json()["detail"] == "Registered bill not found."
         assert firefly_called["value"] is False
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_credit_card_history(monkeypatch, client, data_dir, payment_worksheet_env):
+    from conftest import load_fixture
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    fixture = load_fixture("payment_worksheet_splits.json")
+    accounts_data = fixture["accounts"]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/accounts") and request.method == "GET":
+            data = [
+                {
+                    "type": "accounts",
+                    "id": aid,
+                    "attributes": {
+                        "name": attrs["name"],
+                        "type": attrs["type"],
+                        "account_role": attrs.get("account_role"),
+                    },
+                }
+                for aid, attrs in accounts_data.items()
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "data": data,
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path.endswith("/accounts/3") and request.method == "GET":
+            attrs = accounts_data["3"]
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "accounts",
+                        "id": "3",
+                        "attributes": {
+                            "name": attrs["name"],
+                            "type": attrs["type"],
+                            "account_role": attrs.get("account_role"),
+                            "current_balance": attrs["current_balance"],
+                            "notes": attrs.get("notes"),
+                        },
+                    }
+                },
+            )
+        if path.endswith("/transactions") and request.method == "GET":
+            journals = [
+                {
+                    "type": "transactions",
+                    "id": split["journal_id"],
+                    "attributes": {
+                        "transactions": [
+                            {
+                                "type": split["type"],
+                                "amount": split["amount"],
+                                "source_id": split["source_id"],
+                                "destination_id": split["destination_id"],
+                                "source_name": split.get("source_name"),
+                                "destination_name": split.get("destination_name"),
+                                "source_type": split.get("source_type"),
+                                "source_role": split.get("source_role"),
+                                "destination_type": split.get("destination_type"),
+                                "destination_role": split.get("destination_role"),
+                                "date": split["date"],
+                                "category_name": split.get("category_name"),
+                                "budget_name": split.get("budget_name"),
+                            }
+                        ]
+                    },
+                }
+                for split in fixture["splits"]
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "data": journals,
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        return httpx.Response(404)
+
+    monkeypatch.setattr("app_clock.today", lambda: date(2026, 7, 15))
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.get("/api/payment-run/credit-cards/3/history")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["account"]["account_id"] == "3"
+        assert body["account"]["name"] == "Chase VISA"
+        assert body["account"]["owed"] == "1250.50"
+        assert body["window"]["start"]
+        assert body["stats_window"]["end"] == "2026-07"
+        assert body["totals"]["charges"] == "89.99"
+        assert body["totals"]["payments"] == "500.00"
+        assert body["totals"]["interest"] == "24.50"
+        assert body["totals"]["fees"] == "35.00"
+        assert len(body["transactions"]) == 4
+        assert body["transactions"][0]["date"] == "2026-07-14"
+        assert body["firefly_base_url"] == "https://firefly.example"
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_credit_card_history_not_found(monkeypatch, client, data_dir, payment_worksheet_env):
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404)
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.get("/api/payment-run/credit-cards/999/history")
+        assert response.status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_liability_history(monkeypatch, client, data_dir, payment_worksheet_env):
+    from loan_profiles import serialize_loan_profile_to_notes
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    profile = {
+        "version": 1,
+        "enabled": True,
+        "match": {
+            "type": "transfer",
+            "description_contains": "Mortgage",
+            "expected_amount": "427.18",
+            "amount_tolerance": "0.50",
+            "max_per_month": 1,
+        },
+        "split": {
+            "escrow_amount": "0.00",
+            "components": [
+                {
+                    "role": "principal",
+                    "type": "transfer",
+                    "destination_account_id": "42",
+                },
+            ],
+        },
+    }
+    notes = serialize_loan_profile_to_notes(profile, "")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/accounts") and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "accounts",
+                            "id": "42",
+                            "attributes": {
+                                "name": "Mortgage",
+                                "type": "liabilities",
+                                "account_role": "mortgage",
+                            },
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path.endswith("/accounts/42") and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "accounts",
+                        "id": "42",
+                        "attributes": {
+                            "name": "Mortgage",
+                            "type": "liabilities",
+                            "account_role": "mortgage",
+                            "current_balance": "-50000.00",
+                            "interest": "6.5",
+                            "notes": notes,
+                        },
+                    }
+                },
+            )
+        if path.endswith("/transactions") and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "transactions",
+                            "id": "500",
+                            "attributes": {
+                                "transactions": [
+                                    {
+                                        "type": "transfer",
+                                        "amount": "-427.18",
+                                        "description": "Mortgage July",
+                                        "date": "2026-07-10",
+                                        "source_id": "1",
+                                        "destination_id": "42",
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                    "meta": {"pagination": {"total_pages": 1}},
+                },
+            )
+        return httpx.Response(404)
+
+    monkeypatch.setattr("app_clock.today", lambda: date(2026, 7, 15))
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.get("/api/payment-run/liabilities/42/history")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["account"]["account_id"] == "42"
+        assert body["account"]["loan_configured"] is True
+        assert body["account"]["owed"] == "50000.00"
+        assert body["totals"]["total_payment"] == "427.18"
+        assert len(body["transactions"]) == 1
+        assert body["transactions"][0]["principal"]
+        assert body["transactions"][0]["interest"]
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_liability_history_unconfigured(monkeypatch, client, data_dir, payment_worksheet_env):
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/accounts") and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "accounts",
+                            "id": "42",
+                            "attributes": {
+                                "name": "Mortgage",
+                                "type": "liabilities",
+                            },
+                        }
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if path.endswith("/accounts/42") and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "accounts",
+                        "id": "42",
+                        "attributes": {
+                            "name": "Mortgage",
+                            "type": "liabilities",
+                            "current_balance": "-50000.00",
+                            "interest": "6.5",
+                            "notes": "",
+                        },
+                    }
+                },
+            )
+        if path.endswith("/transactions") and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"data": [], "meta": {"pagination": {"total_pages": 1}}},
+            )
+        return httpx.Response(404)
+
+    monkeypatch.setattr("app_clock.today", lambda: date(2026, 7, 15))
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.get("/api/payment-run/liabilities/42/history")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["account"]["loan_configured"] is False
+        assert body["transactions"] == []
+        assert body["totals"]["total_payment"] == "0.00"
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 
