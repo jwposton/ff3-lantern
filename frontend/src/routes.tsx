@@ -20,8 +20,10 @@ import { PaymentWorksheetPage } from "@/pages/PaymentWorksheetPage"
 import { PaymentSetupPage } from "@/pages/PaymentSetupPage"
 import { BillGroupsPage } from "@/pages/BillGroupsPage"
 import { PaymentBucketsPage } from "@/pages/PaymentBucketsPage"
+import { CreditCardDetailPage } from "@/pages/CreditCardDetailPage"
 import { PaymentCardsPage } from "@/pages/PaymentCardsPage"
 import { LiabilitiesHubPage } from "@/pages/LiabilitiesHubPage"
+import { LiabilityDetailPage } from "@/pages/LiabilityDetailPage"
 import { BillDiscoverPage } from "@/pages/BillDiscoverPage"
 import { BillsDetailPage } from "@/pages/BillsDetailPage"
 
@@ -72,12 +74,20 @@ export const router = createBrowserRouter([
         element: <PaymentCardsPage />,
       },
       {
+        path: "manage/payment-run/cards/:accountId",
+        element: <CreditCardDetailPage />,
+      },
+      {
         path: "manage/payment-run/discover",
         element: <BillDiscoverPage />,
       },
       {
         path: "manage/liabilities",
         element: <LiabilitiesHubPage />,
+      },
+      {
+        path: "manage/liabilities/:accountId",
+        element: <LiabilityDetailPage />,
       },
       {
         path: "manage/bills",

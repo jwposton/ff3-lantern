@@ -55,6 +55,9 @@ export type LoanDetail = {
   current_balance?: string
   interest?: string
   profile: LoanProfile | null
+  suggested_profile?: LoanProfile | null
+  profile_incomplete?: boolean
+  inference_available?: boolean
   enabled: boolean
 }
 
@@ -101,6 +104,16 @@ export async function fetchLoan(accountId: string): Promise<LoanDetail> {
   const res = await fetch(`/api/loans/${accountId}`)
   if (!res.ok) throw new Error(`Failed to fetch loan (${res.status})`)
   return (await res.json()) as LoanDetail
+}
+
+export async function fetchInferredLoanProfile(
+  accountId: string,
+): Promise<{ profile: LoanProfile | null }> {
+  const res = await fetch(`/api/loans/${encodeURIComponent(accountId)}/inferred-profile`)
+  if (!res.ok) {
+    throw new Error(`Failed to infer loan profile (${res.status})`)
+  }
+  return (await res.json()) as { profile: LoanProfile | null }
 }
 
 /** Strip commas/whitespace and format as a two-decimal amount string for the API. */

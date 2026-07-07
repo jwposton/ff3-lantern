@@ -50,13 +50,31 @@ from payment_worksheet_bills import (
     update_registered_bill_firefly,
     validate_registry_bill_group_update,
 )
+from loan_journal_splits import count_liability_anchor_journals
+from loan_profiles import parse_loan_profile_from_notes
+from loan_split_infer import infer_loan_profile, merge_inferred_profile
 from payment_worksheet_bill_history import (
     bill_history_date_window,
     compute_bill_history_stats,
 )
+from payment_worksheet_cc_history import (
+    cc_history_date_window,
+    compute_cc_history_stats,
+    splits_to_cc_history_transactions,
+)
 from payment_worksheet_compute import _row_type_from_key, bill_row_key, build_worksheet_envelope
-from payment_worksheet_liabilities import is_liability_account
-from payment_worksheet_refresh import run_refresh
+from payment_worksheet_liabilities import (
+    compute_liability_display_fields,
+    draft_planned_amount,
+    is_liability_account,
+)
+from payment_worksheet_liability_history import (
+    build_liability_history_transactions,
+    compute_liability_history_stats,
+    liability_history_date_window,
+)
+from payment_worksheet_profiles import _due_day_from_monthly_payment_date
+from payment_worksheet_refresh import fee_categories, interest_categories, run_refresh
 
 router = APIRouter()
 
@@ -975,6 +993,159 @@ async def bill_history(
         payload["rule_sync_status"] = rule_sync_status
     if row_label_synced:
         payload["row_label_synced"] = True
+    base = firefly_public_base_url()
+    if base:
+        payload["firefly_base_url"] = base
+    return payload
+
+
+async def _require_worksheet_credit_card(
+    client: FireflyClient, account_id: str
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    try:
+        account = await client.fetch_account(account_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail="Credit card not found.") from exc
+    attrs = account.get("attributes", {})
+    if not is_credit_card_asset(attrs):
+        raise HTTPException(status_code=404, detail="Credit card not found.")
+    profile = effective_profile_from_notes(attrs.get("notes") or "")
+    if profile.get("included") is False:
+        raise HTTPException(
+            status_code=404,
+            detail="Credit card is excluded from the payment worksheet.",
+        )
+    return account, profile, attrs
+
+
+async def _require_worksheet_liability(
+    client: FireflyClient, account_id: str
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None, dict[str, Any]]:
+    try:
+        account = await client.fetch_account(account_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail="Liability account not found.") from exc
+    attrs = account.get("attributes", {})
+    if not is_liability_account(attrs):
+        raise HTTPException(status_code=404, detail="Liability account not found.")
+    worksheet_profile = effective_profile_from_notes(attrs.get("notes") or "")
+    if worksheet_profile.get("included") is False:
+        raise HTTPException(
+            status_code=404,
+            detail="Liability account is excluded from the payment worksheet.",
+        )
+    loan_profile = parse_loan_profile_from_notes(attrs.get("notes") or "")
+    return account, worksheet_profile, loan_profile, attrs
+
+
+@router.get("/payment-run/credit-cards/{account_id}/history")
+async def credit_card_history(
+    account_id: str,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    _, profile, attrs = await _require_worksheet_credit_card(client, account_id)
+    today = app_clock.today()
+    start, end = cc_history_date_window(today)
+    try:
+        splits = await client.fetch_splits(start, end)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    rows = splits_to_cc_history_transactions(
+        splits,
+        account_id,
+        interest_cats=interest_categories(),
+        fee_cats=fee_categories(),
+    )
+    stats = compute_cc_history_stats(rows, today=today)
+    transactions = sorted(rows, key=lambda row: row.get("date") or "", reverse=True)
+    owed = abs(Decimal(str(attrs.get("current_balance") or "0")))
+    payload: dict[str, Any] = {
+        "account": {
+            "account_id": account_id,
+            "name": attrs.get("name"),
+            "owed": f"{owed.quantize(Decimal('0.01'))}",
+            "apr_percent": profile.get("apr_percent"),
+            "credit_limit": profile.get("credit_limit"),
+            "payment_due_day": profile.get("payment_due_day")
+            or _due_day_from_monthly_payment_date(attrs.get("monthly_payment_date")),
+            "funding_bucket_key": profile.get("funding_bucket_key"),
+        },
+        "window": {"start": start, "end": end},
+        **stats,
+        "transactions": transactions,
+    }
+    base = firefly_public_base_url()
+    if base:
+        payload["firefly_base_url"] = base
+    return payload
+
+
+@router.get("/payment-run/liabilities/{account_id}/history")
+async def liability_history(
+    account_id: str,
+    _: None = Depends(require_payment_worksheet),
+    client: FireflyClient = Depends(get_firefly_client),
+):
+    _, worksheet_profile, loan_profile, attrs = await _require_worksheet_liability(
+        client, account_id
+    )
+    today = app_clock.today()
+    start, end = liability_history_date_window(today)
+    loan_configured = bool(loan_profile and loan_profile.get("enabled"))
+    try:
+        splits = await client.fetch_splits(start, end)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    try:
+        accounts = await client.fetch_accounts()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    rows = build_liability_history_transactions(
+        splits,
+        account_id=account_id,
+        loan_profile=loan_profile or {},
+        liability_attrs=attrs,
+        accounts=accounts,
+    )
+    inferred = infer_loan_profile(
+        splits,
+        account_id=account_id,
+        liability_name=str(attrs.get("name") or account_id),
+        accounts=accounts,
+    )
+    suggested_profile = (
+        merge_inferred_profile(loan_profile, inferred) if inferred else loan_profile
+    )
+    anchor_journal_count = count_liability_anchor_journals(splits, account_id)
+    stats = compute_liability_history_stats(rows, today=today)
+    transactions = sorted(rows, key=lambda row: row.get("date") or "", reverse=True)
+    owed = abs(Decimal(str(attrs.get("current_balance") or "0")))
+    payment_amount = Decimal(draft_planned_amount(loan_profile, worksheet_profile))
+    display = compute_liability_display_fields(
+        owed,
+        loan_profile,
+        attrs,
+        payment_amount,
+    )
+    payload: dict[str, Any] = {
+        "account": {
+            "account_id": account_id,
+            "name": attrs.get("name"),
+            "owed": f"{owed.quantize(Decimal('0.01'))}",
+            "est_interest": display.get("est_interest"),
+            "funding_bucket_key": worksheet_profile.get("funding_bucket_key"),
+            "loan_configured": loan_configured,
+        },
+        "window": {"start": start, "end": end},
+        **stats,
+        "transactions": transactions,
+        "suggested_profile": suggested_profile,
+        "history_meta": {
+            "anchor_journal_count": anchor_journal_count,
+            "requires_liability_split": True,
+        },
+    }
     base = firefly_public_base_url()
     if base:
         payload["firefly_base_url"] = base

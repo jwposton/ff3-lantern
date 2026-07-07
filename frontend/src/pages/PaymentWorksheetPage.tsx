@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
-import { CircleHelp, RefreshCw, Settings2 } from "lucide-react"
+import { CircleHelp, RefreshCw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import {
@@ -126,7 +126,7 @@ export function PaymentWorksheetPage() {
   }, [data])
 
   if (searchParams.get("configure") === "1") {
-    return <Navigate to="/manage/payment-run/setup" replace />
+    return <Navigate to="/manage/payment-run/buckets" replace />
   }
 
   if (!healthPending && health && !health.payment_worksheet_enabled) {
@@ -357,12 +357,6 @@ export function PaymentWorksheetPage() {
               >
                 Find bills →
               </Link>
-              <Button asChild type="button" variant="outline" size="sm">
-                <Link to="/manage/payment-run/setup">
-                  <Settings2 className="mr-2 size-4" />
-                  Payment setup
-                </Link>
-              </Button>
               <Button
                 type="button"
                 variant="outline"

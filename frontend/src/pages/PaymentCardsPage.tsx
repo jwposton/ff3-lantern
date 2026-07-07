@@ -1,18 +1,27 @@
-import { useEffect, useRef, useState } from "react"
-import { Link, Navigate, useSearchParams } from "react-router-dom"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 
+import { MetricBlock } from "@/components/MetricBlock"
 import { CreditCardSheet } from "@/components/payment-run/CreditCardSheet"
 import type { CreditCardDetailsInput } from "@/components/payment-run/CreditCardSheet"
 import { ManageCardsSheet } from "@/components/payment-run/ManageCardsSheet"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useCreditCardPortfolioHistories } from "@/hooks/useCreditCardHistory"
 import { useHealth } from "@/hooks/useHealth"
 import {
   paymentRunQueryKey,
   usePaymentWorksheet,
 } from "@/hooks/usePaymentWorksheet"
+import {
+  aggregateCreditCardPortfolioTotals,
+  creditCardNetChangeClassName,
+  formatStatsWindowCaption,
+  sumCardBalances,
+} from "@/lib/creditCardHistory"
+import { formatDisplayAmount } from "@/lib/formatDisplay"
 import {
   currentMonthKey,
   putAccountWorksheet,
@@ -21,6 +30,7 @@ import {
 
 export function PaymentCardsPage() {
   const month = currentMonthKey()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const deepLinkHandled = useRef(false)
@@ -30,6 +40,40 @@ export function PaymentCardsPage() {
   const [editingCard, setEditingCard] = useState<CreditCardRow | null>(null)
   const [manageCardsOpen, setManageCardsOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  const creditCards = data?.credit_cards ?? []
+  const accountIds = useMemo(
+    () => creditCards.map((row) => row.account_id),
+    [creditCards],
+  )
+  const portfolioQueries = useCreditCardPortfolioHistories(accountIds)
+  const portfolioLoading =
+    accountIds.length > 0 && portfolioQueries.some((query) => query.isPending)
+  const portfolioError = portfolioQueries.some((query) => query.isError)
+  const portfolioHistories = useMemo(
+    () =>
+      portfolioQueries
+        .map((query) => query.data)
+        .filter((row): row is NonNullable<typeof row> => row != null),
+    [portfolioQueries],
+  )
+  const historyByAccountId = useMemo(() => {
+    const map = new Map(
+      portfolioHistories.map((row) => [row.account.account_id, row] as const),
+    )
+    return map
+  }, [portfolioHistories])
+  const portfolioTotals = useMemo(
+    () => aggregateCreditCardPortfolioTotals(portfolioHistories),
+    [portfolioHistories],
+  )
+  const totalBalance = useMemo(
+    () => sumCardBalances(creditCards.map((row) => row.owed)),
+    [creditCards],
+  )
+  const statsCaption = formatStatsWindowCaption(
+    portfolioHistories[0]?.stats_window,
+  )
 
   if (!healthPending && health && !health.payment_worksheet_enabled) {
     return <Navigate to="/" replace />
@@ -55,7 +99,7 @@ export function PaymentCardsPage() {
     }
   }
 
-  function openCardDetails(row: CreditCardRow) {
+  function openCardSettings(row: CreditCardRow) {
     setEditingCard(row)
     setCardSheetOpen(true)
   }
@@ -90,17 +134,18 @@ export function PaymentCardsPage() {
     return data?.buckets.find((bucket) => bucket.id === bucketKey)?.label ?? bucketKey
   }
 
-  const creditCards = data?.credit_cards ?? []
   const excludedCount = data?.excluded_credit_cards.length ?? 0
 
   useEffect(() => {
     const accountParam = searchParams.get("account")
-    if (!accountParam || deepLinkHandled.current || creditCards.length === 0) return
+    if (!accountParam || deepLinkHandled.current || creditCards.length === 0) {
+      return
+    }
     const match = creditCards.find((row) => row.account_id === accountParam)
     if (!match) return
     deepLinkHandled.current = true
-    openCardDetails(match)
-  }, [creditCards, searchParams])
+    navigate(`/manage/payment-run/cards/${accountParam}`, { replace: true })
+  }, [creditCards, navigate, searchParams])
 
   return (
     <div className="space-y-6">
@@ -110,16 +155,21 @@ export function PaymentCardsPage() {
             Credit cards
           </h1>
           <p className="text-muted-foreground text-sm">
-            Edit cash account, limits, and defaults for cards on the worksheet.
-            Planned amounts and paid status stay on the{" "}
+            Balances, activity, and worksheet settings for each card. Planned
+            amounts and paid status stay on the{" "}
             <Link
               to="/manage/payment-run"
               className="font-medium text-primary underline-offset-2 hover:underline"
             >
-              payment worksheet
+              worksheet
             </Link>
             .
           </p>
+          {statsCaption ? (
+            <p className="text-muted-foreground text-xs">
+              Portfolio KPIs cover {statsCaption}
+            </p>
+          ) : null}
         </div>
         {excludedCount > 0 ? (
           <Button
@@ -148,35 +198,122 @@ export function PaymentCardsPage() {
             </p>
             <p>
               Credit cards load from Firefly when you refresh balances on the
-              payment worksheet. All cards may be excluded — use Restore
-              excluded above if needed.
+              worksheet. All cards may be excluded — use Restore excluded above
+              if needed.
             </p>
           </CardContent>
         </Card>
       ) : (
-        <ul className="divide-y rounded-md border">
-          {creditCards.map((row) => (
-            <li
-              key={row.account_id}
-              className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
-            >
-              <div>
-                <p className="font-medium">{row.name ?? row.account_id}</p>
-                <p className="text-muted-foreground text-xs">
-                  {bucketLabel(row.funding_bucket_key)}
-                </p>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => openCardDetails(row)}
+        <>
+          {portfolioLoading ? (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <Skeleton key={index} className="h-16 w-full" />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                  <MetricBlock
+                    label="Total balance"
+                    value={formatDisplayAmount(totalBalance)}
+                  />
+                  <MetricBlock
+                    label="Charges"
+                    value={formatDisplayAmount(portfolioTotals.charges)}
+                  />
+                  <MetricBlock
+                    label="Fees"
+                    value={formatDisplayAmount(portfolioTotals.fees)}
+                  />
+                  <MetricBlock
+                    label="Interest"
+                    value={formatDisplayAmount(portfolioTotals.interest)}
+                  />
+                  <MetricBlock
+                    label="Payments"
+                    value={formatDisplayAmount(portfolioTotals.payments)}
+                  />
+                  <MetricBlock
+                    label="Net change"
+                    value={formatDisplayAmount(portfolioTotals.net_change)}
+                    hint="Charges + interest − payments"
+                    valueClassName={creditCardNetChangeClassName(
+                      portfolioTotals.net_change,
+                    )}
+                  />
+                </div>
+                {portfolioError ? (
+                  <p className="text-muted-foreground mt-4 text-xs">
+                    Some card history could not be loaded; totals may be
+                    incomplete.
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          )}
+
+          <ul className="divide-y rounded-md border">
+            {creditCards.map((row) => {
+              const cardHistory = historyByAccountId.get(row.account_id)
+              const netChange = cardHistory?.totals.net_change
+              return (
+              <li
+                key={row.account_id}
+                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
               >
-                Edit
-              </Button>
-            </li>
-          ))}
-        </ul>
+                <div className="min-w-0 space-y-1">
+                  <Link
+                    to={`/manage/payment-run/cards/${encodeURIComponent(row.account_id)}`}
+                    className="font-medium text-primary underline-offset-2 hover:underline"
+                  >
+                    {row.name ?? row.account_id}
+                  </Link>
+                  <p className="text-muted-foreground text-xs">
+                    {bucketLabel(row.funding_bucket_key)}
+                    {" · "}
+                    Balance {formatDisplayAmount(row.owed)}
+                    {row.apr_percent ? ` · APR ${row.apr_percent}%` : ""}
+                    {netChange != null ? (
+                      <>
+                        {" · "}
+                        Net change{" "}
+                        <span
+                          className={creditCardNetChangeClassName(netChange)}
+                        >
+                          {formatDisplayAmount(netChange)}
+                        </span>
+                      </>
+                    ) : null}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      to={`/manage/payment-run/cards/${encodeURIComponent(row.account_id)}`}
+                    >
+                      View
+                    </Link>
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openCardSettings(row)}
+                  >
+                    Edit
+                  </Button>
+                </div>
+              </li>
+              )
+            })}
+          </ul>
+        </>
       )}
 
       <ManageCardsSheet

@@ -10,6 +10,7 @@ from amortization import balance_for_interest_calc, compute_payment_split
 from firefly_client import FireflyClient
 from loan_matcher import amount_outside_tolerance, find_matching_profile
 from loan_profiles import parse_loan_profile_from_notes
+from loan_split_infer import infer_loan_profile, merge_inferred_profile
 
 
 def _forward_only_since() -> str:
@@ -81,7 +82,28 @@ async def build_pending_loan_splits(
     flat = await client.fetch_splits(start, end)
     flat = _annotate_split_counts(flat)
     flat = [row for row in flat if (row.get("date") or "") >= since]
+    accounts = await client.fetch_accounts()
     profiles = await load_enabled_loan_profiles(client)
+    resolved_profiles: list[dict[str, Any]] = []
+    for profile in profiles:
+        account_id = str(profile.get("_account_id") or profile.get("account_id") or "")
+        if not account_id:
+            resolved_profiles.append(profile)
+            continue
+        liability_name = str(
+            (accounts.get(account_id) or {}).get("name") or account_id
+        )
+        inferred = infer_loan_profile(
+            flat,
+            account_id=account_id,
+            liability_name=liability_name,
+            accounts=accounts,
+        )
+        if inferred is not None:
+            resolved_profiles.append(merge_inferred_profile(profile, inferred))
+        else:
+            resolved_profiles.append(profile)
+    profiles = resolved_profiles
     month_counts: dict[str, int] = {}
     pending: list[dict[str, Any]] = []
     for row in flat:

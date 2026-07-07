@@ -691,7 +691,7 @@ export function CreditCardsTable({
                         </button>
                       ) : (
                         <Link
-                          to={`/manage/payment-run/cards?account=${encodeURIComponent(row.account_id)}`}
+                          to={`/manage/payment-run/cards/${encodeURIComponent(row.account_id)}`}
                           className="text-muted-foreground hover:text-foreground inline-flex rounded p-0.5"
                           aria-label={`Manage ${cardName}`}
                         >
