@@ -3445,3 +3445,165 @@ def test_bill_groups_disabled_returns_404(monkeypatch, client):
     assert delete_resp.status_code == 404
     assert delete_resp.json()["detail"] == "Payment worksheet is not enabled."
 
+
+def _cc1_firefly_handler(put_bodies: list[dict] | None = None):
+    bodies = put_bodies if put_bodies is not None else []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/accounts/cc1" and request.method == "GET":
+            notes = ""
+            if bodies:
+                notes = bodies[-1].get("notes", "")
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "cc1",
+                        "attributes": {
+                            "name": "Chase VISA",
+                            "type": "asset",
+                            "account_role": "creditCard",
+                            "notes": notes,
+                        },
+                    }
+                },
+            )
+        if request.url.path == "/api/v1/accounts/cc1" and request.method == "PUT":
+            body = json.loads(request.content)
+            bodies.append(body)
+            return httpx.Response(
+                200,
+                json={"data": {"id": "cc1", "attributes": body}},
+            )
+        return httpx.Response(404)
+
+    return handler, bodies
+
+
+def test_put_worksheet_promo_full_bundle(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from payment_worksheet_profiles import PAYMENT_WORKSHEET_MARKER, parse_payment_worksheet_from_notes
+    from routes import payment_run as payment_run_mod
+    from main import app
+
+    month = current_month_key()
+    asyncio.run(_seed_worksheet_snapshot(month))
+    handler, put_bodies = _cc1_firefly_handler()
+
+    app.dependency_overrides[payment_run_mod.get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    try:
+        response = client.put(
+            "/api/payment-run/accounts/cc1/worksheet",
+            params={"month": month},
+            json={
+                "special_apr_percent": "0",
+                "special_apr_start": "2026-07-01",
+                "special_apr_end": "2026-09-30",
+            },
+        )
+        assert response.status_code == 200
+        notes = put_bodies[-1].get("notes", "")
+        assert PAYMENT_WORKSHEET_MARKER in notes
+        parsed = parse_payment_worksheet_from_notes(notes)
+        assert parsed["special_apr_percent"] == "0.00"
+        assert parsed["special_apr_start"] == "2026-07-01"
+        assert parsed["special_apr_end"] == "2026-09-30"
+
+        row = asyncio.run(sidecar_db.get_worksheet_refresh(month))
+        snapshot = json.loads(row["balances_json"])["credit_cards"]["cc1"]
+        assert snapshot["special_apr_percent"] == "0.00"
+        assert snapshot["special_apr_start"] == "2026-07-01"
+        assert snapshot["special_apr_end"] == "2026-09-30"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_put_worksheet_promo_partial_rejected(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from routes import payment_run as payment_run_mod
+    from main import app
+
+    month = current_month_key()
+    asyncio.run(_seed_worksheet_snapshot(month))
+    handler, _ = _cc1_firefly_handler()
+
+    app.dependency_overrides[payment_run_mod.get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    try:
+        response = client.put(
+            "/api/payment-run/accounts/cc1/worksheet",
+            params={"month": month},
+            json={"special_apr_percent": "0.00"},
+        )
+        assert response.status_code == 422
+        assert "all-or-nothing" in response.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_put_worksheet_promo_clear_all_null(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from payment_worksheet_profiles import parse_payment_worksheet_from_notes
+    from routes import payment_run as payment_run_mod
+    from main import app
+
+    month = current_month_key()
+    asyncio.run(_seed_worksheet_snapshot(month))
+    handler, put_bodies = _cc1_firefly_handler()
+
+    app.dependency_overrides[payment_run_mod.get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    try:
+        save = client.put(
+            "/api/payment-run/accounts/cc1/worksheet",
+            params={"month": month},
+            json={
+                "special_apr_percent": "0.00",
+                "special_apr_start": "2026-07-01",
+                "special_apr_end": "2026-09-30",
+            },
+        )
+        assert save.status_code == 200
+
+        clear = client.put(
+            "/api/payment-run/accounts/cc1/worksheet",
+            params={"month": month},
+            json={
+                "special_apr_percent": None,
+                "special_apr_start": None,
+                "special_apr_end": None,
+            },
+        )
+        assert clear.status_code == 200
+        parsed = parse_payment_worksheet_from_notes(put_bodies[-1].get("notes", ""))
+        assert "special_apr_percent" not in parsed
+        assert "special_apr_start" not in parsed
+        assert "special_apr_end" not in parsed
+
+        row = asyncio.run(sidecar_db.get_worksheet_refresh(month))
+        snapshot = json.loads(row["balances_json"])["credit_cards"]["cc1"]
+        assert "special_apr_percent" not in snapshot
+        assert "special_apr_start" not in snapshot
+        assert "special_apr_end" not in snapshot
+    finally:
+        app.dependency_overrides.clear()
+

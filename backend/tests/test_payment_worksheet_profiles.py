@@ -478,3 +478,84 @@ async def test_patch_liability_profile_removes_legacy_credit_card_stub(data_dir)
     updated = json.loads(row["balances_json"])
     assert "404" not in updated["credit_cards"]
     assert updated["liabilities"]["404"]["funding_bucket_key"] == "checking"
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["special_apr_percent", "special_apr_start", "special_apr_end"],
+)
+def test_merge_clears_promo_special_apr_on_null(field: str) -> None:
+    existing = {
+        **SAMPLE_PROFILE,
+        "special_apr_percent": "0.00",
+        "special_apr_start": "2026-07-01",
+        "special_apr_end": "2026-09-30",
+    }
+    merged = merge_payment_worksheet_profile(existing, {field: None})
+    assert field not in merged
+
+
+def test_merge_clears_all_promo_on_null() -> None:
+    existing = {
+        **SAMPLE_PROFILE,
+        "special_apr_percent": "0.00",
+        "special_apr_start": "2026-07-01",
+        "special_apr_end": "2026-09-30",
+    }
+    merged = merge_payment_worksheet_profile(
+        existing,
+        {
+            "special_apr_percent": None,
+            "special_apr_start": None,
+            "special_apr_end": None,
+        },
+    )
+    assert "special_apr_percent" not in merged
+    assert "special_apr_start" not in merged
+    assert "special_apr_end" not in merged
+
+
+@pytest.mark.asyncio
+async def test_patch_refresh_carries_promo_fields(data_dir):
+    import sidecar_db
+
+    month = current_month_key()
+    balances = {
+        "buckets": {},
+        "credit_cards": {
+            "cc1": {
+                "name": "Chase VISA",
+                "funding_bucket_key": None,
+                "owed": "1200.00",
+            }
+        },
+    }
+    await sidecar_db.upsert_worksheet_refresh(
+        month=month,
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+
+    await patch_worksheet_refresh_profile(
+        month,
+        "cc1",
+        {
+            "included": True,
+            "special_apr_percent": "0.00",
+            "special_apr_start": "2026-07-01",
+            "special_apr_end": "2026-09-30",
+        },
+        {
+            "special_apr_percent": "0.00",
+            "special_apr_start": "2026-07-01",
+            "special_apr_end": "2026-09-30",
+        },
+    )
+
+    row = await sidecar_db.get_worksheet_refresh(month)
+    assert row is not None
+    updated = json.loads(row["balances_json"])
+    card = updated["credit_cards"]["cc1"]
+    assert card["special_apr_percent"] == "0.00"
+    assert card["special_apr_start"] == "2026-07-01"
+    assert card["special_apr_end"] == "2026-09-30"

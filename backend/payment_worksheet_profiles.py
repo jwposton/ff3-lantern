@@ -23,6 +23,9 @@ CLEARABLE_OPTIONAL_KEYS = (
     "credit_limit",
     "default_planned_payment",
     "apr_percent",
+    "special_apr_percent",
+    "special_apr_start",
+    "special_apr_end",
     "payment_due_day",
     "sort_order",
 )
@@ -215,6 +218,27 @@ async def patch_worksheet_refresh_profile(
             entry["apr_percent"] = updates["apr_percent"]
         elif "apr_percent" in profile:
             entry["apr_percent"] = profile.get("apr_percent")
+        if updates is not None and "special_apr_percent" in updates:
+            if updates["special_apr_percent"] is None:
+                entry.pop("special_apr_percent", None)
+            else:
+                entry["special_apr_percent"] = updates["special_apr_percent"]
+        elif "special_apr_percent" in profile:
+            entry["special_apr_percent"] = profile.get("special_apr_percent")
+        if updates is not None and "special_apr_start" in updates:
+            if updates["special_apr_start"] is None:
+                entry.pop("special_apr_start", None)
+            else:
+                entry["special_apr_start"] = updates["special_apr_start"]
+        elif "special_apr_start" in profile:
+            entry["special_apr_start"] = profile.get("special_apr_start")
+        if updates is not None and "special_apr_end" in updates:
+            if updates["special_apr_end"] is None:
+                entry.pop("special_apr_end", None)
+            else:
+                entry["special_apr_end"] = updates["special_apr_end"]
+        elif "special_apr_end" in profile:
+            entry["special_apr_end"] = profile.get("special_apr_end")
         if updates is not None and "payment_due_day" in updates:
             entry["payment_due_day"] = updates["payment_due_day"]
         elif "payment_due_day" in profile:

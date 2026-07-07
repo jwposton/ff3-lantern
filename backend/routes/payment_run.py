@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
 from firefly_client import FireflyClient
+from payment_worksheet_promo import validate_promo_bundle
 from payment_worksheet_profiles import (
     current_month_key,
     effective_profile_from_notes,
@@ -225,6 +226,9 @@ class PaymentWorksheetBody(BaseModel):
     credit_limit: str | None = None
     default_planned_payment: str | None = None
     apr_percent: str | None = None
+    special_apr_percent: str | None = None
+    special_apr_start: str | None = None
+    special_apr_end: str | None = None
     payment_due_day: str | None = None
     sort_order: int | None = None
 
@@ -237,6 +241,9 @@ _PROFILE_FIELD_KEYS = frozenset(
         "credit_limit",
         "default_planned_payment",
         "apr_percent",
+        "special_apr_percent",
+        "special_apr_start",
+        "special_apr_end",
         "payment_due_day",
         "sort_order",
     }
@@ -679,6 +686,34 @@ async def update_account_worksheet(
         profile_updates["apr_percent"] = _validate_amount(
             str(profile_updates["apr_percent"]), "apr_percent"
         )
+    try:
+        validate_promo_bundle(profile_updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if (
+        profile_updates.get("special_apr_percent") is not None
+        and str(profile_updates["special_apr_percent"]).strip() != ""
+    ):
+        profile_updates["special_apr_percent"] = _validate_amount(
+            str(profile_updates["special_apr_percent"]), "special_apr_percent"
+        )
+        start_raw = str(profile_updates.get("special_apr_start", "")).strip()
+        end_raw = str(profile_updates.get("special_apr_end", "")).strip()
+        try:
+            start_date = date.fromisoformat(start_raw)
+            end_date = date.fromisoformat(end_raw)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="Dates must be in YYYY-MM-DD format.",
+            ) from exc
+        if start_date > end_date:
+            raise HTTPException(
+                status_code=422,
+                detail="special_apr_start must be on or before special_apr_end.",
+            )
+        profile_updates["special_apr_start"] = start_raw
+        profile_updates["special_apr_end"] = end_raw
     merged = merge_payment_worksheet_profile(existing_profile, profile_updates)
     try:
         await write_payment_worksheet_profile(
