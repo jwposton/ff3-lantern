@@ -40,10 +40,86 @@ import {
   repairBillLinkRule,
   updateBillRegistry,
   type AvailableFireflyBill,
+  type BillForecast,
   type BillHistoryTransaction,
   type RegisterBillPayload,
   type RegisteredBillListItem,
 } from "@/lib/paymentRunApi"
+
+function hasPositiveSuggestedAmount(amount: string | null | undefined): boolean {
+  if (amount == null || amount === "") {
+    return false
+  }
+  const parsed = Number.parseFloat(amount)
+  return Number.isFinite(parsed) && parsed > 0
+}
+
+function formatForecastMonthLabel(monthKey: string): string {
+  const [yearPart, monthPart] = monthKey.split("-")
+  const year = Number.parseInt(yearPart ?? "", 10)
+  const month = Number.parseInt(monthPart ?? "", 10)
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    return monthKey
+  }
+  return new Date(year, month - 1, 1).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  })
+}
+
+function shouldShowBillDetailForecast(
+  amountMode: string | undefined,
+  forecast: BillForecast | undefined,
+): boolean {
+  if (amountMode !== "intermittent" || !forecast) {
+    return false
+  }
+  const hasSuggested = hasPositiveSuggestedAmount(forecast.suggested_amount)
+  if (
+    (forecast.likelihood === "unknown" || forecast.likelihood === "unlikely") &&
+    !hasSuggested
+  ) {
+    return false
+  }
+  return true
+}
+
+function BillDetailForecastCard({ forecast }: { forecast: BillForecast }) {
+  const monthLabel = formatForecastMonthLabel(forecast.month)
+  const hasSuggested = hasPositiveSuggestedAmount(forecast.suggested_amount)
+
+  return (
+    <Card data-testid="bill-detail-forecast">
+      <CardContent className="space-y-2 pt-6">
+        <h3 className="text-sm font-medium">
+          Worksheet forecast for {monthLabel}
+        </h3>
+        <p className="text-sm">
+          Likelihood: {forecast.likelihood}
+        </p>
+        {hasSuggested ? (
+          <p className="text-sm">
+            Suggested amount: {formatDisplayAmount(forecast.suggested_amount)}
+          </p>
+        ) : null}
+        {forecast.seasonal?.detected && forecast.seasonal.active_month_labels ? (
+          <p className="text-sm">
+            Active season: {forecast.seasonal.active_month_labels}
+          </p>
+        ) : null}
+        {forecast.n > 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Based on average of {forecast.n} recent payments
+          </p>
+        ) : null}
+        <p className="text-sm text-muted-foreground">
+          Advisory only — does not set planned amount. Edit Due on the Payment
+          Worksheet to confirm.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
 
 function MetricBlock({
   label,
@@ -497,6 +573,13 @@ function BillDetailPanel({
               </div>
             </CardContent>
           </Card>
+
+          {shouldShowBillDetailForecast(
+            selectedBill?.amount_mode,
+            history.forecast,
+          ) && history.forecast ? (
+            <BillDetailForecastCard forecast={history.forecast} />
+          ) : null}
 
           <div className="space-y-3">
             <h3 className="text-sm font-medium">Linked payments</h3>

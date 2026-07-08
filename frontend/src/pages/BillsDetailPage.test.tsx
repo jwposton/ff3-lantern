@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 
 import { BillsDetailPage } from "./BillsDetailPage"
 import type {
+  BillForecast,
   BillHistoryEnvelope,
   PaymentWorksheetEnvelope,
   RegisteredBillListItem,
@@ -104,6 +105,32 @@ const BILL_CC: RegisteredBillListItem = {
   worksheet_section: "bills",
   payment_rail: "credit_card",
   amount_mode: "auto",
+}
+
+const BILL_INTERMITTENT: RegisteredBillListItem = {
+  registry_id: 4,
+  row_label: "Heating oil",
+  firefly_bill_id: "13",
+  worksheet_section: "bills",
+  payment_rail: "cash",
+  amount_mode: "intermittent",
+}
+
+const MOCK_FORECAST: BillForecast = {
+  month: "2026-07",
+  likelihood: "possible",
+  suggested_amount: "405.00",
+  basis: "average of 3 recent payments",
+  n: 3,
+  lookback_months: 24,
+  seasonal: {
+    detected: true,
+    active_months: [10, 11, 12, 1, 2, 3],
+    active_month_labels: "Oct–Mar",
+  },
+  cadence_label: "seasonal",
+  last_payment_date: "2026-03-05",
+  note: "Advisory — verify before planning",
 }
 
 const MOCK_HISTORY: BillHistoryEnvelope = {
@@ -389,5 +416,77 @@ describe("BillsDetailPage stats and table", () => {
     expect(
       screen.queryByText("Could not load bill history. Try again."),
     ).toBeNull()
+  })
+})
+
+describe("BillsDetailPage forecast echo", () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it("shows read-only forecast card for intermittent bill with forecast payload", async () => {
+    mockFetch({
+      bills: [BILL_INTERMITTENT],
+      history: { ...MOCK_HISTORY, registry_id: 4, forecast: MOCK_FORECAST },
+    })
+    render(
+      <TestProviders initialEntry="/manage/bills/4">
+        <BillsDetailPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("bill-detail-forecast")).toBeTruthy()
+    })
+
+    expect(screen.getByText(/Worksheet forecast for July 2026/i)).toBeTruthy()
+    expect(screen.getByText(/Likelihood: possible/i)).toBeTruthy()
+    expect(
+      screen.getByText(/Advisory only — does not set planned amount/i),
+    ).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /apply/i })).toBeNull()
+  })
+
+  it("omits forecast card for recurring bill without forecast payload", async () => {
+    mockFetch({ bills: [BILL_ALPHA], history: MOCK_HISTORY })
+    render(
+      <TestProviders initialEntry="/manage/bills/1">
+        <BillsDetailPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("12-month total")).toBeTruthy()
+    })
+
+    expect(screen.queryByTestId("bill-detail-forecast")).toBeNull()
+  })
+
+  it("omits forecast card when likelihood unknown without suggested amount", async () => {
+    mockFetch({
+      bills: [BILL_INTERMITTENT],
+      history: {
+        ...MOCK_HISTORY,
+        registry_id: 4,
+        forecast: {
+          ...MOCK_FORECAST,
+          likelihood: "unknown",
+          suggested_amount: null,
+          n: 0,
+        },
+      },
+    })
+    render(
+      <TestProviders initialEntry="/manage/bills/4">
+        <BillsDetailPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("12-month total")).toBeTruthy()
+    })
+
+    expect(screen.queryByTestId("bill-detail-forecast")).toBeNull()
   })
 })
