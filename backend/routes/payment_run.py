@@ -54,6 +54,7 @@ from payment_worksheet_bills import (
 from loan_journal_splits import count_liability_anchor_journals
 from loan_profiles import parse_loan_profile_from_notes
 from loan_split_infer import infer_loan_profile, merge_inferred_profile
+from payment_worksheet_bill_forecast import compute_intermittent_bill_forecast
 from payment_worksheet_bill_history import (
     bill_history_date_window,
     compute_bill_history_stats,
@@ -1008,15 +1009,31 @@ async def bill_history(
     if existing is None or not existing.get("firefly_bill_id"):
         raise HTTPException(status_code=404, detail="Registered bill not found.")
     today = app_clock.today()
-    start, end = bill_history_date_window(today)
+    is_intermittent = existing.get("amount_mode") == "intermittent"
+    display_start, display_end = bill_history_date_window(today, months=12)
+    fetch_start, fetch_end = (
+        bill_history_date_window(today, months=24)
+        if is_intermittent
+        else (display_start, display_end)
+    )
     try:
         rows = await client.fetch_bill_transactions(
-            str(existing["firefly_bill_id"]), start, end
+            str(existing["firefly_bill_id"]), fetch_start, fetch_end
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    stats = compute_bill_history_stats(rows, today=today)
-    transactions = sorted(rows, key=lambda row: row.get("date") or "", reverse=True)
+    if is_intermittent:
+        display_rows = [
+            row
+            for row in rows
+            if display_start <= str(row.get("date") or "")[:10] <= display_end
+        ]
+    else:
+        display_rows = rows
+    stats = compute_bill_history_stats(display_rows, today=today)
+    transactions = sorted(
+        display_rows, key=lambda row: row.get("date") or "", reverse=True
+    )
     try:
         firefly_bill = await client.fetch_bill(str(existing["firefly_bill_id"]))
         bill_name = str(firefly_bill.get("name") or "")
@@ -1044,10 +1061,17 @@ async def bill_history(
         "row_label": existing.get("row_label"),
         "name": bill_name or None,
         "firefly_bill_id": existing["firefly_bill_id"],
-        "window": {"start": start, "end": end},
+        "window": {"start": display_start, "end": display_end},
         **stats,
         "transactions": transactions,
     }
+    if is_intermittent and rows:
+        payload["forecast"] = compute_intermittent_bill_forecast(
+            rows,
+            month=current_month_key(),
+            repeat_freq=firefly_bill.get("repeat_freq"),
+            today=today,
+        )
     if rule_sync_status is not None:
         payload["rule_sync_status"] = rule_sync_status
     if row_label_synced:

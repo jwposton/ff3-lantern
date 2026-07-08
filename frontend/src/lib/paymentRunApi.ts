@@ -211,6 +211,7 @@ export type BillHistoryEnvelope = {
   active_month_count: number
   monthly_totals: { month: string; total: string }[]
   transactions: BillHistoryTransaction[]
+  forecast?: BillForecast
 }
 
 export type CreditCardHistoryTransactionKind =

@@ -1556,6 +1556,138 @@ def test_bill_history(monkeypatch, client, data_dir, payment_worksheet_env):
         assert body["transactions"][1]["date"] == "2026-01-15"
         assert body["firefly_base_url"] == "https://firefly.example"
         assert body["rule_sync_status"] == "synced"
+        assert "forecast" not in body
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_bill_history_intermittent_includes_forecast(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    monkeypatch.setattr("app_clock.today", lambda: date(2026, 7, 15))
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "8",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "intermittent",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-oil",
+                "row_label": "Heating oil",
+            }
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/bills/8" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "bills",
+                        "id": "8",
+                        "attributes": {
+                            "name": "Heating oil",
+                            "amount_min": "0.00",
+                            "amount_max": "500.00",
+                            "repeat_freq": None,
+                        },
+                    }
+                },
+            )
+        if request.url.path == "/api/v1/rules/rule-oil" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "rules",
+                        "id": "rule-oil",
+                        "attributes": {
+                            "title": "Heating oil",
+                            "trigger": "store-journal",
+                            "active": True,
+                            "strict": False,
+                            "triggers": [],
+                            "actions": [
+                                {
+                                    "type": "link_to_bill",
+                                    "value": "Heating oil",
+                                    "active": True,
+                                }
+                            ],
+                        },
+                        "relationships": {
+                            "rule_group": {
+                                "data": {"type": "rule_groups", "id": "1"},
+                            }
+                        },
+                    }
+                },
+            )
+        if request.url.path == "/api/v1/bills/8/transactions" and request.method == "GET":
+            deliveries = [
+                ("2024-10-15", "-425.00"),
+                ("2024-11-02", "-380.00"),
+                ("2025-10-15", "-425.00"),
+                ("2025-11-02", "-380.00"),
+                ("2026-01-10", "-440.00"),
+                ("2026-02-08", "-420.00"),
+                ("2026-03-05", "-390.00"),
+            ]
+            data = [
+                {
+                    "type": "transactions",
+                    "id": str(index),
+                    "attributes": {
+                        "description": f"Delivery {payment_date}",
+                        "transactions": [
+                            {
+                                "type": "withdrawal",
+                                "amount": amount,
+                                "destination_name": "Oil Co",
+                                "date": payment_date,
+                                "description": f"Delivery {payment_date}",
+                                "transaction_journal_id": f"j{index}",
+                            }
+                        ],
+                    },
+                }
+                for index, (payment_date, amount) in enumerate(deliveries, start=1)
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "data": data,
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        return httpx.Response(404)
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+
+    try:
+        response = client.get(f"/api/payment-run/bills/{reg_id}/history")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["registry_id"] == reg_id
+        assert body["window"]["start"]
+        assert body["window"]["end"]
+        assert len(body["transactions"]) >= 1
+        assert "forecast" in body
+        assert body["forecast"]["month"] == "2026-07"
+        assert body["forecast"]["likelihood"] in {"likely", "possible", "unlikely", "unknown"}
     finally:
         app.dependency_overrides.pop(get_firefly_client, None)
 
