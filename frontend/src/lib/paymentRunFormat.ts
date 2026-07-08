@@ -1,4 +1,6 @@
 import { referenceDate as appReferenceDate } from "@/lib/appClock"
+import type { AmountDueSource, BillForecast } from "@/lib/paymentRunApi"
+import { formatDisplayAmount } from "@/lib/formatDisplay"
 
 /** Format worksheet payment due day (1–31). */
 export function formatPaymentDueDay(
@@ -203,6 +205,89 @@ export function resolvePlannedAmountCommit(
   }
 
   return { planned_amount }
+}
+
+/** Forecast-populated due from backend refresh — distinct from override/posted. */
+export function isForecastSourcedAmountDue(row: {
+  amount_due_source?: AmountDueSource
+}): boolean {
+  return row.amount_due_source === "forecast"
+}
+
+function capitalizeLikelihood(
+  likelihood: BillForecast["likelihood"] | string | null | undefined,
+): string {
+  if (!likelihood) return ""
+  const value = String(likelihood)
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+/** D-07 tooltip body lines in fixed UI-SPEC order. */
+export function buildForecastDueTooltipLines(
+  forecast: BillForecast,
+  options: { showSuggestedLine?: boolean } = {},
+): string[] {
+  const lines: string[] = []
+  const likelihood = capitalizeLikelihood(forecast.likelihood)
+  if (likelihood) {
+    lines.push(likelihood)
+  }
+  if (
+    options.showSuggestedLine &&
+    forecast.suggested_amount &&
+    parseAmount(forecast.suggested_amount) > 0
+  ) {
+    lines.push(`Suggested: ${formatDisplayAmount(forecast.suggested_amount)}`)
+  }
+  if (forecast.seasonal?.detected && forecast.seasonal.active_month_labels) {
+    lines.push(`Active season: ${forecast.seasonal.active_month_labels}`)
+  }
+  lines.push(
+    `Last payment: ${forecast.last_payment_date ?? "—"}`,
+  )
+  lines.push(`Based on average of ${forecast.n} recent payments`)
+  if (forecast.note?.trim()) {
+    lines.push(forecast.note.trim())
+  }
+  return lines
+}
+
+/** Aria-label for forecast due tooltip trigger (D-07). */
+export function buildForecastDueAriaLabel(
+  forecast: BillForecast,
+  options: { showSuggestedLine?: boolean } = {},
+): string {
+  const parts: string[] = []
+  const likelihood = capitalizeLikelihood(forecast.likelihood)
+  if (likelihood) {
+    parts.push(`${likelihood} forecast`)
+  }
+  if (
+    options.showSuggestedLine &&
+    forecast.suggested_amount &&
+    parseAmount(forecast.suggested_amount) > 0
+  ) {
+    parts.push(formatDisplayAmount(forecast.suggested_amount))
+  }
+  if (forecast.note?.trim()) {
+    parts.push(forecast.note.trim())
+  }
+  return parts.join(". ")
+}
+
+export function shouldShowForecastDueTooltip(row: {
+  forecast?: BillForecast
+  amount_due_source?: AmountDueSource
+  paid_at?: string | null
+}): boolean {
+  if (!row.forecast || row.paid_at) return false
+  if (row.amount_due_source === "forecast" || row.amount_due_source === "posted") {
+    return true
+  }
+  if (row.amount_due_source === "override") {
+    return true
+  }
+  return false
 }
 
 /** Intermittent bills (or unset liability due) show empty until the user types. */

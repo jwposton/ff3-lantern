@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  buildForecastDueAriaLabel,
+  buildForecastDueTooltipLines,
   computeCreditCardSubtotals,
   displayAmountDueInput,
   displayPlannedAmountInput,
   displayUserBalanceInput,
   formatInterestPercent,
   formatPaymentDueDay,
+  isForecastSourcedAmountDue,
   isLastPaymentInWorksheetMonth,
   isPaymentDueUrgent,
   isSoftAmountDue,
@@ -18,6 +21,7 @@ import {
   resolveUserBalanceCommit,
   shouldHighlightCreditCardDue,
 } from "./paymentRunFormat"
+import type { BillForecast } from "./paymentRunApi"
 
 describe("paymentRunFormat", () => {
   it("formats payment due day", () => {
@@ -122,6 +126,72 @@ describe("paymentRunFormat", () => {
     expect(displayAmountDueInput(row)).toBe("")
     expect(resolveAmountDueCommit(row, "")).toBeNull()
     expect(resolveAmountDueCommit(row, "75")).toEqual({ amount_due: "75" })
+  })
+
+  it("shows forecast-populated intermittent due instead of soft empty", () => {
+    const row = {
+      amount_due: "405.00",
+      amount_due_override: false,
+      amount_mode: "intermittent",
+      amount_due_source: "forecast" as const,
+    }
+    expect(isSoftAmountDue(row)).toBe(false)
+    expect(displayAmountDueInput(row)).toBe("405.00")
+    expect(isForecastSourcedAmountDue(row)).toBe(true)
+  })
+
+  it("isForecastSourcedAmountDue is false for override, posted, and none", () => {
+    expect(
+      isForecastSourcedAmountDue({ amount_due_source: "forecast" }),
+    ).toBe(true)
+    expect(
+      isForecastSourcedAmountDue({ amount_due_source: "override" }),
+    ).toBe(false)
+    expect(
+      isForecastSourcedAmountDue({ amount_due_source: "posted" }),
+    ).toBe(false)
+    expect(isForecastSourcedAmountDue({ amount_due_source: "none" })).toBe(
+      false,
+    )
+    expect(isForecastSourcedAmountDue({})).toBe(false)
+  })
+
+  const forecastFixture: BillForecast = {
+    month: "2026-07",
+    likelihood: "likely",
+    suggested_amount: "405.00",
+    basis: "mean_last_n",
+    n: 2,
+    lookback_months: 12,
+    seasonal: {
+      detected: true,
+      active_months: [10, 11, 12, 1, 2, 3],
+      active_month_labels: "Oct–Mar",
+    },
+    cadence_label: "seasonal",
+    last_payment_date: "2026-03-10",
+    note: "Advisory — verify before planning",
+  }
+
+  it("builds forecast tooltip lines in D-07 order", () => {
+    expect(
+      buildForecastDueTooltipLines(forecastFixture, { showSuggestedLine: true }),
+    ).toEqual([
+      "Likely",
+      "Suggested: 405.00",
+      "Active season: Oct–Mar",
+      "Last payment: 2026-03-10",
+      "Based on average of 2 recent payments",
+      "Advisory — verify before planning",
+    ])
+  })
+
+  it("builds forecast aria-label with likelihood, suggested, and advisory", () => {
+    expect(
+      buildForecastDueAriaLabel(forecastFixture, { showSuggestedLine: true }),
+    ).toBe(
+      "Likely forecast. 405.00. Advisory — verify before planning",
+    )
   })
 
   it("clears bill amount due override back to refresh default", () => {

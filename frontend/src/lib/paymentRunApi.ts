@@ -27,6 +27,28 @@ export type PlannedAmountRow = {
   planned_amount_override: boolean
 }
 
+export type AmountDueSource = "forecast" | "posted" | "override" | "none"
+
+export type BillForecastSeasonal = {
+  detected: boolean
+  active_months: number[]
+  active_month_labels: string | null
+}
+
+export type BillForecast = {
+  month: string
+  likelihood: "likely" | "possible" | "unlikely" | "unknown"
+  suggested_amount: string | null
+  basis: string
+  n: number
+  lookback_months: number
+  seasonal: BillForecastSeasonal
+  cadence_label: string
+  last_payment_date: string | null
+  note: string
+  posted_wins?: boolean
+}
+
 export type AmountDueRow = {
   row_key: string
   amount_due: string
@@ -34,6 +56,7 @@ export type AmountDueRow = {
   amount_mode?: string
   planned_amount?: string
   account_id?: string
+  amount_due_source?: AmountDueSource
 }
 
 export type BillRow = PlannedAmountRow &
@@ -50,6 +73,7 @@ export type BillRow = PlannedAmountRow &
   worksheet_section: string
   bill_group_id?: string | null
   show_in_group?: boolean
+  forecast?: BillForecast
 }
 
 export type LiabilityRow = PlannedAmountRow &
