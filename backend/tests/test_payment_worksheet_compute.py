@@ -1142,3 +1142,134 @@ async def test_bucket_rollups_unchanged_with_grouped_bills(data_dir):
 
     assert grouped_rollups == ungrouped_rollups == "225.00"
     assert grouped_envelope["totals"] == ungrouped_envelope["totals"]
+
+
+def _forecast_fixture(*, likelihood: str = "possible", suggested: str = "400.00") -> dict:
+    return {
+        "month": "2026-07",
+        "likelihood": likelihood,
+        "suggested_amount": suggested,
+        "basis": "mean_last_n",
+        "n": 2,
+        "lookback_months": 12,
+        "seasonal": {
+            "detected": False,
+            "active_months": [],
+            "active_month_labels": None,
+        },
+        "cadence_label": "irregular",
+        "last_payment_date": "2026-03-10",
+        "note": "Advisory — verify before planning",
+    }
+
+
+@pytest.mark.asyncio
+async def test_assemble_intermittent_bill_forwards_forecast_and_due_subtotal(data_dir):
+    await _seed_funding_bucket()
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-heat",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-heat",
+            "row_label": "Heating",
+            "counts_toward_cash_plan": True,
+        }
+    )
+    forecast = _forecast_fixture()
+    await _seed_refresh(
+        bills_snapshot={
+            str(reg_id): {
+                "owed": "400.00",
+                "firefly_bill_id": "bill-heat",
+                "name": "Heating",
+                "forecast": forecast,
+            }
+        }
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    bill = envelope["bills"][0]
+    assert bill["forecast"]["likelihood"] == "possible"
+    assert bill["amount_due"] == "400.00"
+    assert bill["amount_due_source"] == "forecast"
+    assert envelope["section_subtotals"]["bills"]["due"] == "400.00"
+    assert envelope["section_subtotals"]["bills"]["planned_cash"] == "0.00"
+
+
+@pytest.mark.asyncio
+async def test_assemble_forecast_amount_due_override_wins(data_dir):
+    await _seed_funding_bucket()
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-heat",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-heat",
+            "row_label": "Heating",
+        }
+    )
+    await _seed_refresh(
+        bills_snapshot={
+            str(reg_id): {
+                "owed": "400.00",
+                "firefly_bill_id": "bill-heat",
+                "name": "Heating",
+                "forecast": _forecast_fixture(),
+            }
+        }
+    )
+    await sidecar_db.upsert_worksheet_state_row(
+        row_key=bill_row_key(reg_id),
+        row_type="bill",
+        month="2026-07",
+        amount_due="250.00",
+        amount_due_override=1,
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    bill = envelope["bills"][0]
+    assert bill["amount_due"] == "250.00"
+    assert bill["amount_due_override"] is True
+    assert bill["amount_due_source"] == "override"
+    assert bill["forecast"]["suggested_amount"] == "400.00"
+
+
+@pytest.mark.asyncio
+async def test_assemble_forecast_posted_source_when_posted_wins(data_dir):
+    await _seed_funding_bucket()
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-heat",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-heat",
+            "row_label": "Heating",
+        }
+    )
+    forecast = {**_forecast_fixture(), "posted_wins": True}
+    await _seed_refresh(
+        bills_snapshot={
+            str(reg_id): {
+                "owed": "780.00",
+                "firefly_bill_id": "bill-heat",
+                "name": "Heating",
+                "forecast": forecast,
+            }
+        }
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    bill = envelope["bills"][0]
+    assert bill["amount_due"] == "780.00"
+    assert bill["amount_due_source"] == "posted"
+

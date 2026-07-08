@@ -658,6 +658,28 @@ def _assemble_liability_accounts(
     return rows
 
 
+def _derive_amount_due_source(
+    *,
+    amount_due_override: bool,
+    forecast: dict[str, Any] | None,
+    refresh_due: str,
+) -> str:
+    if amount_due_override:
+        return "override"
+    if forecast is not None:
+        if forecast.get("posted_wins"):
+            return "posted"
+        likelihood = str(forecast.get("likelihood") or "")
+        suggested = forecast.get("suggested_amount")
+        if (
+            likelihood in {"likely", "possible"}
+            and suggested is not None
+            and str(refresh_due) == str(suggested)
+        ):
+            return "forecast"
+    return "none"
+
+
 def _assemble_bill_rows(
     registry_rows: list[dict[str, Any]],
     refresh_snapshot: dict[str, Any] | None,
@@ -681,14 +703,20 @@ def _assemble_bill_rows(
             state,
             refresh_default=refresh_due,
         )
-        rows.append(
-            {
+        forecast = snap.get("forecast")
+        amount_due_source = _derive_amount_due_source(
+            amount_due_override=amount_due_override,
+            forecast=forecast if isinstance(forecast, dict) else None,
+            refresh_due=refresh_due,
+        )
+        row_payload: dict[str, Any] = {
                 "registry_id": reg_id,
                 "row_key": row_key,
                 "row_label": reg.get("row_label") or snap.get("name"),
                 "firefly_bill_id": reg.get("firefly_bill_id"),
                 "amount_due": amount_due,
                 "amount_due_override": amount_due_override,
+                "amount_due_source": amount_due_source,
                 "planned_amount": state.get("planned_amount", "0.00"),
                 "planned_amount_override": bool(state.get("planned_amount_override")),
                 "paid_at": state.get("paid_at"),
@@ -705,8 +733,13 @@ def _assemble_bill_rows(
                     if snap.get("rule_sync_status") is not None
                     else {}
                 ),
+                **(
+                    {"forecast": forecast}
+                    if isinstance(forecast, dict)
+                    else {}
+                ),
             }
-        )
+        rows.append(row_payload)
     rows.sort(key=bill_row_display_sort_key)
     return rows
 
