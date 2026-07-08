@@ -206,6 +206,20 @@ describe("paymentRunFormat", () => {
     })
   })
 
+  it("clears forecast override back to refresh default without auto-setting override", () => {
+    const row = {
+      amount_due: "500.00",
+      amount_due_override: true,
+      amount_mode: "intermittent",
+      amount_due_source: "override" as const,
+    }
+    expect(resolveAmountDueCommit(row, "")).toEqual({
+      amount_due: "0.00",
+      clear_amount_due_override: true,
+    })
+    expect(resolveAmountDueCommit(row, "500.00")).toBeNull()
+  })
+
   it("treats unset user balance as soft reported match", () => {
     const bucket = {
       reported_balance: "5000.00",
