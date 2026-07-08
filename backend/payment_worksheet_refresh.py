@@ -19,7 +19,15 @@ from payment_worksheet_bills import (
     link_to_bill_action_value,
     rule_link_sync_status,
 )
-from payment_worksheet_bill_history import bill_amount_due_fetch_window
+from payment_worksheet_bill_forecast import (
+    compute_intermittent_bill_forecast,
+    resolve_intermittent_owed,
+    same_month_posted_payment,
+)
+from payment_worksheet_bill_history import (
+    bill_amount_due_fetch_window,
+    bill_history_date_window,
+)
 from payment_worksheet_cc import classify_cc_activity_category, is_credit_card_payment_flow
 from payment_worksheet_liabilities import (
     compute_liability_display_fields,
@@ -445,8 +453,36 @@ async def run_refresh(
                 "unavailable": True,
             }
             continue
+        forecast: dict[str, Any] | None = None
         if reg.get("amount_mode") == "intermittent":
-            owed = "0.00"
+            if reg.get("worksheet_section") != "bills":
+                owed = "0.00"
+            else:
+                refresh_today = app_clock.today()
+                start, end = bill_history_date_window(refresh_today, months=24)
+                try:
+                    linked_rows = await client.fetch_bill_transactions(
+                        str(bill_id), start, end
+                    )
+                except RuntimeError as exc:
+                    logger.warning(
+                        "Bill %s linked payments unavailable for intermittent forecast: %s",
+                        bill_id,
+                        exc,
+                    )
+                    linked_rows = []
+                if linked_rows:
+                    forecast = compute_intermittent_bill_forecast(
+                        linked_rows,
+                        month=month,
+                        repeat_freq=ff_bill.get("repeat_freq"),
+                        today=refresh_today,
+                    )
+                    owed = resolve_intermittent_owed(forecast, linked_rows, month)
+                    if same_month_posted_payment(linked_rows, month):
+                        forecast = {**forecast, "posted_wins": True}
+                else:
+                    owed = "0.00"
         else:
             start, end = bill_amount_due_fetch_window()
             try:
@@ -487,6 +523,8 @@ async def run_refresh(
         }
         if rule_sync_status is not None:
             bill_entry["rule_sync_status"] = rule_sync_status
+        if forecast is not None:
+            bill_entry["forecast"] = forecast
         balances["bills"][reg_id] = bill_entry
 
         if reg.get("amount_mode") == "intermittent":

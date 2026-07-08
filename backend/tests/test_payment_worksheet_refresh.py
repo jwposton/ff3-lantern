@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -775,3 +775,139 @@ async def test_refresh_skips_stale_registry_bill(data_dir, payment_worksheet_env
     assert balances["bills"][str(good_id)]["owed"] == "120.00"
     assert balances["bills"][str(stale_id)]["unavailable"] is True
     assert balances["bills"][str(stale_id)]["owed"] == "0.00"
+
+
+@pytest.mark.asyncio
+async def test_refresh_intermittent_bills_forecast_snapshot(
+    data_dir, payment_worksheet_env, monkeypatch
+):
+    monkeypatch.setattr("app_clock.today", lambda: date(2026, 7, 15))
+    fixture = _fixture()
+    bills = {
+        "bill-heat": {
+            "name": "Heating",
+            "amount_min": "300.00",
+            "amount_max": "500.00",
+            "repeat_freq": None,
+        }
+    }
+    bill_transactions = {
+        "bill-heat": [
+            {"date": "2026-01-05", "amount": "400.00"},
+            {"date": "2026-02-20", "amount": "390.00"},
+            {"date": "2026-03-10", "amount": "410.00"},
+        ]
+    }
+    client = _build_client_with_bills(
+        fixture, bills, bill_transactions=bill_transactions
+    )
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-heat",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-heat",
+            "row_label": "Heating",
+        }
+    )
+    month = "2026-07"
+
+    await run_refresh(client, month)
+
+    balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
+    snap = balances["bills"][str(reg_id)]
+    assert "forecast" in snap
+    assert snap["forecast"]["likelihood"] in {"likely", "possible", "unlikely", "unknown"}
+    assert "planned_amount" not in snap
+    rows = await sidecar_db.get_worksheet_state_for_month(month)
+    intermittent_rows = [r for r in rows if r["row_key"] == bill_row_key(reg_id)]
+    assert not intermittent_rows
+
+
+@pytest.mark.asyncio
+async def test_refresh_liability_intermittent_skips_forecast(
+    data_dir, payment_worksheet_env, monkeypatch
+):
+    monkeypatch.setattr("app_clock.today", lambda: date(2026, 7, 15))
+    fixture = _fixture()
+    bills = {
+        "bill-liab": {
+            "name": "HOA",
+            "amount_min": "100.00",
+            "amount_max": "200.00",
+        }
+    }
+    bill_transactions = {
+        "bill-liab": [
+            {"date": "2026-01-05", "amount": "150.00"},
+            {"date": "2026-02-20", "amount": "175.00"},
+        ]
+    }
+    client = _build_client_with_bills(
+        fixture, bills, bill_transactions=bill_transactions
+    )
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-liab",
+            "worksheet_section": "liabilities",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-liab",
+            "row_label": "HOA",
+        }
+    )
+    month = "2026-07"
+
+    await run_refresh(client, month)
+
+    balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
+    snap = balances["bills"][str(reg_id)]
+    assert snap["owed"] == "0.00"
+    assert "forecast" not in snap
+
+
+@pytest.mark.asyncio
+async def test_refresh_intermittent_fetch_failure_still_writes_zero_owed(
+    data_dir, payment_worksheet_env, monkeypatch
+):
+    monkeypatch.setattr("app_clock.today", lambda: date(2026, 7, 15))
+    fixture = _fixture()
+    bills = {
+        "bill-broken": {
+            "name": "Broken",
+            "amount_min": "50.00",
+            "amount_max": "50.00",
+        }
+    }
+    client = _build_client_with_bills(fixture, bills)
+
+    async def failing_transactions(bill_id: str, start: str, end: str):
+        raise RuntimeError("firefly down")
+
+    client.fetch_bill_transactions = failing_transactions  # type: ignore[method-assign]
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-broken",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-broken",
+            "row_label": "Broken",
+        }
+    )
+    month = "2026-07"
+
+    await run_refresh(client, month)
+
+    balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
+    snap = balances["bills"][str(reg_id)]
+    assert snap["owed"] == "0.00"
+    assert "forecast" not in snap
+
