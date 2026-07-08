@@ -22,6 +22,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { formatDisplayAmount } from "@/lib/formatDisplay"
 import { buildFireflyBillUrl } from "@/lib/fireflyLinks"
 import type {
@@ -31,6 +36,12 @@ import type {
   SectionSubtotals,
   WorksheetBillGroupSummary,
 } from "@/lib/paymentRunApi"
+import {
+  buildForecastDueAriaLabel,
+  buildForecastDueTooltipLines,
+  isForecastSourcedAmountDue,
+  shouldShowForecastDueTooltip,
+} from "@/lib/paymentRunFormat"
 import {
   readExpandedBillGroups,
   writeExpandedBillGroups,
@@ -58,10 +69,75 @@ function parseAmount(value: string | null | undefined): number {
 function isMutedIntermittent(row: BillRow): boolean {
   return (
     row.amount_mode === "intermittent" &&
-    parseAmount(row.amount_due) === 0 &&
     parseAmount(row.planned_amount) === 0 &&
     !row.planned_amount_override &&
     !row.amount_due_override
+  )
+}
+
+function ForecastDueCell({
+  row,
+  isPaid,
+  onCommit,
+}: {
+  row: BillRow
+  isPaid: boolean
+  onCommit: BillsTableProps["onAmountDueBlur"]
+}) {
+  const showEmphasis = isForecastSourcedAmountDue(row) && !isPaid
+  const showTooltip = shouldShowForecastDueTooltip(row)
+  const showSuggestedLine = row.amount_due_source === "posted"
+
+  const dueInput = (
+    <AmountDueInput
+      row={row}
+      isPaid={isPaid}
+      onCommit={onCommit}
+    />
+  )
+
+  if (!showTooltip || !row.forecast) {
+    return dueInput
+  }
+
+  const tooltipLines = buildForecastDueTooltipLines(row.forecast, {
+    showSuggestedLine,
+  })
+  const ariaLabel = buildForecastDueAriaLabel(row.forecast, {
+    showSuggestedLine,
+  })
+
+  const emphasizedDue = showEmphasis ? (
+    <span
+      className="inline-flex rounded-sm ring-1 ring-sky-500/30"
+      data-testid="forecast-due-emphasis"
+    >
+      {dueInput}
+    </span>
+  ) : (
+    dueInput
+  )
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={ariaLabel}
+          data-testid="forecast-due-tooltip-trigger"
+        >
+          {emphasizedDue}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs">
+        <div className="flex flex-col gap-1 text-xs">
+          {tooltipLines.map((line) => (
+            <span key={line}>{line}</span>
+          ))}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -185,7 +261,7 @@ export function BillsTable({
           {isCcRail ? "—" : bucketLabel(buckets, row.funding_bucket_key)}
         </TableCell>
         <TableCell className="text-right">
-          <AmountDueInput
+          <ForecastDueCell
             row={row}
             isPaid={isPaid}
             onCommit={onAmountDueBlur}

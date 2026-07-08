@@ -36,6 +36,7 @@ export function AmountDueInput({
     row.amount_mode,
     row.planned_amount,
     row.account_id,
+    row.amount_due_source,
     row.row_key,
     focused,
   ])

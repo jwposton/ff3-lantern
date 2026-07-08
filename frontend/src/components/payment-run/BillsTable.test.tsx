@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
 
 import { BillsTable } from "./BillsTable"
-import type { BillRow, WorksheetBillGroupSummary } from "@/lib/paymentRunApi"
+import { TooltipProvider } from "@/components/ui/tooltip"
+import type { BillForecast, BillRow, WorksheetBillGroupSummary } from "@/lib/paymentRunApi"
 import { STORAGE_KEY } from "@/lib/worksheetBillGroupExpand"
 
 function makeBill(
@@ -254,5 +255,146 @@ describe("BillsTable expandable bill groups", () => {
 
     const manageLink = screen.getByRole("link", { name: "Manage Electric" })
     expect(manageLink.getAttribute("href")).toBe("/manage/bills/1")
+  })
+})
+
+const forecastPayload: BillForecast = {
+  month: "2026-07",
+  likelihood: "likely",
+  suggested_amount: "405.00",
+  basis: "mean_last_n",
+  n: 2,
+  lookback_months: 12,
+  seasonal: {
+    detected: true,
+    active_months: [10, 11, 12, 1, 2, 3],
+    active_month_labels: "Oct–Mar",
+  },
+  cadence_label: "seasonal",
+  last_payment_date: "2026-03-10",
+  note: "Advisory — verify before planning",
+}
+
+function renderForecastBillsTable(rows: BillRow[]) {
+  const onPlannedBlur = vi.fn(async () => {})
+  const onAmountDueBlur = vi.fn(async () => {})
+  const onPaidChange = vi.fn(async () => {})
+
+  render(
+    <MemoryRouter>
+      <TooltipProvider>
+        <BillsTable
+          rows={rows}
+          billGroups={[]}
+          buckets={[
+            {
+              id: "checking",
+              label: "Checking",
+              sort_order: 0,
+              reported_balance: "5000.00",
+              user_balance: "5000.00",
+              user_balance_override: false,
+              planned_outflows: "0.00",
+              remaining: "5000.00",
+            },
+          ]}
+          creditCards={[]}
+          subtotals={{ owed: "0.00", due: "405.00", planned_cash: "0.00" }}
+          onPlannedBlur={onPlannedBlur}
+          onAmountDueBlur={onAmountDueBlur}
+          onPaidChange={onPaidChange}
+        />
+      </TooltipProvider>
+    </MemoryRouter>,
+  )
+}
+
+describe("BillsTable intermittent forecast Due UX", () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it("keeps muted intermittent row with forecast due and sky emphasis ring", () => {
+    renderForecastBillsTable([
+      makeBill({
+        registry_id: 50,
+        row_key: "bills:50",
+        row_label: "Heating Oil",
+        amount_mode: "intermittent",
+        amount_due: "405.00",
+        amount_due_source: "forecast",
+        planned_amount: "0.00",
+        forecast: forecastPayload,
+      }),
+    ])
+
+    const row = screen.getByText("Heating Oil").closest("tr")
+    expect(row?.getAttribute("data-state")).toBe("muted-intermittent")
+    expect(screen.getByTestId("forecast-due-emphasis")).toBeTruthy()
+    expect(screen.getByTestId("forecast-due-tooltip-trigger")).toBeTruthy()
+    expect(
+      screen.getByRole("button", {
+        name: /Advisory — verify before planning/,
+      }),
+    ).toBeTruthy()
+  })
+
+  it("shows posted actual without ring but includes Suggested in tooltip", () => {
+    renderForecastBillsTable([
+      makeBill({
+        registry_id: 51,
+        row_key: "bills:51",
+        row_label: "Heating Oil Posted",
+        amount_mode: "intermittent",
+        amount_due: "350.00",
+        amount_due_source: "posted",
+        planned_amount: "0.00",
+        forecast: { ...forecastPayload, posted_wins: true },
+      }),
+    ])
+
+    expect(screen.queryByTestId("forecast-due-emphasis")).toBeNull()
+    expect(screen.getByTestId("forecast-due-tooltip-trigger")).toBeTruthy()
+    const trigger = screen.getByTestId("forecast-due-tooltip-trigger")
+    expect(trigger.getAttribute("aria-label")).toContain("405.00")
+  })
+
+  it("renders unknown intermittent soft due without forecast chrome", () => {
+    renderForecastBillsTable([
+      makeBill({
+        registry_id: 52,
+        row_key: "bills:52",
+        row_label: "Sparse Bill",
+        amount_mode: "intermittent",
+        amount_due: "0.00",
+        amount_due_source: "none",
+        planned_amount: "0.00",
+      }),
+    ])
+
+    expect(screen.queryByTestId("forecast-due-emphasis")).toBeNull()
+    expect(screen.queryByTestId("forecast-due-tooltip-trigger")).toBeNull()
+    const row = screen.getByText("Sparse Bill").closest("tr")
+    expect(row?.getAttribute("data-state")).toBe("muted-intermittent")
+  })
+
+  it("suppresses forecast ring when operator overrides amount due", () => {
+    renderForecastBillsTable([
+      makeBill({
+        registry_id: 53,
+        row_key: "bills:53",
+        row_label: "Heating Override",
+        amount_mode: "intermittent",
+        amount_due: "500.00",
+        amount_due_override: true,
+        amount_due_source: "override",
+        planned_amount: "0.00",
+        forecast: forecastPayload,
+      }),
+    ])
+
+    expect(screen.queryByTestId("forecast-due-emphasis")).toBeNull()
+    expect(screen.getByTestId("forecast-due-tooltip-trigger")).toBeTruthy()
   })
 })
