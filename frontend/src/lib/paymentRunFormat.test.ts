@@ -194,6 +194,21 @@ describe("paymentRunFormat", () => {
     )
   })
 
+  it("omits payment-count basis line when forecast n is zero", () => {
+    expect(
+      buildForecastDueTooltipLines(
+        { ...forecastFixture, n: 0 },
+        { showSuggestedLine: true },
+      ),
+    ).toEqual([
+      "Likely",
+      "Suggested: 405.00",
+      "Active season: Oct–Mar",
+      "Last payment: 2026-03-10",
+      "Advisory — verify before planning",
+    ])
+  })
+
   it("clears bill amount due override back to refresh default", () => {
     const row = {
       amount_due: "150.00",

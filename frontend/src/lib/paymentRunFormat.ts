@@ -245,7 +245,9 @@ export function buildForecastDueTooltipLines(
   lines.push(
     `Last payment: ${forecast.last_payment_date ?? "—"}`,
   )
-  lines.push(`Based on average of ${forecast.n} recent payments`)
+  if (forecast.n > 0) {
+    lines.push(`Based on average of ${forecast.n} recent payments`)
+  }
   if (forecast.note?.trim()) {
     lines.push(forecast.note.trim())
   }
