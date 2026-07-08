@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Special/promo APR windows (backend)** — credit card worksheet profiles can store optional promotional APR rate and inclusive start/end dates; worksheet API resolves `promo_active` and `effective_apr_percent` per selected month (#107)
+- **Intermittent bill forecast (backend)** — intermittent bills with sufficient payment history receive likelihood and suggested amount on refresh; seasonal clustering, cadence lookback, and posted-payment precedence are enforced server-side (#95)
 - **Special/promo APR windows (worksheet UI)** — configure promo rate and dates in the credit card settings sheet; active promos highlight the regular APR with a tooltip and shift the balance-weighted APR subtotal (#107)
 - **Special/promo APR windows (hub and detail)** — configure promo rate and dates on the card profile; the worksheet highlights active promos for the selected month and uses the promo rate in the balance-weighted APR subtotal; the CC hub and card detail pages show active promos for the current calendar month (#107)
 

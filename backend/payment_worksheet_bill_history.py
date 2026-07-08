@@ -33,17 +33,24 @@ def _month_key_offset(today: date, months_back: int) -> str:
     return f"{year}-{month:02d}"
 
 
-def bill_history_date_window(today: date | None = None) -> tuple[str, str]:
-    """Fetch window: 12 complete months plus the current partial month through today.
+def bill_history_date_window(
+    today: date | None = None,
+    *,
+    months: int = 12,
+) -> tuple[str, str]:
+    """Fetch window: *months* complete months plus the current partial month through today.
 
-    Span is (month - 12) through today so early in the month you still see the
-    same month last year (e.g. July rent before this month's payment posts).
-    Stats use a conditional 12-month window — see ``bill_history_stats_month_range``.
+    Default ``months=12`` preserves chart/history callers (#23). Forecast may pass
+    ``months=24`` (capped at 24). Span is (month - *months*) through today so early
+    in the month you still see the same month last year (e.g. July rent before this
+    month's payment posts). Stats use a conditional 12-month window — see
+    ``bill_history_stats_month_range``.
     """
     if today is None:
         today = app_clock.today()
+    lookback = min(max(months, 1), 24)
     year = today.year
-    month = today.month - 12
+    month = today.month - lookback
     while month <= 0:
         month += 12
         year -= 1
