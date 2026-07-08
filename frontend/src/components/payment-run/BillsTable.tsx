@@ -107,28 +107,22 @@ function ForecastDueCell({
     showSuggestedLine,
   })
 
-  const emphasizedDue = showEmphasis ? (
-    <span
-      className="inline-flex rounded-sm ring-1 ring-sky-500/30"
-      data-testid="forecast-due-emphasis"
-    >
-      {dueInput}
-    </span>
-  ) : (
-    dueInput
-  )
-
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        <div
+          className="relative inline-flex rounded-sm has-[:focus-visible]:outline-hidden has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
           aria-label={ariaLabel}
           data-testid="forecast-due-tooltip-trigger"
         >
-          {emphasizedDue}
-        </button>
+          {showEmphasis ? (
+            <span
+              className="pointer-events-none absolute inset-0 rounded-sm ring-1 ring-sky-500/30"
+              data-testid="forecast-due-emphasis"
+            />
+          ) : null}
+          {dueInput}
+        </div>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs">
         <div className="flex flex-col gap-1 text-xs">

@@ -332,12 +332,16 @@ describe("BillsTable intermittent forecast Due UX", () => {
     const row = screen.getByText("Heating Oil").closest("tr")
     expect(row?.getAttribute("data-state")).toBe("muted-intermittent")
     expect(screen.getByTestId("forecast-due-emphasis")).toBeTruthy()
-    expect(screen.getByTestId("forecast-due-tooltip-trigger")).toBeTruthy()
-    expect(
-      screen.getByRole("button", {
-        name: /Advisory — verify before planning/,
-      }),
-    ).toBeTruthy()
+    const trigger = screen.getByTestId("forecast-due-tooltip-trigger")
+    expect(trigger).toBeTruthy()
+    expect(trigger.tagName).toBe("DIV")
+    expect(trigger.getAttribute("aria-label")).toContain(
+      "Advisory — verify before planning",
+    )
+    const dueInput = within(trigger).getByRole("textbox")
+    expect(dueInput).toBeTruthy()
+    expect(trigger.contains(dueInput)).toBe(true)
+    expect(dueInput.closest("button")).toBeNull()
   })
 
   it("shows posted actual without ring but includes Suggested in tooltip", () => {
