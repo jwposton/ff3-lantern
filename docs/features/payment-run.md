@@ -355,9 +355,27 @@ Still **FF bills** for imports, rules, and categorization. On the payment worksh
 ### Variable / seasonal (heating oil, propane)
 
 - FF bill stores **min/max** and repeat (e.g. every 2–3 months)
-- Registry: `amount_mode: "range"` or `"manual"`; optional `active_months` (e.g. `[10,11,12,1,2,3]` for oil)
+- Registry: `amount_mode: "intermittent"` (or legacy `"range"` / `"manual"`) for irregular fills
 - **Planned payment** defaults to **$0** off-season or until user enters an amount for a fill
 - One bill entity (e.g. "Heating oil"); attach each payment to it (rule or manual link)
+
+#### Intermittent bill forecast (Phase 27, #95)
+
+For **intermittent** bills on the **Bills** worksheet section only (not liabilities in v1):
+
+| Field | Forecast behavior |
+|-------|-------------------|
+| **Due (`amount_due`)** | **likely** / **possible** → refresh populates Due with suggested amount (sky ring until operator overrides). **unlikely** / **unknown** → muted $0. Posted payment this month → Due shows actual; forecast stays in tooltip for comparison. |
+| **Planned (`planned_amount`)** | **Unchanged** — forecast never writes planned; operator enters planned manually. |
+| **Cash planning footer** | **Unchanged** — subtotals and “cash needed” follow `planned_amount`, not forecast Due. |
+| **Due subtotals** | Include forecast-populated Due (always on; no optional toggle). |
+| **Planned subtotals** | Exclude forecast — planned totals unchanged. |
+
+**Seasonal detection** uses **date clustering only** (no category-name rules): requires **2 full calendar years** of linked payments; an active month needs payments in **≥2 distinct years**. Off-season months → `unlikely`. Suggested amount = mean of up to **3** most recent in-season payments (minimum **2** payments in scope).
+
+**Bill detail echo** (`/manage/bills/:registryId`): history GET embeds a read-only **Worksheet forecast for {current month}** card (same backend engine). Month anchor is **current calendar month** (`app_clock`), not the worksheet month selector. No apply/edit actions on detail — confirm Due on the payment worksheet.
+
+**Liabilities-section** intermittent rows: **no forecast** in v1 (worksheet behavior unchanged).
 
 ### Bill registration wizard
 
@@ -462,7 +480,7 @@ Each item in `data` includes:
 ### Sidecar tables
 
 - `funding_buckets`
-- `worksheet_registry` — `firefly_bill_id`, `worksheet_section` (`"bills"` \| `"liabilities"`), `row_label` (optional), `funding_bucket_key`, `amount_mode`, `planned_sync`, `payment_rail`, `credit_card_account_id` (optional), `counts_toward_cash_plan`, `active_months`, `rule_id`
+- `worksheet_registry` — `firefly_bill_id`, `worksheet_section` (`"bills"` \| `"liabilities"`), `row_label` (optional), `funding_bucket_key`, `amount_mode`, `planned_sync`, `payment_rail`, `credit_card_account_id` (optional), `counts_toward_cash_plan`, `rule_id`
 - `worksheet_state` — `row_key`, `row_type`, `month`, `planned_amount`, `planned_amount_override` (bool), `paid_at`, optional `matched_journal_id`
 - `worksheet_refresh` — `month`, `refreshed_at`, `balances_json` (per bucket: `reported_balance`; per CC: `owed`, `new_total`, `interest_accrued`, `fees`, `last_payment_date`, `last_payment_amount`, `new_transactions[]` with `journal_id`, `date`, `description`, `payee`, `category`, `budget`, `kind`, `amount`)
 - `worksheet_bucket_balance` — `bucket_key`, `month`, `user_balance`, `user_balance_override` (bool — true once user edits; refresh does not overwrite)
