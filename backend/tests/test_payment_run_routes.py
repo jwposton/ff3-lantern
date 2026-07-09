@@ -3959,3 +3959,229 @@ def test_external_link_post_rejects_non_https_via_route(url, monkeypatch, client
     )
     assert response.status_code == 422
 
+
+def _seed_external_link(link_id: str = "chase-login", label: str = "Chase Login") -> None:
+    import asyncio
+
+    asyncio.run(
+        sidecar_db.insert_external_link_if_absent(
+            id=link_id,
+            label=label,
+            url="https://chase.com/login",
+        )
+    )
+
+
+def test_registry_put_external_link_id_round_trip(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    _seed_external_link()
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-portal",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-portal",
+                "row_label": "Electric",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    attach = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"external_link_id": "chase-login"},
+    )
+    assert attach.status_code == 200
+    assert attach.json()["external_link_id"] == "chase-login"
+
+    omit = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"row_label": "Electricity"},
+    )
+    assert omit.status_code == 200
+    assert omit.json()["external_link_id"] == "chase-login"
+
+    detach = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"external_link_id": None},
+    )
+    assert detach.status_code == 200
+    assert detach.json()["external_link_id"] is None
+
+
+def test_registry_put_external_link_id_invalid_422(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-portal-bad",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-portal-bad",
+                "row_label": "Gas",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"external_link_id": "missing-link"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Portal link not found"
+
+
+def test_bucket_put_external_link_id_omit_vs_null(monkeypatch, client):
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+    monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
+    monkeypatch.setenv("FIREFLY_API_TOKEN", "test-token")
+
+    import firefly_reference_cache
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    firefly_reference_cache.clear()
+    _seed_external_link("bucket-link", "Bucket Portal")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/accounts") and request.method == "GET":
+            data = [
+                {
+                    "type": "accounts",
+                    "id": "7",
+                    "attributes": {
+                        "name": "Checking",
+                        "type": "asset",
+                        "account_role": "defaultAsset",
+                    },
+                }
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "data": data,
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        return httpx.Response(404)
+
+    mock_client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    app.dependency_overrides[get_firefly_client] = lambda: mock_client
+
+    try:
+        create = client.post(
+            "/api/payment-run/buckets",
+            json={
+                "id": "checking",
+                "label": "Checking",
+                "sort_order": 0,
+                "firefly_account_ids": ["7"],
+            },
+        )
+        assert create.status_code == 200
+
+        attach = client.put(
+            "/api/payment-run/buckets/checking",
+            json={"external_link_id": "bucket-link"},
+        )
+        assert attach.status_code == 200
+        assert attach.json()["external_link_id"] == "bucket-link"
+
+        label_only = client.put(
+            "/api/payment-run/buckets/checking",
+            json={"label": "Primary Checking"},
+        )
+        assert label_only.status_code == 200
+        body = label_only.json()
+        assert body["label"] == "Primary Checking"
+        assert body["external_link_id"] == "bucket-link"
+
+        detach = client.put(
+            "/api/payment-run/buckets/checking",
+            json={"external_link_id": None},
+        )
+        assert detach.status_code == 200
+        assert detach.json()["external_link_id"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_account_worksheet_put_external_link_id(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    from payment_worksheet_profiles import parse_payment_worksheet_from_notes
+    from routes import payment_run as payment_run_mod
+    from main import app
+
+    _seed_external_link()
+    month = current_month_key()
+    asyncio.run(_seed_worksheet_snapshot(month))
+    handler, put_bodies = _cc1_firefly_handler()
+
+    app.dependency_overrides[payment_run_mod.get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+    try:
+        attach = client.put(
+            "/api/payment-run/accounts/cc1/worksheet",
+            params={"month": month},
+            json={"external_link_id": "chase-login"},
+        )
+        assert attach.status_code == 200
+        body = attach.json()
+        assert body["external_link_id"] == "chase-login"
+        notes = put_bodies[-1].get("notes", "")
+        parsed = parse_payment_worksheet_from_notes(notes)
+        assert "external_link_id" not in parsed
+
+        link_row = asyncio.run(sidecar_db.get_worksheet_account_link("cc1"))
+        assert link_row is not None
+        assert link_row["external_link_id"] == "chase-login"
+
+        detach = client.put(
+            "/api/payment-run/accounts/cc1/worksheet",
+            params={"month": month},
+            json={"external_link_id": None},
+        )
+        assert detach.status_code == 200
+        assert detach.json()["external_link_id"] is None
+        assert asyncio.run(sidecar_db.get_worksheet_account_link("cc1")) is None
+    finally:
+        app.dependency_overrides.clear()
+
