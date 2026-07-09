@@ -1273,3 +1273,155 @@ async def test_assemble_forecast_posted_source_when_posted_wins(data_dir):
     assert bill["amount_due"] == "780.00"
     assert bill["amount_due_source"] == "posted"
 
+
+def _bimonthly_forecast_fixture(*, suggested: str = "200.86") -> dict:
+    return {
+        "month": "2026-07",
+        "likelihood": "likely",
+        "suggested_amount": suggested,
+        "basis": "mean_last_n",
+        "n": 2,
+        "lookback_months": 12,
+        "seasonal": {
+            "detected": False,
+            "active_months": [],
+            "active_month_labels": None,
+        },
+        "cadence_label": "bimonthly",
+        "last_payment_date": "2026-05-02",
+        "note": "Advisory — verify before planning",
+    }
+
+
+@pytest.mark.asyncio
+async def test_assemble_bimonthly_forecast_source_propane_shape(data_dir):
+    await _seed_funding_bucket()
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-propane",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-propane",
+            "row_label": "Propane",
+            "counts_toward_cash_plan": True,
+        }
+    )
+    forecast = _bimonthly_forecast_fixture()
+    await _seed_refresh(
+        bills_snapshot={
+            str(reg_id): {
+                "owed": "200.86",
+                "firefly_bill_id": "bill-propane",
+                "name": "Propane",
+                "forecast": forecast,
+            }
+        }
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    bill = envelope["bills"][0]
+    assert bill["amount_due_source"] == "forecast"
+    assert bill["amount_due"] == "200.86"
+    assert bill["forecast"]["cadence_label"] == "bimonthly"
+    assert bill["forecast"]["likelihood"] == "likely"
+
+
+@pytest.mark.asyncio
+async def test_assemble_bimonthly_forecast_source_decimal_normalization(data_dir):
+    await _seed_funding_bucket()
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-propane",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-propane",
+            "row_label": "Propane",
+        }
+    )
+    forecast = _bimonthly_forecast_fixture(suggested="200.86")
+    await _seed_refresh(
+        bills_snapshot={
+            str(reg_id): {
+                "owed": "200.860",
+                "firefly_bill_id": "bill-propane",
+                "name": "Propane",
+                "forecast": forecast,
+            }
+        }
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    bill = envelope["bills"][0]
+    assert bill["amount_due_source"] == "forecast"
+
+
+@pytest.mark.asyncio
+async def test_assemble_orphan_owed_without_forecast_stays_none(data_dir):
+    await _seed_funding_bucket()
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-propane",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-propane",
+            "row_label": "Propane",
+        }
+    )
+    await _seed_refresh(
+        bills_snapshot={
+            str(reg_id): {
+                "owed": "200.86",
+                "firefly_bill_id": "bill-propane",
+                "name": "Propane",
+            }
+        }
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    bill = envelope["bills"][0]
+    assert bill["amount_due"] == "200.86"
+    assert bill["amount_due_source"] == "none"
+    assert "forecast" not in bill
+
+
+@pytest.mark.asyncio
+async def test_assemble_paired_forecast_snap_sets_forecast_source(data_dir):
+    await _seed_funding_bucket()
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-propane",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-propane",
+            "row_label": "Propane",
+        }
+    )
+    forecast = _bimonthly_forecast_fixture()
+    await _seed_refresh(
+        bills_snapshot={
+            str(reg_id): {
+                "owed": "200.86",
+                "firefly_bill_id": "bill-propane",
+                "name": "Propane",
+                "forecast": forecast,
+            }
+        }
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    bill = envelope["bills"][0]
+    assert bill["amount_due_source"] == "forecast"
+    assert bill["forecast"]["suggested_amount"] == "200.86"
+

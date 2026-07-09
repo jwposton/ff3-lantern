@@ -671,12 +671,11 @@ def _derive_amount_due_source(
             return "posted"
         likelihood = str(forecast.get("likelihood") or "")
         suggested = forecast.get("suggested_amount")
-        if (
-            likelihood in {"likely", "possible"}
-            and suggested is not None
-            and str(refresh_due) == str(suggested)
-        ):
-            return "forecast"
+        if likelihood in {"likely", "possible"} and suggested is not None:
+            if _format_decimal(_decimal_amount(refresh_due)) == _format_decimal(
+                _decimal_amount(suggested)
+            ):
+                return "forecast"
     return "none"
 
 
