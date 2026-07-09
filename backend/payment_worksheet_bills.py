@@ -8,6 +8,7 @@ import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import app_clock
 import sidecar_db
@@ -465,6 +466,42 @@ async def _validate_bucket_exists(bucket_key: str) -> None:
 
 
 BILL_GROUP_SECTIONS = frozenset({"bills", "liabilities"})
+
+
+def validate_portal_url(raw: str) -> str:
+    url = raw.strip()
+    if not url:
+        raise ValueError("url is required")
+    try:
+        parsed = urlparse(url)
+    except ValueError as exc:
+        raise ValueError("invalid url") from exc
+    if parsed.scheme.lower() != "https":
+        raise ValueError("url must use https scheme")
+    if not parsed.netloc:
+        raise ValueError("url must include a host")
+    return url
+
+
+def build_dependents_payload(
+    *,
+    bills: int,
+    liabilities: int,
+    buckets: int,
+    accounts: int,
+) -> dict[str, int]:
+    out: dict[str, int] = {}
+    if bills:
+        out["bills"] = bills
+    if liabilities:
+        out["liabilities"] = liabilities
+    if buckets:
+        out["buckets"] = buckets
+    if accounts:
+        out["accounts"] = accounts
+    if len(out) >= 2:
+        out["total"] = sum(out.values())
+    return out
 
 
 def normalize_bill_group_id(bill_group_id: str | None) -> str | None:
