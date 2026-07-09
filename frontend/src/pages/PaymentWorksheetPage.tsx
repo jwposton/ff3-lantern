@@ -37,6 +37,7 @@ import { useLoanMeta, useLoans } from "@/hooks/useLoans"
 import {
   billGroupsQueryKey,
   currentMonthKey,
+  externalLinksQueryKey,
   formatMonthLabel,
   putAccountWorksheet,
   putBucketBalance,
@@ -213,6 +214,7 @@ export function PaymentWorksheetPage() {
     try {
       await putAccountWorksheet(accountId, month, values)
       await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+      await queryClient.invalidateQueries({ queryKey: externalLinksQueryKey() })
     } catch (err) {
       setCcActionError(
         err instanceof Error ? err.message : "Could not save card details.",
@@ -244,6 +246,7 @@ export function PaymentWorksheetPage() {
   ) {
     await putAccountWorksheet(accountId, month, values)
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    await queryClient.invalidateQueries({ queryKey: externalLinksQueryKey() })
   }
 
   async function handleExcludeLiability(row: LiabilityRow) {
@@ -297,10 +300,12 @@ export function PaymentWorksheetPage() {
       repeat_freq: payload.repeat_freq,
       bill_group_id: payload.bill_group_id,
       show_in_group: payload.show_in_group,
+      external_link_id: payload.external_link_id,
     })
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
     await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
     await queryClient.invalidateQueries({ queryKey: billGroupsQueryKey() })
+    await queryClient.invalidateQueries({ queryKey: externalLinksQueryKey() })
     setBillRegistrationOpen(false)
     setBillEditTarget(null)
   }
@@ -341,6 +346,14 @@ export function PaymentWorksheetPage() {
               </Tooltip>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  to="/manage/payment-run/external-links"
+                  data-testid="worksheet-manage-external-links"
+                >
+                  Manage external links
+                </Link>
+              </Button>
               <span
                 className="text-muted-foreground text-xs tabular-nums"
                 title={
