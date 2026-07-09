@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
+import { ExternalLinkSelectField } from "@/components/payment-run/ExternalLinkSelectField"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -195,6 +196,7 @@ export function BillRegistrationSheet({
     () => new Set(),
   )
   const [billGroupId, setBillGroupId] = useState("")
+  const [externalLinkId, setExternalLinkId] = useState("")
   const [showInGroup, setShowInGroup] = useState(false)
   const [billGroups, setBillGroups] = useState<BillGroup[]>([])
   const [loadingGroups, setLoadingGroups] = useState(false)
@@ -239,6 +241,7 @@ export function BillRegistrationSheet({
       setError(null)
       setSuggestedFields(new Set())
       setBillGroupId("")
+      setExternalLinkId("")
       setShowInGroup(false)
       setInlineCreateMode(false)
       setNewGroupLabel("")
@@ -271,6 +274,7 @@ export function BillRegistrationSheet({
       setError(null)
       setSuggestedFields(buildSuggestedFields(initialPrefill))
       setBillGroupId("")
+      setExternalLinkId("")
       setShowInGroup(false)
       setInlineCreateMode(false)
       setNewGroupLabel("")
@@ -297,6 +301,7 @@ export function BillRegistrationSheet({
     setError(null)
     setSuggestedFields(new Set())
     setBillGroupId("")
+    setExternalLinkId("")
     setShowInGroup(false)
     setInlineCreateMode(false)
     setNewGroupLabel("")
@@ -365,6 +370,7 @@ export function BillRegistrationSheet({
           details.credit_card_account_id ?? creditCards[0]?.account_id ?? "",
         )
         setBillGroupId(details.bill_group_id ?? "")
+        setExternalLinkId(details.external_link_id ?? "")
         setShowInGroup(details.show_in_group ?? false)
       })
       .catch((err: unknown) => {
@@ -592,6 +598,9 @@ export function BillRegistrationSheet({
       rule_id: ruleId,
       bill_group_id: billGroupId || null,
       show_in_group: showInGroup,
+      ...(isEditMode
+        ? { external_link_id: externalLinkId ? externalLinkId : null }
+        : {}),
     }
 
     setSaving(true)
@@ -1180,6 +1189,14 @@ export function BillRegistrationSheet({
                 </div>
               )}
             </>
+          ) : null}
+
+          {isEditMode ? (
+            <ExternalLinkSelectField
+              id="bill-external-link"
+              value={externalLinkId}
+              onChange={setExternalLinkId}
+            />
           ) : null}
 
           <p className="text-muted-foreground text-sm">

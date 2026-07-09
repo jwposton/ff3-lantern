@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 
+import { ExternalLinkSelectField } from "@/components/payment-run/ExternalLinkSelectField"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -16,6 +17,7 @@ import type { FundingBucketRollup, LiabilityRow } from "@/lib/paymentRunApi"
 export type LiabilityAccountDetailsInput = {
   funding_bucket_key: string | null
   default_planned_payment: string | null
+  external_link_id: string | null
 }
 
 type LiabilityAccountSheetProps = {
@@ -41,6 +43,7 @@ export function LiabilityAccountSheet({
 }: LiabilityAccountSheetProps) {
   const [bucketKey, setBucketKey] = useState("")
   const [defaultPay, setDefaultPay] = useState("")
+  const [externalLinkId, setExternalLinkId] = useState("")
   const [saving, setSaving] = useState(false)
   const [excluding, setExcluding] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -49,6 +52,7 @@ export function LiabilityAccountSheet({
     if (!open || !row) return
     setBucketKey(row.funding_bucket_key ?? "")
     setDefaultPay(row.default_planned_payment ?? "")
+    setExternalLinkId(row.external_link_id ?? "")
     setError(null)
   }, [open, row])
 
@@ -61,6 +65,7 @@ export function LiabilityAccountSheet({
         funding_bucket_key: bucketKey ? bucketKey : null,
         default_planned_payment:
           defaultPay.trim() === "" ? null : defaultPay.trim(),
+        external_link_id: externalLinkId ? externalLinkId : null,
       })
       onOpenChange(false)
     } catch (err) {
@@ -177,6 +182,12 @@ export function LiabilityAccountSheet({
               Used on refresh only when no loan profile expected amount exists.
             </p>
           </div>
+
+          <ExternalLinkSelectField
+            id="liability-external-link"
+            value={externalLinkId}
+            onChange={setExternalLinkId}
+          />
 
           {error ? <p className="text-destructive text-sm">{error}</p> : null}
         </div>

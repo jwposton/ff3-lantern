@@ -95,6 +95,7 @@ export type LiabilityRow = PlannedAmountRow &
   amount_mode?: string
   bill_group_id?: string | null
   show_in_group?: boolean
+  external_link_id?: string | null
 }
 
 export type SectionSubtotals = {
@@ -201,6 +202,7 @@ export type BillHistoryEnvelope = {
   row_label: string | null
   row_label_synced?: boolean
   name?: string | null
+  amount_mode?: string
   firefly_bill_id: string
   firefly_base_url?: string
   rule_sync_status?: RuleLinkSyncStatus
@@ -359,6 +361,7 @@ export type RegisterBillPayload = {
   rule_id?: string | null
   bill_group_id?: string | null
   show_in_group?: boolean
+  external_link_id?: string | null
 }
 
 export type UpdateBillRegistryPayload = {
@@ -410,6 +413,7 @@ export type CreditCardRow = PlannedAmountRow & {
   promo_active?: boolean
   effective_apr_percent?: string | null
   sort_order?: number | null
+  external_link_id?: string | null
   owed: string
   new_total: string
   interest_accrued: string
@@ -461,6 +465,7 @@ export type FundingBucket = {
   label: string
   sort_order: number
   firefly_account_ids: string[]
+  external_link_id?: string | null
 }
 
 export type FundingBucketInput = {

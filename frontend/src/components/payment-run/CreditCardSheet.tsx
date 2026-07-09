@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
 
+import { ExternalLinkSelectField } from "@/components/payment-run/ExternalLinkSelectField"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -27,6 +28,7 @@ export type CreditCardDetailsInput = {
   special_apr_start: string | null
   special_apr_end: string | null
   sort_order: number | null
+  external_link_id: string | null
 }
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
@@ -94,6 +96,7 @@ export function CreditCardSheet({
   const [specialAprEnd, setSpecialAprEnd] = useState("")
   const [specialRateExpanded, setSpecialRateExpanded] = useState(false)
   const [sortOrder, setSortOrder] = useState("")
+  const [externalLinkId, setExternalLinkId] = useState("")
   const [saving, setSaving] = useState(false)
   const [excluding, setExcluding] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -117,6 +120,7 @@ export function CreditCardSheet({
         ? String(row.sort_order)
         : "",
     )
+    setExternalLinkId(row.external_link_id ?? "")
     setError(null)
   }, [open, row])
 
@@ -182,6 +186,7 @@ export function CreditCardSheet({
           sortOrder.trim() === ""
             ? null
             : Number.parseInt(sortOrder, 10) || 0,
+        external_link_id: externalLinkId ? externalLinkId : null,
       })
       onOpenChange(false)
     } catch (err) {
@@ -420,6 +425,12 @@ export function CreditCardSheet({
               Leave blank to sort after cards with an explicit order.
             </p>
           </div>
+
+          <ExternalLinkSelectField
+            id="cc-external-link"
+            value={externalLinkId}
+            onChange={setExternalLinkId}
+          />
 
           {error ? <p className="text-destructive text-sm">{error}</p> : null}
         </div>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 
+import { ExternalLinkSelectField } from "@/components/payment-run/ExternalLinkSelectField"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -23,6 +24,7 @@ type BucketSheetProps = {
     label: string
     sort_order: number
     firefly_account_ids: string[]
+    external_link_id: string | null
   }) => Promise<void>
   onDelete?: (bucketId: string) => Promise<void>
 }
@@ -38,6 +40,7 @@ export function BucketSheet({
   const [label, setLabel] = useState("")
   const [sortOrder, setSortOrder] = useState("0")
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([])
+  const [externalLinkId, setExternalLinkId] = useState("")
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -49,6 +52,7 @@ export function BucketSheet({
     setSortOrder(String(bucket?.sort_order ?? 0))
     const accountIds = bucket?.firefly_account_ids ?? []
     setSelectedAccountIds(accountIds)
+    setExternalLinkId(bucket?.external_link_id ?? "")
     setConfirmDelete(false)
     setError(null)
   }, [bucket, open])
@@ -75,6 +79,7 @@ export function BucketSheet({
         label: trimmed,
         sort_order: Number.parseInt(sortOrder, 10) || 0,
         firefly_account_ids: selectedAccountIds,
+        external_link_id: externalLinkId ? externalLinkId : null,
       })
       onOpenChange(false)
     } catch (err) {
@@ -163,6 +168,12 @@ export function BucketSheet({
               </ul>
             )}
           </div>
+
+          <ExternalLinkSelectField
+            id="bucket-external-link"
+            value={externalLinkId}
+            onChange={setExternalLinkId}
+          />
 
           {confirmDelete && bucket ? (
             <div className="border-destructive/40 bg-destructive/5 space-y-3 rounded-md border p-3">
