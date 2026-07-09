@@ -1,4 +1,8 @@
-"""Deterministic intermittent bill forecast for payment worksheet (#95)."""
+"""Deterministic intermittent bill forecast for payment worksheet (#95).
+
+Intermittent forecast treats linked payment gap history as the authoritative cadence
+source; Firefly ``repeat_freq`` is used only when gap classification is irregular.
+"""
 
 from __future__ import annotations
 
@@ -218,6 +222,8 @@ def _cadence_label_from_freq(freq: str, *, seasonal_detected: bool) -> str:
         return "annual"
     if freq == "monthly":
         return "monthly"
+    if freq == "bimonthly":
+        return "bimonthly"
     if freq == "quarterly":
         return "quarterly"
     if freq == "biweekly":
@@ -233,7 +239,7 @@ def _resolve_lookback_months(
     # Payload lookback_months is the semantic amount/gap window (A3), not fetch width.
     if seasonal_detected or freq == "annual":
         return 24
-    if freq in {"monthly", "quarterly", "biweekly"}:
+    if freq in {"monthly", "bimonthly", "quarterly", "biweekly"}:
         return 12
     return 24
 
@@ -251,6 +257,11 @@ def _payments_in_active_season(
     ]
 
 
+_REGULAR_GAP_CADENCES = frozenset(
+    {"monthly", "bimonthly", "quarterly", "biweekly", "annual"}
+)
+
+
 def _sparse_seasonal_confidence_failure(
     payments: list[dict[str, Any]],
     *,
@@ -259,6 +270,9 @@ def _sparse_seasonal_confidence_failure(
 ) -> bool:
     """D-18: clustered months without multi-year hits → unknown, no flat-gap amount."""
     if seasonal.get("detected"):
+        return False
+    gap_freq = _classify_freq(_avg_gap_days(payments))
+    if gap_freq in _REGULAR_GAP_CADENCES:
         return False
     scoped = _rows_in_window(payments, today=today, months=24)
     months_hit: set[int] = set()
@@ -272,6 +286,27 @@ def _sparse_seasonal_confidence_failure(
     if len(months_hit) < 4 or len(months_hit) >= 12:
         return False
     return not any(len(years) >= 2 for years in month_years.values())
+
+
+def _months_between_calendar(start: date, end_year: int, end_month: int) -> int:
+    return (end_year - start.year) * 12 + (end_month - start.month)
+
+
+def _is_bimonthly_on_month(
+    last_payment: date,
+    *,
+    worksheet_year: int,
+    worksheet_month: int,
+) -> bool:
+    """True when worksheet month aligns with every-other-month cadence from last payment."""
+    months_elapsed = _months_between_calendar(
+        last_payment,
+        worksheet_year,
+        worksheet_month,
+    )
+    if months_elapsed <= 0:
+        return False
+    return months_elapsed % 2 == 0
 
 
 def _month_has_historical_payment(
@@ -315,7 +350,11 @@ def compute_intermittent_bill_forecast(
             last_payment_date=last_payment_date,
         )
 
-    freq = _normalize_repeat_freq(repeat_freq) or _classify_freq(_avg_gap_days(payments))
+    gap_freq = _classify_freq(_avg_gap_days(payments))
+    if gap_freq != "irregular":
+        freq = gap_freq
+    else:
+        freq = _normalize_repeat_freq(repeat_freq) or "irregular"
     lookback_months = _resolve_lookback_months(
         freq=freq,
         seasonal_detected=bool(seasonal["detected"]),
@@ -399,6 +438,50 @@ def compute_intermittent_bill_forecast(
                 and _parsed.month == worksheet_month
             ]
         )
+        if suggested_amount is None:
+            return _base_forecast(
+                month,
+                likelihood="unknown",
+                suggested_amount=None,
+                basis=None,
+                n=0,
+                lookback_months=lookback_months,
+                seasonal=seasonal,
+                cadence_label=cadence_label,
+                last_payment_date=last_payment_date,
+            )
+        return _base_forecast(
+            month,
+            likelihood="likely",
+            suggested_amount=suggested_amount,
+            basis="mean_last_n",
+            n=n,
+            lookback_months=lookback_months,
+            seasonal=seasonal,
+            cadence_label=cadence_label,
+            last_payment_date=last_payment_date,
+        )
+
+    if freq == "bimonthly":
+        last_parsed = _parse_row_date(last_payment_date)
+        worksheet_year = int(month.split("-", 1)[0])
+        if last_parsed is None or not _is_bimonthly_on_month(
+            last_parsed,
+            worksheet_year=worksheet_year,
+            worksheet_month=worksheet_month,
+        ):
+            return _base_forecast(
+                month,
+                likelihood="unlikely",
+                suggested_amount=None,
+                basis=None,
+                n=0,
+                lookback_months=lookback_months,
+                seasonal=seasonal,
+                cadence_label="bimonthly-off-month",
+                last_payment_date=last_payment_date,
+            )
+        suggested_amount, n = _mean_last_n(scoped)
         if suggested_amount is None:
             return _base_forecast(
                 month,

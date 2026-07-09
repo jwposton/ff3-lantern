@@ -900,6 +900,8 @@ def _classify_freq(avg_gap_days: float) -> str:
         return "monthly"
     if 12 <= avg_gap_days <= 18:
         return "biweekly"
+    if 52 <= avg_gap_days <= 68:
+        return "bimonthly"
     if 85 <= avg_gap_days <= 100:
         return "quarterly"
     if 250 <= avg_gap_days <= 400:
