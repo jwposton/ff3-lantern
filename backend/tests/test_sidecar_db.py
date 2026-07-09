@@ -160,3 +160,136 @@ def test_external_links_schema_migration(data_dir):
     bucket = asyncio.run(sidecar_db.get_funding_bucket("checking"))
     assert bucket is not None
     assert bucket["external_link_id"] == "chase-login"
+
+
+def test_external_links_crud_sidecar(data_dir):
+    asyncio.run(sidecar_db.init_db())
+
+    asyncio.run(
+        sidecar_db.insert_external_link_if_absent(
+            id="zebra-portal",
+            label="Zebra Portal",
+            url="https://zebra.example/login",
+        )
+    )
+    asyncio.run(
+        sidecar_db.insert_external_link_if_absent(
+            id="alpha-portal",
+            label="Alpha Portal",
+            url="https://alpha.example/login",
+        )
+    )
+
+    listed = asyncio.run(sidecar_db.list_external_links())
+    assert [row["id"] for row in listed] == ["alpha-portal", "zebra-portal"]
+
+    fetched = asyncio.run(sidecar_db.get_external_link("alpha-portal"))
+    assert fetched == {
+        "id": "alpha-portal",
+        "label": "Alpha Portal",
+        "url": "https://alpha.example/login",
+    }
+
+    with pytest.raises(sidecar_db.ConflictError):
+        asyncio.run(
+            sidecar_db.insert_external_link_if_absent(
+                id="alpha-portal",
+                label="Duplicate",
+                url="https://dup.example",
+            )
+        )
+
+    asyncio.run(
+        sidecar_db.patch_external_link(
+            "alpha-portal",
+            label="Alpha Updated",
+            url="https://alpha.example/updated",
+        )
+    )
+    patched = asyncio.run(sidecar_db.get_external_link("alpha-portal"))
+    assert patched is not None
+    assert patched["label"] == "Alpha Updated"
+    assert patched["url"] == "https://alpha.example/updated"
+
+    batch = asyncio.run(
+        sidecar_db.get_external_links_by_ids(["alpha-portal", "missing"])
+    )
+    assert batch == {
+        "alpha-portal": {
+            "id": "alpha-portal",
+            "label": "Alpha Updated",
+            "url": "https://alpha.example/updated",
+        }
+    }
+    assert asyncio.run(sidecar_db.get_external_links_by_ids([])) == {}
+
+    asyncio.run(sidecar_db.delete_external_link("zebra-portal"))
+    assert asyncio.run(sidecar_db.get_external_link("zebra-portal")) is None
+
+
+def test_count_external_link_dependents_sidecar(data_dir):
+    asyncio.run(sidecar_db.init_db())
+    asyncio.run(
+        sidecar_db.insert_external_link_if_absent(
+            id="shared-link",
+            label="Shared Link",
+            url="https://shared.example",
+        )
+    )
+
+    bill_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "worksheet_section": "bills",
+                "row_label": "Electric",
+                "external_link_id": "shared-link",
+            }
+        )
+    )
+    liability_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "worksheet_section": "liabilities",
+                "row_label": "Mortgage",
+                "external_link_id": "shared-link",
+            }
+        )
+    )
+    assert bill_id and liability_id
+
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+            external_link_id="shared-link",
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_worksheet_account_link("acct-1", "shared-link")
+    )
+
+    counts = asyncio.run(sidecar_db.count_external_link_dependents("shared-link"))
+    assert counts == {
+        "bills": 1,
+        "liabilities": 1,
+        "buckets": 1,
+        "accounts": 1,
+    }
+
+    asyncio.run(
+        sidecar_db.upsert_worksheet_account_link("acct-2", "shared-link")
+    )
+    asyncio.run(sidecar_db.delete_worksheet_account_link("acct-1"))
+    account_link = asyncio.run(sidecar_db.get_worksheet_account_link("acct-2"))
+    assert account_link == {
+        "account_id": "acct-2",
+        "external_link_id": "shared-link",
+    }
+    listed_links = asyncio.run(sidecar_db.list_worksheet_account_links())
+    assert listed_links == [
+        {"account_id": "acct-2", "external_link_id": "shared-link"}
+    ]
+    counts = asyncio.run(sidecar_db.count_external_link_dependents("shared-link"))
+    assert counts["accounts"] == 1
