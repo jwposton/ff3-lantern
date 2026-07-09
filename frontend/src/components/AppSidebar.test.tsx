@@ -324,6 +324,37 @@ describe("AppSidebar Manage section", () => {
     })
   })
 
+  it("renders External links nav after Cash accounts in Bill Pay", async () => {
+    mockPendingFetch(0, 0, true)
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Bill Pay")).toBeTruthy()
+    })
+
+    const billPayLinks = Array.from(
+      document.querySelectorAll(
+        'a[href^="/manage/payment-run"], a[href="/manage/bills"], a[href="/manage/liabilities"]',
+      ),
+    )
+    const hrefs = billPayLinks.map((link) => link.getAttribute("href"))
+    const bucketsIndex = hrefs.indexOf("/manage/payment-run/buckets")
+    const externalLinksIndex = hrefs.indexOf("/manage/payment-run/external-links")
+    expect(bucketsIndex).toBeGreaterThanOrEqual(0)
+    expect(externalLinksIndex).toBeGreaterThan(bucketsIndex)
+
+    const externalLink = document.querySelector(
+      'a[href="/manage/payment-run/external-links"]',
+    )
+    expect(externalLink).toBeTruthy()
+    expect(externalLink?.textContent).toContain("External links")
+  })
+
   it("does not show retired Payment setup nav", async () => {
     mockPendingFetch(0, 0, true)
 

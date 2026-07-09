@@ -664,4 +664,20 @@ describe("PaymentWorksheetPage", () => {
       expect(screen.queryByRole("link", { name: "Find bills" })).toBeNull()
     })
   })
+
+  it("renders Manage external links button linking to catalog hub", async () => {
+    mockPaymentFetch({ envelope: EMPTY_ENVELOPE, paymentEnabled: true })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const link = screen.getByTestId("worksheet-manage-external-links")
+      expect(link.getAttribute("href")).toBe("/manage/payment-run/external-links")
+      expect(link.textContent).toContain("Manage external links")
+    })
+  })
 })
