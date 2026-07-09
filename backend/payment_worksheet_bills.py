@@ -1411,6 +1411,7 @@ def serialize_bill_registry_for_edit(
     firefly_bill: dict[str, Any],
     *,
     rule_sync_status: str | None = None,
+    external_link: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     payload = {
         "registry_id": registry["id"],
@@ -1427,6 +1428,8 @@ def serialize_bill_registry_for_edit(
         "repeat_freq": firefly_bill.get("repeat_freq"),
         "bill_group_id": registry.get("bill_group_id"),
         "show_in_group": registry.get("show_in_group"),
+        "external_link_id": registry.get("external_link_id"),
+        "external_link": external_link,
     }
     if rule_sync_status is not None:
         payload["rule_sync_status"] = rule_sync_status

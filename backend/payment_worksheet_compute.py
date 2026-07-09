@@ -14,6 +14,18 @@ from payment_worksheet_promo import resolve_credit_card_promo
 UNASSIGNED_CREDIT_CARD_ID = "__unassigned__"
 
 
+def _resolve_external_link(
+    link_id: str | None,
+    links_by_id: dict[str, dict[str, str]],
+) -> dict[str, str] | None:
+    if not link_id:
+        return None
+    row = links_by_id.get(link_id)
+    if row is None:
+        return None
+    return {"id": row["id"], "label": row["label"], "url": row["url"]}
+
+
 def cc_row_key(account_id: str) -> str:
     return f"cc:{account_id}"
 
@@ -101,6 +113,8 @@ def compute_bucket_rollups(
     bill_rows: list[dict[str, Any]],
     liability_rows: list[dict[str, Any]],
     worksheet_state: list[dict[str, Any]],
+    *,
+    links_by_id: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Compute per-bucket rollups and footer totals from sidecar data."""
     del worksheet_state
@@ -166,6 +180,11 @@ def compute_bucket_rollups(
                 "label": bucket["label"],
                 "sort_order": bucket["sort_order"],
                 "firefly_account_ids": bucket.get("firefly_account_ids") or [],
+                "external_link_id": bucket.get("external_link_id"),
+                "external_link": _resolve_external_link(
+                    bucket.get("external_link_id"),
+                    links_by_id or {},
+                ),
                 "reported_balance": _format_decimal(reported),
                 "user_balance": _format_decimal(user_balance),
                 "user_balance_override": user_override,
@@ -529,6 +548,9 @@ def _assemble_credit_cards(
     month: str,
     refresh_snapshot: dict[str, Any] | None,
     worksheet_state: list[dict[str, Any]],
+    *,
+    account_links_by_id: dict[str, str] | None = None,
+    links_by_id: dict[str, dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     if refresh_snapshot is None:
         return []
@@ -549,6 +571,7 @@ def _assemble_credit_cards(
             "special_apr_end": snapshot.get("special_apr_end"),
         }
         promo_resolved = resolve_credit_card_promo(promo_profile, month)
+        link_id = (account_links_by_id or {}).get(account_id)
         cards.append(
             {
                 "account_id": account_id,
@@ -575,6 +598,8 @@ def _assemble_credit_cards(
                 "planned_amount": state.get("planned_amount", "0.00"),
                 "planned_amount_override": bool(state.get("planned_amount_override")),
                 "paid_at": state.get("paid_at"),
+                "external_link_id": link_id,
+                "external_link": _resolve_external_link(link_id, links_by_id or {}),
             }
         )
 
@@ -619,6 +644,9 @@ def _assemble_excluded_liabilities(
 def _assemble_liability_accounts(
     refresh_snapshot: dict[str, Any] | None,
     worksheet_state: list[dict[str, Any]],
+    *,
+    account_links_by_id: dict[str, str] | None = None,
+    links_by_id: dict[str, dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     if refresh_snapshot is None:
         return []
@@ -633,6 +661,7 @@ def _assemble_liability_accounts(
             refresh_default=planned_amount,
             planned_default=planned_amount,
         )
+        link_id = (account_links_by_id or {}).get(account_id)
         rows.append(
             {
                 "account_id": account_id,
@@ -652,6 +681,8 @@ def _assemble_liability_accounts(
                 "planned_amount": planned_amount,
                 "planned_amount_override": bool(state.get("planned_amount_override")),
                 "paid_at": state.get("paid_at"),
+                "external_link_id": link_id,
+                "external_link": _resolve_external_link(link_id, links_by_id or {}),
             }
         )
     rows.sort(key=lambda row: (row.get("name") or "", row["account_id"]))
@@ -684,6 +715,8 @@ def _assemble_bill_rows(
     refresh_snapshot: dict[str, Any] | None,
     worksheet_state: list[dict[str, Any]],
     worksheet_section: str,
+    *,
+    links_by_id: dict[str, dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     if refresh_snapshot is None:
         return []
@@ -727,6 +760,11 @@ def _assemble_bill_rows(
                 "worksheet_section": reg.get("worksheet_section"),
                 "bill_group_id": reg.get("bill_group_id"),
                 "show_in_group": bool(reg.get("show_in_group")),
+                "external_link_id": reg.get("external_link_id"),
+                "external_link": _resolve_external_link(
+                    reg.get("external_link_id"),
+                    links_by_id or {},
+                ),
                 **(
                     {"rule_sync_status": snap["rule_sync_status"]}
                     if snap.get("rule_sync_status") is not None
@@ -774,13 +812,49 @@ async def build_worksheet_envelope(month: str) -> dict[str, Any]:
         refreshed_at = refresh_row["refreshed_at"]
         refresh_snapshot = json.loads(refresh_row["balances_json"])
 
-    credit_cards = _assemble_credit_cards(month, refresh_snapshot, worksheet_state)
+    account_links = await sidecar_db.list_worksheet_account_links()
+    account_links_by_id = {
+        row["account_id"]: row["external_link_id"]
+        for row in account_links
+        if row.get("external_link_id")
+    }
+    link_ids: set[str] = set(account_links_by_id.values())
+    for reg in registry_rows:
+        if reg.get("external_link_id"):
+            link_ids.add(reg["external_link_id"])
+    for bucket in buckets:
+        if bucket.get("external_link_id"):
+            link_ids.add(bucket["external_link_id"])
+    links_by_id = await sidecar_db.get_external_links_by_ids(sorted(link_ids))
+
+    credit_cards = _assemble_credit_cards(
+        month,
+        refresh_snapshot,
+        worksheet_state,
+        account_links_by_id=account_links_by_id,
+        links_by_id=links_by_id,
+    )
     excluded_credit_cards = _assemble_excluded_credit_cards(refresh_snapshot)
     excluded_liabilities = _assemble_excluded_liabilities(refresh_snapshot)
-    liability_accounts = _assemble_liability_accounts(refresh_snapshot, worksheet_state)
-    bills = _assemble_bill_rows(registry_rows, refresh_snapshot, worksheet_state, "bills")
+    liability_accounts = _assemble_liability_accounts(
+        refresh_snapshot,
+        worksheet_state,
+        account_links_by_id=account_links_by_id,
+        links_by_id=links_by_id,
+    )
+    bills = _assemble_bill_rows(
+        registry_rows,
+        refresh_snapshot,
+        worksheet_state,
+        "bills",
+        links_by_id=links_by_id,
+    )
     bill_liabilities = _assemble_bill_rows(
-        registry_rows, refresh_snapshot, worksheet_state, "liabilities"
+        registry_rows,
+        refresh_snapshot,
+        worksheet_state,
+        "liabilities",
+        links_by_id=links_by_id,
     )
     liabilities = liability_accounts + bill_liabilities
 
@@ -792,6 +866,7 @@ async def build_worksheet_envelope(month: str) -> dict[str, Any]:
         bills + bill_liabilities,
         liability_accounts,
         worksheet_state,
+        links_by_id=links_by_id,
     )
     section_subtotals = compute_section_subtotals(bills, liabilities, credit_cards)
     grand_totals = compute_grand_totals(bills, liabilities, credit_cards)

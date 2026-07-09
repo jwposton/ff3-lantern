@@ -70,7 +70,7 @@ from payment_worksheet_cc_history import (
     compute_cc_history_stats,
     splits_to_cc_history_transactions,
 )
-from payment_worksheet_compute import _row_type_from_key, bill_row_key, build_worksheet_envelope
+from payment_worksheet_compute import _row_type_from_key, _resolve_external_link, bill_row_key, build_worksheet_envelope
 from payment_worksheet_liabilities import (
     compute_liability_display_fields,
     draft_planned_amount,
@@ -1052,10 +1052,16 @@ async def get_bill_registry(
         )
     except BillRegistrationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    link_id = existing.get("external_link_id")
+    external_link = None
+    if link_id:
+        links_by_id = await sidecar_db.get_external_links_by_ids([link_id])
+        external_link = _resolve_external_link(link_id, links_by_id)
     return serialize_bill_registry_for_edit(
         existing,
         firefly_bill,
         rule_sync_status=rule_sync_status,
+        external_link=external_link,
     )
 
 
