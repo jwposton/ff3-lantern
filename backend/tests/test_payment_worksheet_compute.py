@@ -1010,6 +1010,82 @@ async def test_worksheet_bill_group_row_fields_on_bills_and_liabilities(data_dir
 
 
 @pytest.mark.asyncio
+async def test_worksheet_envelope_includes_external_link(data_dir):
+    await sidecar_db.insert_external_link_if_absent(
+        id="chase-login",
+        label="Chase Login",
+        url="https://chase.com/login",
+    )
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+        external_link_id="chase-login",
+    )
+    bill_id, bill_snap = await _insert_bill(label="Electric")
+    await sidecar_db.update_worksheet_registry(
+        bill_id, {"external_link_id": "chase-login"}
+    )
+    await sidecar_db.upsert_worksheet_account_link("cc1", "chase-login")
+
+    credit_cards = {
+        "cc1": {
+            "name": "Chase VISA",
+            "owed": "500.00",
+            "new_total": "500.00",
+            "funding_bucket_key": "checking",
+            "apr_percent": "19.99",
+        }
+    }
+    await _seed_refresh(bills_snapshot=bill_snap, liabilities_snapshot={})
+    row = await sidecar_db.get_worksheet_refresh("2026-07")
+    balances = json.loads(row["balances_json"])
+    balances["credit_cards"] = credit_cards
+    await sidecar_db.upsert_worksheet_refresh(
+        month="2026-07",
+        refreshed_at="2026-07-03T12:00:00Z",
+        balances_json=json.dumps(balances),
+    )
+
+    envelope = await build_worksheet_envelope("2026-07")
+    expected = {
+        "id": "chase-login",
+        "label": "Chase Login",
+        "url": "https://chase.com/login",
+    }
+
+    bill_row = next(row for row in envelope["bills"] if row["registry_id"] == bill_id)
+    assert bill_row["external_link_id"] == "chase-login"
+    assert bill_row["external_link"] == expected
+
+    bucket_row = next(row for row in envelope["buckets"] if row["id"] == "checking")
+    assert bucket_row["external_link_id"] == "chase-login"
+    assert bucket_row["external_link"] == expected
+
+    cc_row = next(row for row in envelope["credit_cards"] if row["account_id"] == "cc1")
+    assert cc_row["external_link_id"] == "chase-login"
+    assert cc_row["external_link"] == expected
+
+    assert "external_links" not in envelope
+
+
+@pytest.mark.asyncio
+async def test_worksheet_envelope_orphan_external_link_null(data_dir):
+    await _seed_funding_bucket()
+    bill_id, bill_snap = await _insert_bill(label="Orphan Bill")
+    await sidecar_db.update_worksheet_registry(
+        bill_id, {"external_link_id": "deleted-link"}
+    )
+    await _seed_refresh(bills_snapshot=bill_snap)
+
+    envelope = await build_worksheet_envelope("2026-07")
+    bill_row = next(row for row in envelope["bills"] if row["registry_id"] == bill_id)
+    assert bill_row["external_link_id"] == "deleted-link"
+    assert bill_row["external_link"] is None
+
+
+@pytest.mark.asyncio
 async def test_section_subtotals_unchanged_with_grouped_bills(data_dir):
     await _seed_funding_bucket()
 

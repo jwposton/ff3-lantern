@@ -4185,3 +4185,111 @@ def test_account_worksheet_put_external_link_id(
     finally:
         app.dependency_overrides.clear()
 
+
+def test_registry_get_includes_external_link(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    import firefly_reference_cache
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    firefly_reference_cache.clear()
+    _seed_external_link()
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-get-portal",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-get-portal",
+                "row_label": "Water",
+                "external_link_id": "chase-login",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/bills/bill-get-portal") and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "bill-get-portal",
+                        "attributes": {
+                            "name": "Water",
+                            "amount_min": "50.00",
+                            "amount_max": "50.00",
+                            "repeat_freq": "monthly",
+                        },
+                    }
+                },
+            )
+        if request.url.path.endswith("/rules") and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        return httpx.Response(404)
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = client.get(f"/api/payment-run/bills/{reg_id}")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["external_link_id"] == "chase-login"
+        assert body["external_link"] == {
+            "id": "chase-login",
+            "label": "Chase Login",
+            "url": "https://chase.com/login",
+        }
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_bucket_list_includes_external_link(monkeypatch, client):
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+    _seed_external_link("list-link", "List Portal")
+
+    import asyncio
+
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="portal-bucket",
+            label="Portal Bucket",
+            sort_order=0,
+            firefly_account_ids=["1"],
+            external_link_id="list-link",
+        )
+    )
+
+    response = client.get("/api/payment-run/buckets")
+    assert response.status_code == 200
+    bucket = next(row for row in response.json()["data"] if row["id"] == "portal-bucket")
+    assert bucket["external_link_id"] == "list-link"
+    assert bucket["external_link"] == {
+        "id": "list-link",
+        "label": "List Portal",
+        "url": "https://chase.com/login",
+    }
+
