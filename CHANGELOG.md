@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Bucket portal link validation** — creating a funding bucket with a non-existent `external_link_id` now returns 422 instead of persisting an orphan FK (#125)
 - **Bimonthly intermittent forecast** — every-other-month bills like Propane now show forecast Due with sky ring instead of silent owed; payment gap history drives cadence instead of Firefly repeat_freq; recent payment intervals take precedence over older long gaps (#95)
 - **Intermittent forecast cadence** — uneven gaps (e.g. car insurance) no longer misclassify as quarterly; forecasts suppress until enough time has passed since the last payment (#95)
 - **Forecast Due pairing** — worksheet and bill detail show forecast styling when bimonthly intermittent bills have likely suggested due; refresh snapshots always pair forecast metadata with forecast-sourced owed (#95)
