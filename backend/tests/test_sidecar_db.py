@@ -95,3 +95,68 @@ def test_init_db_migrates_discover_settings_defaults_version(data_dir):
     asyncio.run(sidecar_db.init_db())
     settings = asyncio.run(sidecar_db.get_discover_settings())
     assert "Gas" in settings["ignored_categories"]
+
+
+def _table_columns(data_dir, table: str) -> set[str]:
+    async def read_columns():
+        import aiosqlite
+
+        async with aiosqlite.connect(sidecar_db.get_db_path()) as db:
+            cursor = await db.execute(f"PRAGMA table_info({table})")
+            rows = await cursor.fetchall()
+            return {row[1] for row in rows}
+
+    return asyncio.run(read_columns())
+
+
+def test_external_links_schema_migration(data_dir):
+    asyncio.run(sidecar_db.init_db())
+
+    assert _table_columns(data_dir, "external_links") == {"id", "label", "url"}
+    assert _table_columns(data_dir, "worksheet_account_links") == {
+        "account_id",
+        "external_link_id",
+    }
+    assert "external_link_id" in _table_columns(data_dir, "worksheet_registry")
+    assert "external_link_id" in _table_columns(data_dir, "funding_buckets")
+
+    async def insert_link():
+        import aiosqlite
+
+        async with aiosqlite.connect(sidecar_db.get_db_path()) as db:
+            await db.execute(
+                """
+                INSERT INTO external_links (id, label, url)
+                VALUES (?, ?, ?)
+                """,
+                ("chase-login", "Chase Login", "https://chase.com/login"),
+            )
+            await db.commit()
+
+    asyncio.run(insert_link())
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "worksheet_section": "bills",
+                "row_label": "Electric",
+                "external_link_id": "chase-login",
+            }
+        )
+    )
+    row = asyncio.run(sidecar_db.get_worksheet_registry(reg_id))
+    assert row is not None
+    assert row["external_link_id"] == "chase-login"
+
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+            external_link_id="chase-login",
+        )
+    )
+    bucket = asyncio.run(sidecar_db.get_funding_bucket("checking"))
+    assert bucket is not None
+    assert bucket["external_link_id"] == "chase-login"
