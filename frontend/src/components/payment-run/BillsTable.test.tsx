@@ -402,3 +402,49 @@ describe("BillsTable intermittent forecast Due UX", () => {
     expect(screen.getByTestId("forecast-due-tooltip-trigger")).toBeTruthy()
   })
 })
+
+const propaneBimonthlyForecast: BillForecast = {
+  month: "2026-07",
+  likelihood: "likely",
+  suggested_amount: "200.86",
+  basis: "mean_last_n",
+  n: 2,
+  lookback_months: 12,
+  seasonal: {
+    detected: false,
+    active_months: [],
+    active_month_labels: null,
+  },
+  cadence_label: "bimonthly",
+  last_payment_date: "2026-05-02",
+  note: "Advisory — verify before planning",
+}
+
+describe("Bimonthly Propane forecast Due UX (#95)", () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it("renders sky ring and advisory tooltip for bimonthly forecast-sourced Due", () => {
+    renderForecastBillsTable([
+      makeBill({
+        registry_id: 60,
+        row_key: "bills:60",
+        row_label: "Propane",
+        amount_mode: "intermittent",
+        amount_due: "200.86",
+        amount_due_source: "forecast",
+        planned_amount: "0.00",
+        forecast: propaneBimonthlyForecast,
+      }),
+    ])
+
+    expect(screen.getByTestId("forecast-due-emphasis")).toBeTruthy()
+    const trigger = screen.getByTestId("forecast-due-tooltip-trigger")
+    expect(trigger.getAttribute("aria-label")).toContain(
+      "Advisory — verify before planning",
+    )
+    expect(trigger.getAttribute("aria-label")).toMatch(/likely/i)
+  })
+})

@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Bimonthly intermittent forecast** — every-other-month bills like Propane now show forecast Due with sky ring instead of silent owed; payment gap history drives cadence instead of Firefly repeat_freq (#95)
+- **Forecast Due pairing** — worksheet and bill detail show forecast styling when bimonthly intermittent bills have likely suggested due; refresh snapshots always pair forecast metadata with forecast-sourced owed (#95)
 - **Intermittent forecast Due tooltip** — Due field stays directly focusable (no button wrapping the input); payment-count basis line is omitted when no recent payments back the forecast (#95)
 - **Promo APR resilience** — malformed stored promo dates no longer crash the worksheet API; partial promo clears via API are rejected per all-or-nothing rules (#107)
 - **Credit card settings sheet scroll** — the card edit sheet scrolls when the special-rate section is expanded so Save and Cancel stay reachable (#107)

@@ -489,4 +489,44 @@ describe("BillsDetailPage forecast echo", () => {
 
     expect(screen.queryByTestId("bill-detail-forecast")).toBeNull()
   })
+
+  it("shows bimonthly likely forecast card with suggested amount for Propane shape", async () => {
+    mockFetch({
+      bills: [BILL_INTERMITTENT],
+      history: {
+        ...MOCK_HISTORY,
+        registry_id: 4,
+        amount_mode: "intermittent",
+        forecast: {
+          month: "2026-07",
+          likelihood: "likely",
+          suggested_amount: "200.86",
+          basis: "mean_last_n",
+          n: 2,
+          lookback_months: 12,
+          seasonal: {
+            detected: false,
+            active_months: [],
+            active_month_labels: null,
+          },
+          cadence_label: "bimonthly",
+          last_payment_date: "2026-05-02",
+          note: "Advisory — verify before planning",
+        },
+      },
+    })
+    render(
+      <TestProviders initialEntry="/manage/bills/4">
+        <BillsDetailPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("bill-detail-forecast")).toBeTruthy()
+    })
+
+    expect(screen.getByText(/Worksheet forecast for July 2026/i)).toBeTruthy()
+    expect(screen.getByText(/Likelihood: likely/i)).toBeTruthy()
+    expect(screen.getByText(/Suggested amount: 200\.86/i)).toBeTruthy()
+  })
 })
