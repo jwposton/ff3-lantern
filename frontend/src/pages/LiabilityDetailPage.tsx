@@ -27,6 +27,7 @@ import { formatStatsWindowCaption } from "@/lib/liabilityHistory"
 import { formatDisplayAmount } from "@/lib/formatDisplay"
 import {
   currentMonthKey,
+  externalLinksQueryKey,
   putAccountWorksheet,
   type LiabilityRow,
 } from "@/lib/paymentRunApi"
@@ -77,6 +78,7 @@ export function LiabilityDetailPage() {
 
   async function invalidate() {
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    await queryClient.invalidateQueries({ queryKey: externalLinksQueryKey() })
     if (accountId) {
       await queryClient.invalidateQueries({
         queryKey: liabilityHistoryQueryKey(accountId, committedRange),

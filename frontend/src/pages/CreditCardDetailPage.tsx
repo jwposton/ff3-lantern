@@ -27,6 +27,7 @@ import { formatDisplayAmount } from "@/lib/formatDisplay"
 import { formatInterestPercent } from "@/lib/paymentRunFormat"
 import {
   currentMonthKey,
+  externalLinksQueryKey,
   putAccountWorksheet,
   type CreditCardRow,
 } from "@/lib/paymentRunApi"
@@ -65,6 +66,7 @@ export function CreditCardDetailPage() {
 
   async function invalidate() {
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    await queryClient.invalidateQueries({ queryKey: externalLinksQueryKey() })
     if (accountId) {
       await queryClient.invalidateQueries({
         queryKey: creditCardHistoryQueryKey(accountId, committedRange),
