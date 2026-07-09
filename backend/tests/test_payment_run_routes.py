@@ -4059,6 +4059,53 @@ def test_registry_put_external_link_id_invalid_422(
     assert response.json()["detail"] == "Portal link not found"
 
 
+def test_registry_put_orphan_external_link_omit_succeeds(
+    monkeypatch, client, data_dir, payment_worksheet_env
+):
+    import asyncio
+
+    reg_id = asyncio.run(
+        sidecar_db.insert_worksheet_registry(
+            {
+                "firefly_bill_id": "bill-orphan-link",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "recurring",
+                "planned_sync": "fixed",
+                "payment_rail": "bank",
+                "rule_id": "rule-orphan-link",
+                "row_label": "Original Label",
+            }
+        )
+    )
+    asyncio.run(
+        sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+        )
+    )
+    asyncio.run(
+        sidecar_db.update_worksheet_registry(
+            reg_id, {"external_link_id": "deleted-link"}
+        )
+    )
+
+    response = client.put(
+        f"/api/payment-run/bills/{reg_id}",
+        json={"row_label": "Updated Label"},
+    )
+    assert response.status_code == 200
+    assert response.json()["row_label"] == "Updated Label"
+    assert response.json()["external_link_id"] == "deleted-link"
+
+    row = asyncio.run(sidecar_db.get_worksheet_registry(reg_id))
+    assert row is not None
+    assert row["row_label"] == "Updated Label"
+    assert row["external_link_id"] == "deleted-link"
+
+
 def test_bucket_post_external_link_id_invalid_422(monkeypatch, client):
     monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
     monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")

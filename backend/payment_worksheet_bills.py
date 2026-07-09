@@ -627,8 +627,8 @@ async def validate_registry_external_link_update(
             updates.get("external_link_id")
         )
 
-    if merged.get("external_link_id"):
-        await _validate_external_link_exists(str(merged["external_link_id"]))
+    if "external_link_id" in updates and updates.get("external_link_id"):
+        await _validate_external_link_exists(str(updates["external_link_id"]))
 
 
 async def _registered_bill_ids() -> set[str]:
