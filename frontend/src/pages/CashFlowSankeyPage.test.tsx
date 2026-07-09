@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { type ReactElement } from "react"
+import { MemoryRouter, Route, Routes } from "react-router-dom"
 
 import { isCashMovementRow } from "@/lib/sankey"
 import { mainCheckingWithdrawal, salaryDeposit } from "@/test/fixtures/omniRows"
@@ -84,6 +86,19 @@ vi.mock("@/components/SankeyChart", () => ({
 
 import { CashFlowSankeyPage } from "./CashFlowSankeyPage"
 
+function renderPage(
+  ui: ReactElement,
+  initialEntry = "/reports/cash-flow/sankey",
+) {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Routes>
+        <Route path="/reports/cash-flow/sankey" element={ui} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
 describe("CashFlowSankeyPage", () => {
   afterEach(() => {
     cleanup()
@@ -104,7 +119,7 @@ describe("CashFlowSankeyPage", () => {
   })
 
   it("renders page title Cash Flow and aggregate label", () => {
-    render(<CashFlowSankeyPage />)
+    renderPage(<CashFlowSankeyPage />)
 
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
       "Cash Flow",
@@ -113,7 +128,7 @@ describe("CashFlowSankeyPage", () => {
   })
 
   it("uses isCashMovementRow filter and cash movement empty copy", () => {
-    render(<CashFlowSankeyPage />)
+    renderPage(<CashFlowSankeyPage />)
 
     expect(screen.getByTestId("empty-message").textContent).toBe(
       "No cash movement in this date range",
@@ -136,7 +151,7 @@ describe("CashFlowSankeyPage", () => {
       refetch: vi.fn(),
     })
 
-    render(<CashFlowSankeyPage />)
+    renderPage(<CashFlowSankeyPage />)
 
     expect(screen.getByTestId("sankey-chart")).toBeTruthy()
     expect(screen.queryByTestId("empty-message")).toBeNull()
@@ -152,7 +167,7 @@ describe("CashFlowSankeyPage", () => {
       refetch: vi.fn(),
     })
 
-    render(<CashFlowSankeyPage />)
+    renderPage(<CashFlowSankeyPage />)
 
     expect(
       screen.getByTestId("sankey-chart").getAttribute("data-has-node-click"),
@@ -169,7 +184,7 @@ describe("CashFlowSankeyPage", () => {
       refetch: vi.fn(),
     })
 
-    render(<CashFlowSankeyPage />)
+    renderPage(<CashFlowSankeyPage />)
 
     fireEvent.click(screen.getByTestId("sankey-chart"))
 
@@ -194,7 +209,7 @@ describe("CashFlowSankeyPage", () => {
       refetch: vi.fn(),
     })
 
-    render(<CashFlowSankeyPage />)
+    renderPage(<CashFlowSankeyPage />)
 
     const hint = screen
       .getByTestId("sankey-chart")
@@ -203,7 +218,7 @@ describe("CashFlowSankeyPage", () => {
   })
 
   it("passes drilldownMode cashflow and aggregateBanks to SankeyReportPage", () => {
-    render(<CashFlowSankeyPage />)
+    renderPage(<CashFlowSankeyPage />)
 
     expect(mockSankeyReportPageProps).toHaveBeenCalled()
     const props = mockSankeyReportPageProps.mock.calls[0][0]
@@ -238,7 +253,7 @@ describe("CashFlowSankeyPage", () => {
       refetch: vi.fn(),
     })
 
-    render(<CashFlowSankeyPage />)
+    renderPage(<CashFlowSankeyPage />)
 
     const checkbox = screen.getByLabelText(
       "Aggregate bank accounts",

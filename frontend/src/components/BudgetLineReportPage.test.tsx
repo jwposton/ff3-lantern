@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { useState } from "react"
+import { useState, type ReactElement } from "react"
+import { MemoryRouter, Route, Routes } from "react-router-dom"
 
 import type { TrendLineSeries } from "@/lib/barChart"
 import { TOTAL_LABEL } from "@/lib/barChart"
@@ -72,6 +73,19 @@ const pageProps = {
 const alwaysFalse = () => false
 const alwaysTrue = () => true
 
+function renderPage(
+  ui: ReactElement,
+  initialEntry = "/reports/spending/trends",
+) {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Routes>
+        <Route path="/reports/spending/trends" element={ui} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
 function DateRangeHarness() {
   const [range, setRange] = useState({
     start: "2026-01-01",
@@ -115,7 +129,7 @@ describe("BudgetLineReportPage", () => {
   })
 
   it("shows Show total toggle and toggling changes series passed to BudgetLineChart", () => {
-    render(<BudgetLineReportPage filter={alwaysTrue} {...pageProps} />)
+    renderPage(<BudgetLineReportPage filter={alwaysTrue} {...pageProps} />)
 
     const toggle = screen.getByLabelText("Show total")
     expect(toggle).toBeTruthy()
@@ -127,7 +141,7 @@ describe("BudgetLineReportPage", () => {
   })
 
   it("renders emptyMessage from props when slice rows empty", () => {
-    render(<BudgetLineReportPage filter={alwaysFalse} {...pageProps} />)
+    renderPage(<BudgetLineReportPage filter={alwaysFalse} {...pageProps} />)
 
     expect(screen.getByTestId("empty-message").textContent).toBe(
       "No spending in this date range",
@@ -135,7 +149,7 @@ describe("BudgetLineReportPage", () => {
   })
 
   it("clears selectedBudget when committed date range changes", () => {
-    render(<DateRangeHarness />)
+    renderPage(<DateRangeHarness />)
 
     fireEvent.click(screen.getByTestId("select-budget"))
     expect(screen.getByTestId("drilldown").textContent).toBe("Groceries")

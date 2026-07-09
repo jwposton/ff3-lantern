@@ -50,6 +50,7 @@ export function ExternalLinkSelectField({
           <select
             id={id}
             className={selectClassName}
+            disabled
             value={value}
             onChange={(event) => onChange(event.target.value)}
           >

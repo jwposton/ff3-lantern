@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { type ReactElement } from "react"
+import { MemoryRouter, Route, Routes } from "react-router-dom"
 
 import { isSpendingExpense } from "@/lib/spending"
 import { mainCheckingWithdrawal } from "@/test/fixtures/omniRows"
@@ -79,6 +81,19 @@ vi.mock("@/components/SankeyChart", () => ({
 
 import { SpendingSankeyPage } from "./SpendingSankeyPage"
 
+function renderPage(
+  ui: ReactElement,
+  initialEntry = "/reports/spending/sankey",
+) {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Routes>
+        <Route path="/reports/spending/sankey" element={ui} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
 describe("SpendingSankeyPage", () => {
   afterEach(() => {
     cleanup()
@@ -99,7 +114,7 @@ describe("SpendingSankeyPage", () => {
   })
 
   it("uses isSpendingExpense filter and spending empty copy", () => {
-    render(<SpendingSankeyPage />)
+    renderPage(<SpendingSankeyPage />)
 
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
       "Spending",
@@ -121,7 +136,7 @@ describe("SpendingSankeyPage", () => {
       refetch: vi.fn(),
     })
 
-    render(<SpendingSankeyPage />)
+    renderPage(<SpendingSankeyPage />)
 
     expect(screen.getByTestId("sankey-chart")).toBeTruthy()
     expect(screen.queryByTestId("empty-message")).toBeNull()
@@ -137,7 +152,7 @@ describe("SpendingSankeyPage", () => {
       refetch: vi.fn(),
     })
 
-    render(<SpendingSankeyPage />)
+    renderPage(<SpendingSankeyPage />)
 
     fireEvent.click(screen.getByTestId("sankey-chart"))
 
@@ -153,7 +168,7 @@ describe("SpendingSankeyPage", () => {
   })
 
   it("renders Top-N categories shown control", () => {
-    render(<SpendingSankeyPage />)
+    renderPage(<SpendingSankeyPage />)
 
     expect(screen.getByText("Categories shown:")).toBeTruthy()
     expect(screen.getByRole("slider").getAttribute("min")).toBe("10")
@@ -161,7 +176,7 @@ describe("SpendingSankeyPage", () => {
   })
 
   it("passes topN to SankeyReportPage for Other (C) drilldown", () => {
-    render(<SpendingSankeyPage />)
+    renderPage(<SpendingSankeyPage />)
 
     expect(mockSankeyReportPageProps).toHaveBeenCalled()
     const props = mockSankeyReportPageProps.mock.calls[0][0]

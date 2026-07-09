@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Intermittent forecast Due tooltip** — Due field stays directly focusable (no button wrapping the input); payment-count basis line is omitted when no recent payments back the forecast (#95)
 - **Promo APR resilience** — malformed stored promo dates no longer crash the worksheet API; partial promo clears via API are rejected per all-or-nothing rules (#107)
 - **Credit card settings sheet scroll** — the card edit sheet scrolls when the special-rate section is expanded so Save and Cancel stay reachable (#107)
+- **External link picker (empty catalog)** — select is disabled when no portal links exist, with a link to create one in the hub (#126)
 
 ## [2.6.1] - 2026-07-07
 
