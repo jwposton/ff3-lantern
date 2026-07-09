@@ -479,8 +479,28 @@ async def run_refresh(
                         today=refresh_today,
                     )
                     owed = resolve_intermittent_owed(forecast, linked_rows, month)
-                    if same_month_posted_payment(linked_rows, month):
+                    posted_wins = same_month_posted_payment(linked_rows, month)
+                    if posted_wins:
                         forecast = {**forecast, "posted_wins": True}
+                    owed_decimal = _decimal_amount(owed)
+                    if owed_decimal != 0 and not posted_wins:
+                        likelihood = str(forecast.get("likelihood") or "")
+                        suggested = forecast.get("suggested_amount")
+                        if (
+                            likelihood not in {"likely", "possible"}
+                            or suggested is None
+                            or _format_decimal(owed_decimal)
+                            != _format_decimal(_decimal_amount(suggested))
+                        ):
+                            logger.warning(
+                                "Intermittent bill %s: resetting orphan owed %s "
+                                "(likelihood=%s, forecast=%s)",
+                                bill_id,
+                                owed,
+                                likelihood,
+                                "present" if forecast else "missing",
+                            )
+                            owed = "0.00"
                 else:
                     owed = "0.00"
         else:

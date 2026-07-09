@@ -911,3 +911,130 @@ async def test_refresh_intermittent_fetch_failure_still_writes_zero_owed(
     assert snap["owed"] == "0.00"
     assert "forecast" not in snap
 
+
+def _propane_bimonthly_transactions() -> list[dict[str, Any]]:
+    """Propane-like every-other-month pattern (UAT #95); excludes July for on-month test."""
+    deliveries = [
+        ("2025-11-15", "200.86"),
+        ("2026-01-10", "201.20"),
+        ("2026-03-07", "199.50"),
+        ("2026-05-02", "200.10"),
+    ]
+    return [{"date": d, "amount": a} for d, a in deliveries]
+
+
+@pytest.mark.asyncio
+async def test_refresh_intermittent_bimonthly_pairs_forecast_with_owed(
+    data_dir, payment_worksheet_env, monkeypatch
+):
+    monkeypatch.setattr("app_clock.today", lambda: date(2026, 7, 15))
+    fixture = _fixture()
+    bills = {
+        "bill-propane": {
+            "name": "Propane",
+            "amount_min": "150.00",
+            "amount_max": "250.00",
+            "repeat_freq": "monthly",
+        }
+    }
+    bill_transactions = {"bill-propane": _propane_bimonthly_transactions()}
+    client = _build_client_with_bills(
+        fixture, bills, bill_transactions=bill_transactions
+    )
+    reg_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-propane",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-propane",
+            "row_label": "Propane",
+        }
+    )
+    month = "2026-07"
+
+    await run_refresh(client, month)
+
+    balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
+    snap = balances["bills"][str(reg_id)]
+    assert "forecast" in snap
+    assert snap["forecast"]["likelihood"] == "likely"
+    assert snap["forecast"]["cadence_label"] == "bimonthly"
+    assert snap["forecast"]["suggested_amount"] is not None
+    assert snap["owed"] == snap["forecast"]["suggested_amount"]
+    assert Decimal(snap["owed"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_refresh_intermittent_never_orphan_forecast_sourced_owed(
+    data_dir, payment_worksheet_env, monkeypatch
+):
+    """No intermittent snapshot may carry nonzero owed without forecast metadata."""
+    monkeypatch.setattr("app_clock.today", lambda: date(2026, 7, 15))
+    fixture = _fixture()
+    bills = {
+        "bill-propane": {
+            "name": "Propane",
+            "amount_min": "150.00",
+            "amount_max": "250.00",
+            "repeat_freq": "monthly",
+        },
+        "bill-heat": {
+            "name": "Heating",
+            "amount_min": "300.00",
+            "amount_max": "500.00",
+            "repeat_freq": None,
+        },
+    }
+    bill_transactions = {
+        "bill-propane": _propane_bimonthly_transactions(),
+        "bill-heat": [
+            {"date": "2026-01-05", "amount": "400.00"},
+            {"date": "2026-02-20", "amount": "390.00"},
+            {"date": "2026-03-10", "amount": "410.00"},
+        ],
+    }
+    client = _build_client_with_bills(
+        fixture, bills, bill_transactions=bill_transactions
+    )
+    propane_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-propane",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-propane",
+            "row_label": "Propane",
+        }
+    )
+    heat_id = await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "bill-heat",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "intermittent",
+            "planned_sync": "manual",
+            "payment_rail": "bank",
+            "rule_id": "rule-heat",
+            "row_label": "Heating",
+        }
+    )
+    month = "2026-07"
+
+    await run_refresh(client, month)
+
+    balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
+    for reg_id in (propane_id, heat_id):
+        snap = balances["bills"][str(reg_id)]
+        owed = Decimal(snap["owed"])
+        forecast = snap.get("forecast")
+        if owed != 0:
+            assert forecast is not None
+            if not forecast.get("posted_wins"):
+                assert forecast.get("likelihood") in {"likely", "possible"}
+                assert snap["owed"] == forecast.get("suggested_amount")
+
