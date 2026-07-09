@@ -659,12 +659,20 @@ async def create_bucket(
     await _validate_bucket_firefly_account_ids(
         client, body.firefly_account_ids or []
     )
+    external_link_id = normalize_external_link_id(body.external_link_id)
+    if external_link_id:
+        try:
+            await _validate_external_link_exists(external_link_id)
+        except BillRegistrationError as exc:
+            raise HTTPException(
+                status_code=exc.status_code, detail=exc.detail
+            ) from exc
     await sidecar_db.upsert_funding_bucket(
         id=bucket_id,
         label=body.label,
         sort_order=body.sort_order if body.sort_order is not None else 0,
         firefly_account_ids=body.firefly_account_ids or [],
-        external_link_id=normalize_external_link_id(body.external_link_id),
+        external_link_id=external_link_id,
     )
     row = await sidecar_db.get_funding_bucket(bucket_id)
     if row is None:

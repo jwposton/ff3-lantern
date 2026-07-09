@@ -4059,6 +4059,80 @@ def test_registry_put_external_link_id_invalid_422(
     assert response.json()["detail"] == "Portal link not found"
 
 
+def test_bucket_post_external_link_id_invalid_422(monkeypatch, client):
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+    monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
+    monkeypatch.setenv("FIREFLY_API_TOKEN", "test-token")
+
+    import asyncio
+
+    import firefly_reference_cache
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    firefly_reference_cache.clear()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/accounts") and request.method == "GET":
+            data = [
+                {
+                    "type": "accounts",
+                    "id": "7",
+                    "attributes": {
+                        "name": "Checking",
+                        "type": "asset",
+                        "account_role": "defaultAsset",
+                    },
+                }
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "data": data,
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        return httpx.Response(404)
+
+    mock_client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    app.dependency_overrides[get_firefly_client] = lambda: mock_client
+
+    try:
+        response = client.post(
+            "/api/payment-run/buckets",
+            json={
+                "id": "orphan-bucket",
+                "label": "Orphan Bucket",
+                "sort_order": 0,
+                "firefly_account_ids": ["7"],
+                "external_link_id": "missing-link",
+            },
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Portal link not found"
+        assert asyncio.run(sidecar_db.get_funding_bucket("orphan-bucket")) is None
+
+        _seed_external_link("valid-bucket-link", "Valid Portal")
+        create = client.post(
+            "/api/payment-run/buckets",
+            json={
+                "id": "linked-bucket",
+                "label": "Linked Bucket",
+                "sort_order": 0,
+                "firefly_account_ids": ["7"],
+                "external_link_id": "valid-bucket-link",
+            },
+        )
+        assert create.status_code == 200
+        assert create.json()["external_link_id"] == "valid-bucket-link"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_bucket_put_external_link_id_omit_vs_null(monkeypatch, client):
     monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
     monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
