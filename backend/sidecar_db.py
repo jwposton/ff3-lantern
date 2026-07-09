@@ -24,8 +24,11 @@ class ConflictError(Exception):
 
 __all__ = [
     "ConflictError",
+    "count_external_link_dependents",
     "delete_bill_group",
+    "delete_external_link",
     "delete_funding_bucket",
+    "delete_worksheet_account_link",
     "delete_worksheet_registry",
     "delete_worksheet_state_for_row_key",
     "get_bill_group",
@@ -33,21 +36,28 @@ __all__ = [
     "get_data_dir",
     "get_db_path",
     "get_discover_settings",
+    "get_external_link",
+    "get_external_links_by_ids",
     "get_funding_bucket",
+    "get_worksheet_account_link",
     "get_worksheet_refresh",
     "get_worksheet_registry",
     "get_worksheet_state_for_month",
     "init_db",
+    "insert_external_link_if_absent",
     "insert_worksheet_registry",
     "is_writable",
     "list_bill_group_members",
     "list_bill_groups",
+    "list_external_links",
     "list_funding_buckets",
+    "list_worksheet_account_links",
     "list_worksheet_registry",
     "log_audit",
     "get_suggestion",
     "insert_bill_group_if_absent",
     "patch_bill_group",
+    "patch_external_link",
     "replace_bill_group_members",
     "add_discover_ignored_category",
     "add_discover_ignored_payee",
@@ -58,6 +68,7 @@ __all__ = [
     "upsert_bucket_balance",
     "upsert_funding_bucket",
     "upsert_suggestion",
+    "upsert_worksheet_account_link",
     "upsert_worksheet_refresh",
     "upsert_worksheet_state_row",
 ]
@@ -696,6 +707,226 @@ async def delete_bill_group(group_id: str) -> None:
         await db.execute(
             "DELETE FROM worksheet_bill_groups WHERE id = ?",
             (group_id,),
+        )
+        await db.commit()
+
+
+def _row_to_external_link(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "label": row["label"],
+        "url": row["url"],
+    }
+
+
+async def list_external_links() -> list[dict[str, Any]]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, label, url
+            FROM external_links
+            ORDER BY label ASC
+            """
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_external_link(row) for row in rows]
+
+
+async def get_external_link(link_id: str) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, label, url
+            FROM external_links
+            WHERE id = ?
+            """,
+            (link_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_external_link(row) if row else None
+
+
+async def insert_external_link_if_absent(
+    *,
+    id: str,
+    label: str,
+    url: str,
+) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        try:
+            await db.execute(
+                """
+                INSERT INTO external_links (id, label, url)
+                VALUES (?, ?, ?)
+                """,
+                (id, label, url),
+            )
+            await db.commit()
+        except aiosqlite.IntegrityError as exc:
+            raise ConflictError(f"External link id already exists: {id}") from exc
+
+
+async def patch_external_link(
+    link_id: str,
+    *,
+    label: str,
+    url: str,
+) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            UPDATE external_links
+            SET label = ?, url = ?
+            WHERE id = ?
+            """,
+            (label, url, link_id),
+        )
+        await db.commit()
+
+
+async def delete_external_link(link_id: str) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute("DELETE FROM external_links WHERE id = ?", (link_id,))
+        await db.commit()
+
+
+async def get_external_links_by_ids(ids: list[str]) -> dict[str, dict[str, Any]]:
+    if not ids:
+        return {}
+    await init_db()
+    placeholders = ", ".join("?" for _ in ids)
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            f"""
+            SELECT id, label, url
+            FROM external_links
+            WHERE id IN ({placeholders})
+            """,
+            ids,
+        )
+        rows = await cursor.fetchall()
+        return {row["id"]: _row_to_external_link(row) for row in rows}
+
+
+async def count_external_link_dependents(link_id: str) -> dict[str, int]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        bills_cursor = await db.execute(
+            """
+            SELECT COUNT(*) FROM worksheet_registry
+            WHERE external_link_id = ? AND worksheet_section = 'bills'
+            """,
+            (link_id,),
+        )
+        bills_row = await bills_cursor.fetchone()
+        liabilities_cursor = await db.execute(
+            """
+            SELECT COUNT(*) FROM worksheet_registry
+            WHERE external_link_id = ? AND worksheet_section = 'liabilities'
+            """,
+            (link_id,),
+        )
+        liabilities_row = await liabilities_cursor.fetchone()
+        buckets_cursor = await db.execute(
+            """
+            SELECT COUNT(*) FROM funding_buckets
+            WHERE external_link_id = ?
+            """,
+            (link_id,),
+        )
+        buckets_row = await buckets_cursor.fetchone()
+        accounts_cursor = await db.execute(
+            """
+            SELECT COUNT(*) FROM worksheet_account_links
+            WHERE external_link_id = ?
+            """,
+            (link_id,),
+        )
+        accounts_row = await accounts_cursor.fetchone()
+    return {
+        "bills": int(bills_row[0]) if bills_row else 0,
+        "liabilities": int(liabilities_row[0]) if liabilities_row else 0,
+        "buckets": int(buckets_row[0]) if buckets_row else 0,
+        "accounts": int(accounts_row[0]) if accounts_row else 0,
+    }
+
+
+def _row_to_worksheet_account_link(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "account_id": row["account_id"],
+        "external_link_id": row["external_link_id"],
+    }
+
+
+async def get_worksheet_account_link(account_id: str) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT account_id, external_link_id
+            FROM worksheet_account_links
+            WHERE account_id = ?
+            """,
+            (account_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_worksheet_account_link(row) if row else None
+
+
+async def list_worksheet_account_links() -> list[dict[str, Any]]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT account_id, external_link_id
+            FROM worksheet_account_links
+            ORDER BY account_id ASC
+            """
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_worksheet_account_link(row) for row in rows]
+
+
+async def upsert_worksheet_account_link(
+    account_id: str,
+    external_link_id: str | None,
+) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        if external_link_id is None:
+            await db.execute(
+                "DELETE FROM worksheet_account_links WHERE account_id = ?",
+                (account_id,),
+            )
+        else:
+            await db.execute(
+                """
+                INSERT INTO worksheet_account_links (account_id, external_link_id)
+                VALUES (?, ?)
+                ON CONFLICT(account_id) DO UPDATE SET
+                  external_link_id = excluded.external_link_id
+                """,
+                (account_id, external_link_id),
+            )
+        await db.commit()
+
+
+async def delete_worksheet_account_link(account_id: str) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            "DELETE FROM worksheet_account_links WHERE account_id = ?",
+            (account_id,),
         )
         await db.commit()
 
