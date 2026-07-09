@@ -42,6 +42,7 @@ from payment_worksheet_bills import (
     BillRegistrationError,
     RegisterBillBody,
     bill_registration_http_detail,
+    build_dependents_payload,
     detect_rule_link_sync,
     discover_link_rule_id,
     register_bill,
@@ -49,6 +50,7 @@ from payment_worksheet_bills import (
     serialize_bill_registry_for_edit,
     sync_registry_row_label_if_drifted,
     update_registered_bill_firefly,
+    validate_portal_url,
     validate_registry_bill_group_update,
 )
 from loan_journal_splits import count_liability_anchor_journals
@@ -220,6 +222,53 @@ class BillGroupRow(BaseModel):
     members: list[BillGroupMemberRow]
 
 
+class ExternalLinkCreateBody(BaseModel):
+    label: str
+    url: str
+
+    @field_validator("label")
+    @classmethod
+    def label_non_empty(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("label must be non-empty")
+        return stripped
+
+    @field_validator("url")
+    @classmethod
+    def url_https_only(cls, value: str) -> str:
+        return validate_portal_url(value)
+
+
+class ExternalLinkPatchBody(BaseModel):
+    label: str | None = None
+    url: str | None = None
+
+    @field_validator("label")
+    @classmethod
+    def label_non_empty_when_set(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("label must be non-empty")
+        return stripped
+
+    @field_validator("url")
+    @classmethod
+    def url_https_only_when_set(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return validate_portal_url(value)
+
+
+class ExternalLinkRow(BaseModel):
+    id: str
+    label: str
+    url: str
+    dependents: dict[str, int]
+
+
 class PaymentWorksheetBody(BaseModel):
     included: bool | None = None
     worksheet_section: str | None = None
@@ -347,6 +396,32 @@ async def _enrich_bill_group(row: dict) -> BillGroupRow:
         member_count=len(members),
         visible_count=sum(1 for member in members if member.show_in_group),
         members=members,
+    )
+
+
+async def _allocate_external_link_id(label: str, url: str) -> str:
+    base = _slugify_label(label) or "link"
+    for attempt in range(100):
+        candidate = base if attempt == 0 else f"{base}-{attempt + 1}"
+        try:
+            await sidecar_db.insert_external_link_if_absent(
+                id=candidate,
+                label=label,
+                url=url,
+            )
+            return candidate
+        except sidecar_db.ConflictError:
+            continue
+    raise HTTPException(status_code=500, detail="Failed to allocate external link id.")
+
+
+async def _enrich_external_link(row: dict) -> ExternalLinkRow:
+    deps = await sidecar_db.count_external_link_dependents(row["id"])
+    return ExternalLinkRow(
+        id=row["id"],
+        label=row["label"],
+        url=row["url"],
+        dependents=build_dependents_payload(**deps),
     )
 
 
@@ -648,6 +723,82 @@ async def delete_bill_group_route(
     if existing is None:
         raise HTTPException(status_code=404, detail="Group not found.")
     await sidecar_db.delete_bill_group(group_id)
+    return {"ok": True}
+
+
+@router.get("/payment-run/external-links")
+async def list_external_links_route(_: None = Depends(require_payment_worksheet)):
+    rows = await sidecar_db.list_external_links()
+    enriched = [await _enrich_external_link(row) for row in rows]
+    return {"data": [row.model_dump() for row in enriched]}
+
+
+@router.get("/payment-run/external-links/{link_id}")
+async def get_external_link_route(
+    link_id: str,
+    _: None = Depends(require_payment_worksheet),
+):
+    row = await sidecar_db.get_external_link(link_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="External link not found.")
+    return (await _enrich_external_link(row)).model_dump()
+
+
+@router.post("/payment-run/external-links")
+async def create_external_link(
+    body: ExternalLinkCreateBody,
+    _: None = Depends(require_payment_worksheet),
+):
+    link_id = await _allocate_external_link_id(body.label, body.url)
+    row = await sidecar_db.get_external_link(link_id)
+    if row is None:
+        raise HTTPException(status_code=500, detail="Failed to create external link.")
+    return (await _enrich_external_link(row)).model_dump()
+
+
+@router.patch("/payment-run/external-links/{link_id}")
+async def patch_external_link_route(
+    link_id: str,
+    body: ExternalLinkPatchBody,
+    _: None = Depends(require_payment_worksheet),
+):
+    existing = await sidecar_db.get_external_link(link_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="External link not found.")
+    updates = body.model_dump(exclude_unset=True)
+    if updates:
+        await sidecar_db.patch_external_link(
+            link_id,
+            label=updates.get("label", existing["label"]),
+            url=updates.get("url", existing["url"]),
+        )
+    row = await sidecar_db.get_external_link(link_id)
+    if row is None:
+        raise HTTPException(status_code=500, detail="Failed to update external link.")
+    return (await _enrich_external_link(row)).model_dump()
+
+
+@router.delete("/payment-run/external-links/{link_id}")
+async def delete_external_link_route(
+    link_id: str,
+    _: None = Depends(require_payment_worksheet),
+):
+    existing = await sidecar_db.get_external_link(link_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="External link not found.")
+    deps = await sidecar_db.count_external_link_dependents(link_id)
+    dependents = build_dependents_payload(**deps)
+    if dependents:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Cannot delete external link while entities still reference it.",
+                "id": existing["id"],
+                "label": existing["label"],
+                "dependents": dependents,
+            },
+        )
+    await sidecar_db.delete_external_link(link_id)
     return {"ok": True}
 
 
