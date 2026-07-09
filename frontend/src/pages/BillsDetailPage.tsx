@@ -35,6 +35,7 @@ import { formatDisplayAmount, formatDisplayDate } from "@/lib/formatDisplay"
 import {
   billGroupsQueryKey,
   currentMonthKey,
+  externalLinksQueryKey,
   fetchAvailableBills,
   registerBill,
   repairBillLinkRule,
@@ -694,10 +695,12 @@ export function BillsDetailPage() {
         repeat_freq: payload.repeat_freq,
         bill_group_id: payload.bill_group_id,
         show_in_group: payload.show_in_group,
+        external_link_id: payload.external_link_id ?? null,
       })
       await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
       await queryClient.invalidateQueries({ queryKey: registeredBillsQueryKey() })
       await queryClient.invalidateQueries({ queryKey: billGroupsQueryKey() })
+      await queryClient.invalidateQueries({ queryKey: externalLinksQueryKey() })
       await queryClient.invalidateQueries({
         queryKey: billHistoryQueryKey(editTarget.registryId),
       })

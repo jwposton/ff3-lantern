@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
@@ -28,7 +28,16 @@ function TestProviders({ children }: { children: ReactNode }) {
   )
 }
 
-function mockLiabilitiesHubFetch() {
+function mockLiabilitiesHubFetch(options?: { externalLinks?: unknown[] }) {
+  const externalLinks = options?.externalLinks ?? [
+    {
+      id: "chase-login",
+      label: "Chase",
+      url: "https://chase.com",
+      dependents: { total: 0 },
+    },
+  ]
+
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input)
     if (url.includes("/health")) {
@@ -50,6 +59,11 @@ function mockLiabilitiesHubFetch() {
         }),
         { status: 200 },
       )
+    }
+    if (url.includes("/api/payment-run/external-links")) {
+      return new Response(JSON.stringify({ data: externalLinks }), {
+        status: 200,
+      })
     }
     if (url.includes("/api/payment-run/liabilities/42/history")) {
       return new Response(
@@ -156,5 +170,47 @@ describe("LiabilitiesHubPage", () => {
 
     const viewLink = screen.getByRole("link", { name: "View" })
     expect(viewLink.getAttribute("href")).toBe("/manage/liabilities/42")
+  })
+
+  it("shows external link select in worksheet sheet when catalog has links", async () => {
+    mockLiabilitiesHubFetch()
+
+    render(
+      <TestProviders>
+        <LiabilitiesHubPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Mortgage")).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Worksheet" }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("external-link-select")).toBeTruthy()
+    })
+  })
+
+  it("shows empty catalog state in worksheet sheet when no links exist", async () => {
+    mockLiabilitiesHubFetch({ externalLinks: [] })
+
+    render(
+      <TestProviders>
+        <LiabilitiesHubPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Mortgage")).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Worksheet" }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("external-link-empty-catalog")).toBeTruthy()
+      const select = screen.getByLabelText("External link") as HTMLSelectElement
+      expect(select.disabled).toBe(true)
+    })
   })
 })

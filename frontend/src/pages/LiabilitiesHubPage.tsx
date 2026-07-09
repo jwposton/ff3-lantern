@@ -26,6 +26,7 @@ import {
 import { formatDisplayAmount } from "@/lib/formatDisplay"
 import {
   currentMonthKey,
+  externalLinksQueryKey,
   putAccountWorksheet,
   type LiabilityRow,
 } from "@/lib/paymentRunApi"
@@ -105,6 +106,7 @@ export function LiabilitiesHubPage() {
 
   async function invalidateWorksheet() {
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    await queryClient.invalidateQueries({ queryKey: externalLinksQueryKey() })
   }
 
   async function handleLiabilityAccountSave(

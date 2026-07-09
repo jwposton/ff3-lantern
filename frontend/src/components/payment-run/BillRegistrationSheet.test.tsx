@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
+import { MemoryRouter } from "react-router-dom"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { BillRegistrationSheet } from "./BillRegistrationSheet"
@@ -15,6 +16,7 @@ vi.mock("@/lib/paymentRunApi", async (importOriginal) => {
     ...actual,
     fetchBillRegistry: vi.fn(),
     fetchBillGroups: vi.fn(),
+    fetchExternalLinks: vi.fn(),
   }
 })
 
@@ -26,14 +28,16 @@ vi.mock("sonner", () => ({
   },
 }))
 
-import { fetchBillGroups, fetchBillRegistry } from "@/lib/paymentRunApi"
+import { fetchBillGroups, fetchBillRegistry, fetchExternalLinks } from "@/lib/paymentRunApi"
 
 function TestProviders({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>{children}</MemoryRouter>
+    </QueryClientProvider>
   )
 }
 
@@ -79,6 +83,17 @@ const BASE_PROPS = {
   loadingAvailable: false,
 }
 
+const MOCK_EXTERNAL_LINKS = {
+  data: [
+    {
+      id: "chase-login",
+      label: "Chase",
+      url: "https://chase.com",
+      dependents: { total: 0 },
+    },
+  ],
+}
+
 describe("BillRegistrationSheet", () => {
   afterEach(() => {
     cleanup()
@@ -99,6 +114,7 @@ describe("BillRegistrationSheet", () => {
         },
       ],
     })
+    vi.mocked(fetchExternalLinks).mockResolvedValue(MOCK_EXTERNAL_LINKS)
   })
 
   it("calls registerBill payload on submit", async () => {
@@ -420,5 +436,179 @@ describe("BillRegistrationSheet", () => {
         action: expect.objectContaining({ label: "Open rule in Firefly" }),
       }),
     )
+  })
+
+  it("hides external link picker when not in edit mode", async () => {
+    render(
+      <TestProviders>
+        <BillRegistrationSheet {...BASE_PROPS} onSubmit={vi.fn()} />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("external-link-select")).toBeNull()
+      expect(screen.queryByTestId("external-link-empty-catalog")).toBeNull()
+    })
+  })
+
+  it("attaches external_link_id on edit save when link selected", async () => {
+    vi.mocked(fetchBillRegistry).mockResolvedValue({
+      registry_id: 7,
+      row_label: "Electric",
+      firefly_bill_id: "bill-7",
+      worksheet_section: "bills",
+      payment_rail: "bank",
+      amount_mode: "recurring",
+      funding_bucket_key: "checking",
+      credit_card_account_id: null,
+      name: "Electric",
+      amount_min: "50.00",
+      amount_max: "50.00",
+      repeat_freq: "monthly",
+      bill_group_id: null,
+      show_in_group: false,
+      external_link_id: null,
+    })
+
+    const onSubmit = vi.fn(async (_payload: RegisterBillPayload) => {})
+
+    render(
+      <TestProviders>
+        <BillRegistrationSheet
+          {...BASE_PROPS}
+          onSubmit={onSubmit}
+          editTarget={{
+            registryId: 7,
+            row_label: "Electric",
+            worksheet_section: "bills",
+            payment_rail: "bank",
+            funding_bucket_key: "checking",
+            credit_card_account_id: null,
+            amount_mode: "recurring",
+          }}
+        />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("external-link-select")).toBeTruthy()
+    })
+
+    fireEvent.change(screen.getByTestId("external-link-select"), {
+      target: { value: "chase-login" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save registration" }))
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          external_link_id: "chase-login",
+        }),
+      )
+    })
+  })
+
+  it("sends external_link_id null when None selected on edit", async () => {
+    vi.mocked(fetchBillRegistry).mockResolvedValue({
+      registry_id: 7,
+      row_label: "Electric",
+      firefly_bill_id: "bill-7",
+      worksheet_section: "bills",
+      payment_rail: "bank",
+      amount_mode: "recurring",
+      funding_bucket_key: "checking",
+      credit_card_account_id: null,
+      name: "Electric",
+      amount_min: "50.00",
+      amount_max: "50.00",
+      repeat_freq: "monthly",
+      bill_group_id: null,
+      show_in_group: false,
+      external_link_id: "chase-login",
+    })
+
+    const onSubmit = vi.fn(async (_payload: RegisterBillPayload) => {})
+
+    render(
+      <TestProviders>
+        <BillRegistrationSheet
+          {...BASE_PROPS}
+          onSubmit={onSubmit}
+          editTarget={{
+            registryId: 7,
+            row_label: "Electric",
+            worksheet_section: "bills",
+            payment_rail: "bank",
+            funding_bucket_key: "checking",
+            credit_card_account_id: null,
+            amount_mode: "recurring",
+          }}
+        />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const select = screen.getByTestId("external-link-select") as HTMLSelectElement
+      expect(select.value).toBe("chase-login")
+    })
+
+    fireEvent.change(screen.getByTestId("external-link-select"), {
+      target: { value: "" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save registration" }))
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          external_link_id: null,
+        }),
+      )
+    })
+  })
+
+  it("shows empty catalog disabled select and hub link on edit", async () => {
+    vi.mocked(fetchExternalLinks).mockResolvedValue({ data: [] })
+    vi.mocked(fetchBillRegistry).mockResolvedValue({
+      registry_id: 7,
+      row_label: "Electric",
+      firefly_bill_id: "bill-7",
+      worksheet_section: "bills",
+      payment_rail: "bank",
+      amount_mode: "recurring",
+      funding_bucket_key: "checking",
+      credit_card_account_id: null,
+      name: "Electric",
+      amount_min: "50.00",
+      amount_max: "50.00",
+      repeat_freq: "monthly",
+    })
+
+    render(
+      <TestProviders>
+        <BillRegistrationSheet
+          {...BASE_PROPS}
+          onSubmit={vi.fn()}
+          editTarget={{
+            registryId: 7,
+            row_label: "Electric",
+            worksheet_section: "bills",
+            payment_rail: "bank",
+            funding_bucket_key: "checking",
+            credit_card_account_id: null,
+            amount_mode: "recurring",
+          }}
+        />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("external-link-empty-catalog")).toBeTruthy()
+      const hubLink = screen.getByRole("link", { name: "External links" })
+      expect(hubLink.getAttribute("href")).toBe(
+        "/manage/payment-run/external-links",
+      )
+      const select = screen.getByLabelText("External link") as HTMLSelectElement
+      expect(select.disabled).toBe(true)
+    })
   })
 })

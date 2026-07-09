@@ -1,8 +1,29 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import type { ReactNode } from "react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CreditCardSheet } from "./CreditCardSheet"
 import type { CreditCardRow } from "@/lib/paymentRunApi"
+
+vi.mock("@/lib/paymentRunApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/paymentRunApi")>()
+  return {
+    ...actual,
+    fetchExternalLinks: vi.fn(),
+  }
+})
+
+import { fetchExternalLinks } from "@/lib/paymentRunApi"
+
+function TestProviders({ children }: { children: ReactNode }) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  )
+}
 
 const BASE_ROW: CreditCardRow = {
   account_id: "42",
@@ -51,17 +72,32 @@ describe("CreditCardSheet", () => {
     vi.restoreAllMocks()
   })
 
+  beforeEach(() => {
+    vi.mocked(fetchExternalLinks).mockResolvedValue({
+      data: [
+        {
+          id: "chase-login",
+          label: "Chase",
+          url: "https://chase.com",
+          dependents: { total: 0 },
+        },
+      ],
+    })
+  })
+
   it("expands Special rate section when promo data exists on open", () => {
     render(
-      <CreditCardSheet
-        {...BASE_PROPS}
-        row={{
-          ...BASE_ROW,
-          special_apr_percent: "0",
-          special_apr_start: "2026-07-01",
-          special_apr_end: "2026-09-30",
-        }}
-      />,
+      <TestProviders>
+        <CreditCardSheet
+          {...BASE_PROPS}
+          row={{
+            ...BASE_ROW,
+            special_apr_percent: "0",
+            special_apr_start: "2026-07-01",
+            special_apr_end: "2026-09-30",
+          }}
+        />
+      </TestProviders>,
     )
 
     expect(screen.getByLabelText("Promo APR %")).toBeTruthy()
@@ -74,10 +110,12 @@ describe("CreditCardSheet", () => {
   it("blocks save when only promo percent is filled", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     render(
-      <CreditCardSheet
-        {...BASE_PROPS}
-        onSave={onSave}
-      />,
+      <TestProviders>
+        <CreditCardSheet
+          {...BASE_PROPS}
+          onSave={onSave}
+        />
+      </TestProviders>,
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Special rate" }))
@@ -99,16 +137,18 @@ describe("CreditCardSheet", () => {
   it("clear special rate saves all three promo fields as null", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     render(
-      <CreditCardSheet
-        {...BASE_PROPS}
-        onSave={onSave}
-        row={{
-          ...BASE_ROW,
-          special_apr_percent: "0",
-          special_apr_start: "2026-07-01",
-          special_apr_end: "2026-09-30",
-        }}
-      />,
+      <TestProviders>
+        <CreditCardSheet
+          {...BASE_PROPS}
+          onSave={onSave}
+          row={{
+            ...BASE_ROW,
+            special_apr_percent: "0",
+            special_apr_start: "2026-07-01",
+            special_apr_end: "2026-09-30",
+          }}
+        />
+      </TestProviders>,
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Clear special rate" }))
@@ -120,6 +160,45 @@ describe("CreditCardSheet", () => {
         special_apr_start: null,
         special_apr_end: null,
       }))
+    })
+  })
+
+  it("renders external link select when catalog has links", async () => {
+    render(
+      <TestProviders>
+        <CreditCardSheet {...BASE_PROPS} />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("external-link-select")).toBeTruthy()
+    })
+  })
+
+  it("includes external_link_id in onSave when link attached", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(
+      <TestProviders>
+        <CreditCardSheet {...BASE_PROPS} onSave={onSave} />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("external-link-select")).toBeTruthy()
+    })
+
+    fireEvent.change(screen.getByTestId("external-link-select"), {
+      target: { value: "chase-login" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        "42",
+        expect.objectContaining({
+          external_link_id: "chase-login",
+        }),
+      )
     })
   })
 })

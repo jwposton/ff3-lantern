@@ -18,6 +18,7 @@ import {
   createFundingBucket,
   currentMonthKey,
   deleteFundingBucket,
+  externalLinksQueryKey,
   fetchFundingBuckets,
   updateFundingBucket,
   type FundingBucket,
@@ -60,6 +61,7 @@ export function PaymentBucketsPage() {
     label: string
     sort_order: number
     firefly_account_ids: string[]
+    external_link_id: string | null
   }) {
     if (values.id) {
       await updateFundingBucket(values.id, values)
@@ -67,11 +69,13 @@ export function PaymentBucketsPage() {
       await createFundingBucket(values)
     }
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    await queryClient.invalidateQueries({ queryKey: externalLinksQueryKey() })
   }
 
   async function handleDeleteBucket(bucketId: string) {
     await deleteFundingBucket(bucketId)
     await queryClient.invalidateQueries({ queryKey: paymentRunQueryKey(month) })
+    await queryClient.invalidateQueries({ queryKey: externalLinksQueryKey() })
   }
 
   function openAddBucket() {
