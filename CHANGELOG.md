@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **External links hub (foundation)** — Bill Pay sidebar entry and route for `/manage/payment-run/external-links`; typed API client, shared React Query cache key, and dependents helpers for hub and entity pickers (#96)
 - **External links hub (catalog UI)** — data table lists labels with hostname subtext, dependents badge with breakdown tooltip, and create/edit/delete via sheet; delete blocked when link is in use; post-save toast when editing shared links (#96, #126)
 - **External link entity pickers** — attach existing portal links on bill, credit card, liability account, and cash account edit sheets via native select; empty catalog links to the hub (#96, #126)
+- **External links hub (worksheet)** — payment worksheet header links to Manage external links catalog; bill and liability edits from the worksheet save portal link assignments (#96, #126)
 
 ### Changed
 
