@@ -178,13 +178,17 @@ export function ExternalLinksPage() {
                         {dependentsTotal > 0 ? (
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Badge
-                                variant="secondary"
-                                className="cursor-default"
-                                data-testid="external-link-dependents-badge"
+                              <button
+                                type="button"
+                                className="inline-flex cursor-default border-0 bg-transparent p-0"
                               >
-                                {badgeLabel}
-                              </Badge>
+                                <Badge
+                                  variant="secondary"
+                                  data-testid="external-link-dependents-badge"
+                                >
+                                  {badgeLabel}
+                                </Badge>
+                              </button>
                             </TooltipTrigger>
                             <TooltipContent side="top">
                               {breakdown}
