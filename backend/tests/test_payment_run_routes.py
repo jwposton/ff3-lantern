@@ -3804,3 +3804,158 @@ def test_build_dependents_payload_sparse_shape():
         bills=2, liabilities=0, buckets=1, accounts=0
     ) == {"bills": 2, "buckets": 1, "total": 3}
 
+
+def test_external_links_crud(monkeypatch, client, data_dir):
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+
+    create = client.post(
+        "/api/payment-run/external-links",
+        json={"label": "Chase Login!", "url": "https://chase.com/login"},
+    )
+    assert create.status_code == 200
+    body = create.json()
+    assert body["id"] == "chase-login"
+    assert body["label"] == "Chase Login!"
+    assert body["url"] == "https://chase.com/login"
+    assert body["dependents"] == {}
+
+    collision = client.post(
+        "/api/payment-run/external-links",
+        json={"label": "Chase Login!", "url": "https://chase.com/other"},
+    )
+    assert collision.status_code == 200
+    assert collision.json()["id"] == "chase-login-2"
+
+    zebra = client.post(
+        "/api/payment-run/external-links",
+        json={"label": "Zebra Portal", "url": "https://zebra.example"},
+    )
+    assert zebra.status_code == 200
+
+    listed = client.get("/api/payment-run/external-links")
+    assert listed.status_code == 200
+    links = listed.json()["data"]
+    assert [link["id"] for link in links] == ["chase-login", "chase-login-2", "zebra-portal"]
+    assert all("dependents" in link for link in links)
+
+    single = client.get("/api/payment-run/external-links/chase-login")
+    assert single.status_code == 200
+    assert single.json()["id"] == "chase-login"
+    assert single.json()["dependents"] == {}
+
+    missing = client.get("/api/payment-run/external-links/missing-link")
+    assert missing.status_code == 404
+
+    patched = client.patch(
+        "/api/payment-run/external-links/chase-login",
+        json={
+            "label": "Chase Bank",
+            "url": "https://chase.com/updated",
+        },
+    )
+    assert patched.status_code == 200
+    patched_body = patched.json()
+    assert patched_body["id"] == "chase-login"
+    assert patched_body["label"] == "Chase Bank"
+    assert patched_body["url"] == "https://chase.com/updated"
+
+    deleted = client.delete("/api/payment-run/external-links/chase-login")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"ok": True}
+
+    remaining = client.get("/api/payment-run/external-links")
+    assert [link["id"] for link in remaining.json()["data"]] == [
+        "chase-login-2",
+        "zebra-portal",
+    ]
+
+
+def test_external_link_delete_blocked_409_dependents(monkeypatch, client, data_dir):
+    import asyncio
+
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+
+    async def _seed() -> None:
+        await sidecar_db.init_db()
+        await sidecar_db.insert_external_link_if_absent(
+            id="blocked-link",
+            label="Blocked Link",
+            url="https://blocked.example",
+        )
+        await sidecar_db.insert_worksheet_registry(
+            {
+                "worksheet_section": "bills",
+                "row_label": "Electric",
+                "external_link_id": "blocked-link",
+            }
+        )
+        await sidecar_db.upsert_funding_bucket(
+            id="checking",
+            label="Checking",
+            sort_order=0,
+            firefly_account_ids=["1"],
+            external_link_id="blocked-link",
+        )
+        await sidecar_db.upsert_worksheet_account_link("acct-1", "blocked-link")
+
+    asyncio.run(_seed())
+
+    response = client.delete("/api/payment-run/external-links/blocked-link")
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["id"] == "blocked-link"
+    assert detail["label"] == "Blocked Link"
+    assert "message" in detail
+    assert detail["dependents"] == {
+        "bills": 1,
+        "buckets": 1,
+        "accounts": 1,
+        "total": 3,
+    }
+
+
+def test_external_links_disabled_returns_404(monkeypatch, client):
+    monkeypatch.delenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", raising=False)
+
+    get_resp = client.get("/api/payment-run/external-links")
+    assert get_resp.status_code == 404
+    assert get_resp.json()["detail"] == "Payment worksheet is not enabled."
+
+    get_one = client.get("/api/payment-run/external-links/test")
+    assert get_one.status_code == 404
+    assert get_one.json()["detail"] == "Payment worksheet is not enabled."
+
+    post_resp = client.post(
+        "/api/payment-run/external-links",
+        json={"label": "Test", "url": "https://example.com"},
+    )
+    assert post_resp.status_code == 404
+    assert post_resp.json()["detail"] == "Payment worksheet is not enabled."
+
+    patch_resp = client.patch(
+        "/api/payment-run/external-links/test",
+        json={"label": "Test"},
+    )
+    assert patch_resp.status_code == 404
+    assert patch_resp.json()["detail"] == "Payment worksheet is not enabled."
+
+    delete_resp = client.delete("/api/payment-run/external-links/test")
+    assert delete_resp.status_code == 404
+    assert delete_resp.json()["detail"] == "Payment worksheet is not enabled."
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com",
+        "javascript:alert(1)",
+    ],
+)
+def test_external_link_post_rejects_non_https_via_route(url, monkeypatch, client, data_dir):
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+    response = client.post(
+        "/api/payment-run/external-links",
+        json={"label": "Bad URL", "url": url},
+    )
+    assert response.status_code == 422
+
