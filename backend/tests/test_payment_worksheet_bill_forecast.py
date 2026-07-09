@@ -12,6 +12,7 @@ from payment_worksheet_bill_forecast import (
     resolve_intermittent_owed,
 )
 from payment_worksheet_bill_history import bill_history_date_window
+from payment_worksheet_bill_suggestions import _classify_freq
 
 
 def _row(payment_date: str, amount: str) -> dict:
@@ -37,6 +38,29 @@ def two_winter_seasonal_rows() -> list[dict]:
         ("2026-03-05", "390.00"),
     ]
     return [_row(d, a) for d, a in deliveries]
+
+
+def propane_bimonthly_rows() -> list[dict]:
+    """Propane-like every-other-month pattern (~56-day gaps, UAT #95)."""
+    deliveries = [
+        ("2025-11-15", "200.86"),
+        ("2026-01-10", "201.20"),
+        ("2026-03-07", "199.50"),
+        ("2026-05-02", "200.10"),
+        ("2026-07-01", "200.86"),
+    ]
+    return [_row(d, a) for d, a in deliveries]
+
+
+def bimonthly_rows_with_monthly_repeat_freq() -> list[dict]:
+    """Five payments on ~56-day gaps for repeat_freq override test."""
+    return [
+        _row("2025-09-01", "150.00"),
+        _row("2025-10-27", "155.00"),
+        _row("2025-12-22", "152.00"),
+        _row("2026-02-16", "148.00"),
+        _row("2026-04-13", "151.00"),
+    ]
 
 
 def monthly_rows_spanning_24_months() -> list[dict]:
@@ -95,8 +119,8 @@ def test_fewer_than_two_payments_unknown() -> None:
 def test_irregular_non_seasonal_emits_possible() -> None:
     rows = [
         _row("2026-01-05", "150.00"),
-        _row("2026-03-20", "175.00"),
-        _row("2026-05-10", "160.00"),
+        _row("2026-02-19", "175.00"),
+        _row("2026-04-10", "160.00"),
     ]
     forecast = compute_intermittent_bill_forecast(
         rows,
@@ -167,11 +191,10 @@ def test_two_year_seasonal_in_season_month_suggests_amount() -> None:
 def test_sparse_single_season_unknown() -> None:
     rows = [
         _row("2025-10-15", "425.00"),
-        _row("2025-11-02", "380.00"),
-        _row("2025-12-20", "395.00"),
-        _row("2026-01-10", "440.00"),
-        _row("2026-02-08", "420.00"),
-        _row("2026-03-05", "390.00"),
+        _row("2025-11-28", "380.00"),
+        _row("2026-01-05", "395.00"),
+        _row("2026-02-20", "440.00"),
+        _row("2026-03-15", "420.00"),
     ]
     forecast = compute_intermittent_bill_forecast(
         rows,
@@ -227,3 +250,92 @@ def test_forecast_module_has_no_sidecar_or_firefly_imports() -> None:
     text = open(source_path, encoding="utf-8").read()
     assert "sidecar_db" not in text
     assert "FireflyClient" not in text
+
+
+def test_classify_freq_bimonthly_bucket() -> None:
+    assert _classify_freq(56.0) == "bimonthly"
+    assert _classify_freq(52.0) == "bimonthly"
+    assert _classify_freq(68.0) == "bimonthly"
+    assert _classify_freq(30.0) == "monthly"
+    assert _classify_freq(15.0) == "biweekly"
+    assert _classify_freq(90.0) == "quarterly"
+    assert _classify_freq(51.9) == "irregular"
+    assert _classify_freq(68.1) == "irregular"
+
+
+def test_gap_cadence_overrides_monthly_repeat_freq() -> None:
+    rows = bimonthly_rows_with_monthly_repeat_freq()
+    forecast = compute_intermittent_bill_forecast(
+        rows,
+        month="2026-06",
+        repeat_freq="monthly",
+        today=date(2026, 7, 15),
+    )
+    assert forecast["cadence_label"] == "bimonthly"
+    assert forecast["lookback_months"] == 12
+
+
+def test_bimonthly_lookback_months_12() -> None:
+    rows = propane_bimonthly_rows()[:-1]
+    forecast = compute_intermittent_bill_forecast(
+        rows,
+        month="2026-07",
+        repeat_freq=None,
+        today=date(2026, 7, 15),
+    )
+    assert forecast["lookback_months"] == 12
+    assert forecast["cadence_label"] == "bimonthly"
+
+
+def test_propane_bimonthly_on_month_likely() -> None:
+    rows = propane_bimonthly_rows()[:-1]
+    forecast = compute_intermittent_bill_forecast(
+        rows,
+        month="2026-07",
+        repeat_freq=None,
+        today=date(2026, 7, 15),
+    )
+    assert forecast["likelihood"] == "likely"
+    assert forecast["suggested_amount"] is not None
+    assert forecast["cadence_label"] == "bimonthly"
+    assert Decimal(forecast["suggested_amount"]) > 0
+
+
+def test_propane_bimonthly_off_month_unlikely() -> None:
+    rows = propane_bimonthly_rows()[:-1]
+    forecast = compute_intermittent_bill_forecast(
+        rows,
+        month="2026-08",
+        repeat_freq=None,
+        today=date(2026, 8, 15),
+    )
+    assert forecast["likelihood"] == "unlikely"
+    assert forecast["suggested_amount"] is None
+    assert forecast["cadence_label"] == "bimonthly-off-month"
+
+
+def test_propane_bimonthly_resolve_owed_populates_due() -> None:
+    rows = propane_bimonthly_rows()[:-1]
+    forecast = compute_intermittent_bill_forecast(
+        rows,
+        month="2026-07",
+        repeat_freq=None,
+        today=date(2026, 7, 15),
+    )
+    assert forecast["likelihood"] == "likely"
+    owed = resolve_intermittent_owed(forecast, rows, "2026-07")
+    assert owed != "0.00"
+    assert Decimal(owed) > 0
+
+
+def test_repeat_freq_monthly_does_not_override_bimonthly_gaps() -> None:
+    rows = bimonthly_rows_with_monthly_repeat_freq()
+    forecast = compute_intermittent_bill_forecast(
+        rows,
+        month="2026-06",
+        repeat_freq="monthly",
+        today=date(2026, 7, 15),
+    )
+    assert forecast["cadence_label"] == "bimonthly"
+    assert forecast["likelihood"] == "likely"
+    assert forecast["suggested_amount"] is not None
