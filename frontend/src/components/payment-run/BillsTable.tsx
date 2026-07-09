@@ -117,7 +117,7 @@ function ForecastDueCell({
         >
           {showEmphasis ? (
             <span
-              className="pointer-events-none absolute inset-0 rounded-sm ring-1 ring-sky-500/30"
+              className="pointer-events-none absolute inset-0 rounded-sm ring-2 ring-violet-500/55"
               data-testid="forecast-due-emphasis"
             />
           ) : null}

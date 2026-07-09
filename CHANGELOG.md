@@ -15,9 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Special/promo APR windows (hub and detail)** — configure promo rate and dates on the card profile; the worksheet highlights active promos for the selected month and uses the promo rate in the balance-weighted APR subtotal; the CC hub and card detail pages show active promos for the current calendar month (#107)
 - **Portal links API (backend)** — payment-run external-links catalog CRUD with HTTPS-only URLs, dependent-delete guard, and external_link embedding on worksheet/registry/bucket payloads; entity PUT paths accept external_link_id attach/detach (#125, #96)
 
+### Changed
+
+- **Bill detail forecast** — intermittent bills always show the worksheet forecast card when the API provides forecast data, including `unlikely` and `unknown` months with no suggested amount (#95)
+
 ### Fixed
 
-- **Bimonthly intermittent forecast** — every-other-month bills like Propane now show forecast Due with sky ring instead of silent owed; payment gap history drives cadence instead of Firefly repeat_freq (#95)
+- **Bimonthly intermittent forecast** — every-other-month bills like Propane now show forecast Due with sky ring instead of silent owed; payment gap history drives cadence instead of Firefly repeat_freq; recent payment intervals take precedence over older long gaps (#95)
+- **Intermittent forecast cadence** — uneven gaps (e.g. car insurance) no longer misclassify as quarterly; forecasts suppress until enough time has passed since the last payment (#95)
 - **Forecast Due pairing** — worksheet and bill detail show forecast styling when bimonthly intermittent bills have likely suggested due; refresh snapshots always pair forecast metadata with forecast-sourced owed (#95)
 - **Intermittent forecast Due tooltip** — Due field stays directly focusable (no button wrapping the input); payment-count basis line is omitted when no recent payments back the forecast (#95)
 - **Promo APR resilience** — malformed stored promo dates no longer crash the worksheet API; partial promo clears via API are rejected per all-or-nothing rules (#107)

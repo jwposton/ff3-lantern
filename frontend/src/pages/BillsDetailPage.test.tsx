@@ -463,7 +463,7 @@ describe("BillsDetailPage forecast echo", () => {
     expect(screen.queryByTestId("bill-detail-forecast")).toBeNull()
   })
 
-  it("omits forecast card when likelihood unknown without suggested amount", async () => {
+  it("shows forecast card when likelihood unknown without suggested amount", async () => {
     mockFetch({
       bills: [BILL_INTERMITTENT],
       history: {
@@ -474,6 +474,7 @@ describe("BillsDetailPage forecast echo", () => {
           likelihood: "unknown",
           suggested_amount: null,
           n: 0,
+          last_payment_date: "2026-06-05",
         },
       },
     })
@@ -484,10 +485,41 @@ describe("BillsDetailPage forecast echo", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("12-month total")).toBeTruthy()
+      expect(screen.getByTestId("bill-detail-forecast")).toBeTruthy()
     })
 
-    expect(screen.queryByTestId("bill-detail-forecast")).toBeNull()
+    expect(screen.getByText(/Likelihood: unknown/i)).toBeTruthy()
+    expect(screen.getByText(/No suggested amount for this month/i)).toBeTruthy()
+    expect(screen.getByText(/Last payment: 2026-06-05/i)).toBeTruthy()
+  })
+
+  it("shows forecast card when likelihood unlikely without suggested amount", async () => {
+    mockFetch({
+      bills: [BILL_INTERMITTENT],
+      history: {
+        ...MOCK_HISTORY,
+        registry_id: 4,
+        forecast: {
+          ...MOCK_FORECAST,
+          likelihood: "unlikely",
+          suggested_amount: null,
+          cadence_label: "annual-off-month",
+          last_payment_date: "2026-06-01",
+        },
+      },
+    })
+    render(
+      <TestProviders initialEntry="/manage/bills/4">
+        <BillsDetailPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("bill-detail-forecast")).toBeTruthy()
+    })
+
+    expect(screen.getByText(/Likelihood: unlikely/i)).toBeTruthy()
+    expect(screen.queryByText(/Suggested amount:/)).toBeNull()
   })
 
   it("shows bimonthly likely forecast card with suggested amount for Propane shape", async () => {

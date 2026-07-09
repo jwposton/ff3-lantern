@@ -84,6 +84,52 @@ def _avg_gap_days(payments: list[dict[str, Any]]) -> float:
     return sum(gaps) / len(gaps)
 
 
+def _recent_gap_days(payments: list[dict[str, Any]], *, max_gaps: int = 3) -> list[int]:
+    """Most recent payment intervals (newest gaps last)."""
+    dates = sorted(
+        parsed
+        for parsed in (_parse_row_date(row.get("date")) for row in payments)
+        if parsed is not None
+    )
+    if len(dates) < 2:
+        return []
+    gaps = [(dates[index + 1] - dates[index]).days for index in range(len(dates) - 1)]
+    return gaps[-max_gaps:]
+
+
+def _recent_gaps_are_regular(gaps: list[int], *, tolerance: float = 0.4) -> bool:
+    """True when the two most recent intervals are close enough to share one cadence."""
+    if len(gaps) < 2:
+        return True
+    earlier, latest = gaps[-2], gaps[-1]
+    if earlier <= 0 or latest <= 0:
+        return False
+    return abs(earlier - latest) / max(earlier, latest) <= tolerance
+
+
+def _infer_gap_cadence_freq(
+    payments: list[dict[str, Any]],
+    *,
+    repeat_freq: str | None = None,
+) -> str:
+    """Infer cadence from payment gaps; recent intervals win over full-history average."""
+    recent_gaps = _recent_gap_days(payments)
+    if len(recent_gaps) >= 2 and _recent_gaps_are_regular(recent_gaps):
+        recent_avg = sum(recent_gaps[-2:]) / 2
+        recent_freq = _classify_freq(recent_avg)
+        if recent_freq != "irregular":
+            return recent_freq
+    if recent_gaps:
+        tail_freq = _classify_freq(recent_gaps[-1])
+        if tail_freq != "irregular":
+            return tail_freq
+    full_freq = _classify_freq(_avg_gap_days(payments))
+    if full_freq != "irregular":
+        return full_freq
+    normalized = _normalize_repeat_freq(repeat_freq)
+    return normalized if normalized else "irregular"
+
+
 def _normalize_repeat_freq(repeat_freq: str | None) -> str | None:
     if repeat_freq is None:
         return None
@@ -271,9 +317,13 @@ def _sparse_seasonal_confidence_failure(
     """D-18: clustered months without multi-year hits → unknown, no flat-gap amount."""
     if seasonal.get("detected"):
         return False
-    gap_freq = _classify_freq(_avg_gap_days(payments))
-    if gap_freq in _REGULAR_GAP_CADENCES:
-        return False
+    recent_gaps = _recent_gap_days(payments)
+    if len(recent_gaps) >= 2:
+        recent_freq = _classify_freq(sum(recent_gaps[-2:]) / 2)
+        # Recent bimonthly+ cadence is strong enough to skip sparse-seasonal (UAT Propane).
+        # Monthly-like recent gaps alone must not bypass D-18 sparse-seasonal guard.
+        if recent_freq in {"bimonthly", "quarterly", "biweekly", "annual"}:
+            return False
     scoped = _rows_in_window(payments, today=today, months=24)
     months_hit: set[int] = set()
     month_years: dict[int, set[int]] = defaultdict(set)
@@ -307,6 +357,82 @@ def _is_bimonthly_on_month(
     if months_elapsed <= 0:
         return False
     return months_elapsed % 2 == 0
+
+
+_CADENCE_PERIOD_MONTHS: dict[str, int] = {
+    "monthly": 1,
+    "bimonthly": 2,
+    "quarterly": 3,
+}
+
+
+def _min_recent_gap_days(payments: list[dict[str, Any]]) -> int | None:
+    gaps = _recent_gap_days(payments)
+    return min(gaps) if gaps else None
+
+
+def _is_too_soon_after_last_payment(
+    payments: list[dict[str, Any]],
+    *,
+    last_payment_date: str | None,
+    today: date,
+) -> bool:
+    """Suppress repeat forecast until at least ~85% of the shortest recent gap has elapsed."""
+    last = _parse_row_date(last_payment_date)
+    if last is None:
+        return False
+    min_gap = _min_recent_gap_days(payments)
+    if min_gap is None:
+        return False
+    days_since = (today - last).days
+    return days_since < int(min_gap * 0.85)
+
+
+def _is_periodic_cadence_due_month(
+    last_payment: date,
+    *,
+    worksheet_year: int,
+    worksheet_month: int,
+    freq: str,
+) -> bool:
+    if freq == "bimonthly":
+        return _is_bimonthly_on_month(
+            last_payment,
+            worksheet_year=worksheet_year,
+            worksheet_month=worksheet_month,
+        )
+    period = _CADENCE_PERIOD_MONTHS.get(freq)
+    if period is None:
+        return True
+    months_elapsed = _months_between_calendar(
+        last_payment,
+        worksheet_year,
+        worksheet_month,
+    )
+    if months_elapsed <= 0:
+        return False
+    return months_elapsed >= period and months_elapsed % period == 0
+
+
+def _off_cycle_forecast(
+    month: str,
+    *,
+    lookback_months: int,
+    seasonal: dict[str, Any],
+    cadence_label: str,
+    last_payment_date: str | None,
+) -> dict[str, Any]:
+    return _base_forecast(
+        month,
+        likelihood="unlikely",
+        suggested_amount=None,
+        basis=None,
+        n=0,
+        lookback_months=lookback_months,
+        seasonal=seasonal,
+        cadence_label=cadence_label,
+        last_payment_date=last_payment_date,
+    )
 
 
 def _month_has_historical_payment(
@@ -350,11 +476,7 @@ def compute_intermittent_bill_forecast(
             last_payment_date=last_payment_date,
         )
 
-    gap_freq = _classify_freq(_avg_gap_days(payments))
-    if gap_freq != "irregular":
-        freq = gap_freq
-    else:
-        freq = _normalize_repeat_freq(repeat_freq) or "irregular"
+    freq = _infer_gap_cadence_freq(payments, repeat_freq=repeat_freq)
     lookback_months = _resolve_lookback_months(
         freq=freq,
         seasonal_detected=bool(seasonal["detected"]),
@@ -470,12 +592,8 @@ def compute_intermittent_bill_forecast(
             worksheet_year=worksheet_year,
             worksheet_month=worksheet_month,
         ):
-            return _base_forecast(
+            return _off_cycle_forecast(
                 month,
-                likelihood="unlikely",
-                suggested_amount=None,
-                basis=None,
-                n=0,
                 lookback_months=lookback_months,
                 seasonal=seasonal,
                 cadence_label="bimonthly-off-month",
@@ -507,6 +625,32 @@ def compute_intermittent_bill_forecast(
         )
 
     if freq in {"monthly", "quarterly", "biweekly"}:
+        last_parsed = _parse_row_date(last_payment_date)
+        worksheet_year = int(month.split("-", 1)[0])
+        off_cycle_label = f"{cadence_label}-off-cycle"
+        if last_parsed is not None and (
+            _is_too_soon_after_last_payment(
+                payments,
+                last_payment_date=last_payment_date,
+                today=today,
+            )
+            or (
+                freq != "biweekly"
+                and not _is_periodic_cadence_due_month(
+                    last_parsed,
+                    worksheet_year=worksheet_year,
+                    worksheet_month=worksheet_month,
+                    freq=freq,
+                )
+            )
+        ):
+            return _off_cycle_forecast(
+                month,
+                lookback_months=lookback_months,
+                seasonal=seasonal,
+                cadence_label=off_cycle_label,
+                last_payment_date=last_payment_date,
+            )
         suggested_amount, n = _mean_last_n(scoped)
         if suggested_amount is None:
             return _base_forecast(
@@ -543,6 +687,18 @@ def compute_intermittent_bill_forecast(
             lookback_months=lookback_months,
             seasonal=seasonal,
             cadence_label=cadence_label,
+            last_payment_date=last_payment_date,
+        )
+    if _is_too_soon_after_last_payment(
+        payments,
+        last_payment_date=last_payment_date,
+        today=today,
+    ):
+        return _off_cycle_forecast(
+            month,
+            lookback_months=lookback_months,
+            seasonal=seasonal,
+            cadence_label="irregular-off-cycle",
             last_payment_date=last_payment_date,
         )
     return _base_forecast(

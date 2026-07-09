@@ -71,17 +71,7 @@ function shouldShowBillDetailForecast(
   amountMode: string | undefined,
   forecast: BillForecast | undefined,
 ): boolean {
-  if (amountMode !== "intermittent" || !forecast) {
-    return false
-  }
-  const hasSuggested = hasPositiveSuggestedAmount(forecast.suggested_amount)
-  if (
-    (forecast.likelihood === "unknown" || forecast.likelihood === "unlikely") &&
-    !hasSuggested
-  ) {
-    return false
-  }
-  return true
+  return amountMode === "intermittent" && forecast != null
 }
 
 function BillDetailForecastCard({ forecast }: { forecast: BillForecast }) {
@@ -100,6 +90,15 @@ function BillDetailForecastCard({ forecast }: { forecast: BillForecast }) {
         {hasSuggested ? (
           <p className="text-sm">
             Suggested amount: {formatDisplayAmount(forecast.suggested_amount)}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No suggested amount for this month.
+          </p>
+        )}
+        {forecast.last_payment_date ? (
+          <p className="text-sm text-muted-foreground">
+            Last payment: {forecast.last_payment_date}
           </p>
         ) : null}
         {forecast.seasonal?.detected && forecast.seasonal.active_month_labels ? (

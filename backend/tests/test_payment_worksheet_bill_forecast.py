@@ -136,9 +136,9 @@ def test_irregular_non_seasonal_emits_possible() -> None:
 def test_monthly_repeat_freq_lookback_months_12_even_with_24mo_rows() -> None:
     forecast = compute_intermittent_bill_forecast(
         monthly_rows_spanning_24_months(),
-        month="2026-07",
+        month="2026-08",
         repeat_freq="monthly",
-        today=date(2026, 7, 15),
+        today=date(2026, 8, 15),
     )
     assert forecast["lookback_months"] == 12
     assert forecast["likelihood"] in {"likely", "possible"}
@@ -339,3 +339,66 @@ def test_repeat_freq_monthly_does_not_override_bimonthly_gaps() -> None:
     assert forecast["cadence_label"] == "bimonthly"
     assert forecast["likelihood"] == "likely"
     assert forecast["suggested_amount"] is not None
+
+
+def live_propane_uat_rows() -> list[dict]:
+    """Production Propane payment history (UAT #95 registry 15)."""
+    return [
+        _row("2026-05-18", "211.07"),
+        _row("2026-03-23", "190.65"),
+        _row("2026-01-30", "236.74"),
+        _row("2025-10-22", "82.54"),
+        _row("2025-07-11", "381.94"),
+    ]
+
+
+def test_live_propane_uat_rows_july_likely_despite_older_long_gaps() -> None:
+    """Recent ~2-month gaps must win over full-history average (sparse-seasonal)."""
+    rows = live_propane_uat_rows()
+    forecast = compute_intermittent_bill_forecast(
+        rows,
+        month="2026-07",
+        repeat_freq="monthly",
+        today=date(2026, 7, 15),
+    )
+    assert forecast["likelihood"] == "likely"
+    assert forecast["cadence_label"] == "bimonthly"
+    assert forecast["suggested_amount"] is not None
+    owed = resolve_intermittent_owed(forecast, rows, "2026-07")
+    assert owed != "0.00"
+    assert Decimal(owed) > 0
+
+
+def car_insurance_uat_rows() -> list[dict]:
+    """Uneven semi-annual-ish pattern — not true quarterly."""
+    return [
+        _row("2026-06-17", "908.43"),
+        _row("2026-02-03", "475.13"),
+        _row("2025-12-19", "475.12"),
+        _row("2025-07-17", "507.76"),
+    ]
+
+
+def test_car_insurance_july_unlikely_after_june_payment() -> None:
+    rows = car_insurance_uat_rows()
+    forecast = compute_intermittent_bill_forecast(
+        rows,
+        month="2026-07",
+        repeat_freq="monthly",
+        today=date(2026, 7, 15),
+    )
+    assert forecast["likelihood"] == "unlikely"
+    assert forecast["suggested_amount"] is None
+    assert forecast["cadence_label"] in {"irregular-off-cycle", "quarterly-off-cycle", "monthly-off-cycle"}
+
+
+def test_car_insurance_june_unlikely_when_already_posted() -> None:
+    rows = car_insurance_uat_rows()
+    forecast = compute_intermittent_bill_forecast(
+        rows,
+        month="2026-06",
+        repeat_freq="monthly",
+        today=date(2026, 6, 20),
+    )
+    assert forecast["likelihood"] == "unlikely"
+    assert forecast["suggested_amount"] is None
