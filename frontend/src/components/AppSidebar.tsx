@@ -4,6 +4,7 @@ import {
   Info,
   Landmark,
   LayoutDashboard,
+  Link as LinkIcon,
   PiggyBank,
   Receipt,
   ScanSearch,
@@ -120,6 +121,12 @@ const billPayNavItems = [
     to: "/manage/payment-run/buckets",
     label: "Cash accounts",
     icon: PiggyBank,
+    end: true,
+  },
+  {
+    to: "/manage/payment-run/external-links",
+    label: "External links",
+    icon: LinkIcon,
     end: true,
   },
 ] as const

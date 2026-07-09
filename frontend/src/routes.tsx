@@ -26,6 +26,7 @@ import { LiabilitiesHubPage } from "@/pages/LiabilitiesHubPage"
 import { LiabilityDetailPage } from "@/pages/LiabilityDetailPage"
 import { BillDiscoverPage } from "@/pages/BillDiscoverPage"
 import { BillsDetailPage } from "@/pages/BillsDetailPage"
+import { ExternalLinksPage } from "@/pages/ExternalLinksPage"
 
 export const router = createBrowserRouter([
   {
@@ -64,6 +65,10 @@ export const router = createBrowserRouter([
       {
         path: "manage/payment-run/buckets",
         element: <PaymentBucketsPage />,
+      },
+      {
+        path: "manage/payment-run/external-links",
+        element: <ExternalLinksPage />,
       },
       {
         path: "manage/payment-run/bill-groups",

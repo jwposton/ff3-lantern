@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Special/promo APR windows (worksheet UI)** — configure promo rate and dates in the credit card settings sheet; active promos highlight the regular APR with a tooltip and shift the balance-weighted APR subtotal (#107)
 - **Special/promo APR windows (hub and detail)** — configure promo rate and dates on the card profile; the worksheet highlights active promos for the selected month and uses the promo rate in the balance-weighted APR subtotal; the CC hub and card detail pages show active promos for the current calendar month (#107)
 - **Portal links API (backend)** — payment-run external-links catalog CRUD with HTTPS-only URLs, dependent-delete guard, and external_link embedding on worksheet/registry/bucket payloads; entity PUT paths accept external_link_id attach/detach (#125, #96)
+- **External links hub (foundation)** — Bill Pay sidebar entry and route for `/manage/payment-run/external-links`; typed API client, shared React Query cache key, and dependents helpers for hub and entity pickers (#96)
 
 ### Changed
 
