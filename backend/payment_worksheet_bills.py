@@ -511,10 +511,23 @@ def normalize_bill_group_id(bill_group_id: str | None) -> str | None:
     return bill_group_id or None
 
 
+def normalize_external_link_id(external_link_id: str | None) -> str | None:
+    if external_link_id is None:
+        return None
+    external_link_id = external_link_id.strip()
+    return external_link_id or None
+
+
 async def _validate_bill_group_exists(group_id: str) -> None:
     group = await sidecar_db.get_bill_group(group_id)
     if group is None:
         raise BillRegistrationError("Group not found")
+
+
+async def _validate_external_link_exists(link_id: str) -> None:
+    link = await sidecar_db.get_external_link(link_id)
+    if link is None:
+        raise BillRegistrationError("Portal link not found")
 
 
 async def validate_group_section_homogeneous(
@@ -597,6 +610,25 @@ async def validate_registry_bill_group_update(
             worksheet_section,
             exclude_registry_id=int(exclude_id) if exclude_id is not None else None,
         )
+
+
+async def validate_registry_external_link_update(
+    updates: dict[str, Any],
+    merged: dict[str, Any],
+) -> None:
+    """Validate external link fields for registry PUT (request-aware, not merged-state)."""
+    if "external_link_id" in merged:
+        merged["external_link_id"] = normalize_external_link_id(
+            merged.get("external_link_id")
+        )
+
+    if "external_link_id" in updates:
+        updates["external_link_id"] = normalize_external_link_id(
+            updates.get("external_link_id")
+        )
+
+    if merged.get("external_link_id"):
+        await _validate_external_link_exists(str(merged["external_link_id"]))
 
 
 async def _registered_bill_ids() -> set[str]:

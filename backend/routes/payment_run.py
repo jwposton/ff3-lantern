@@ -52,6 +52,9 @@ from payment_worksheet_bills import (
     update_registered_bill_firefly,
     validate_portal_url,
     validate_registry_bill_group_update,
+    validate_registry_external_link_update,
+    normalize_external_link_id,
+    _validate_external_link_exists,
 )
 from loan_journal_splits import count_liability_anchor_journals
 from loan_profiles import parse_loan_profile_from_notes
@@ -150,13 +153,16 @@ async def _validate_bucket_firefly_account_ids(
 
 class FundingBucketBody(BaseModel):
     id: str | None = None
-    label: str
-    sort_order: int = 0
-    firefly_account_ids: list[str] = []
+    label: str | None = None
+    sort_order: int | None = None
+    firefly_account_ids: list[str] | None = None
+    external_link_id: str | None = None
 
     @field_validator("label")
     @classmethod
-    def label_non_empty(cls, value: str) -> str:
+    def label_non_empty(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         stripped = value.strip()
         if not stripped:
             raise ValueError("label must be non-empty")
@@ -164,7 +170,11 @@ class FundingBucketBody(BaseModel):
 
     @field_validator("firefly_account_ids")
     @classmethod
-    def firefly_account_ids_non_empty_strings(cls, value: list[str]) -> list[str]:
+    def firefly_account_ids_non_empty_strings(
+        cls, value: list[str] | None
+    ) -> list[str] | None:
+        if value is None:
+            return None
         for account_id in value:
             if not isinstance(account_id, str) or not account_id.strip():
                 raise ValueError("firefly_account_ids must be non-empty strings")
@@ -176,6 +186,8 @@ class FundingBucketRow(BaseModel):
     label: str
     sort_order: int
     firefly_account_ids: list[str]
+    external_link_id: str | None = None
+    external_link: dict[str, str] | None = None
 
 
 class BillGroupCreateBody(BaseModel):
@@ -281,6 +293,7 @@ class PaymentWorksheetBody(BaseModel):
     special_apr_end: str | None = None
     payment_due_day: str | None = None
     sort_order: int | None = None
+    external_link_id: str | None = None
 
 
 _PROFILE_FIELD_KEYS = frozenset(
@@ -339,6 +352,7 @@ class UpdateBillRegistryBody(BaseModel):
     repeat_freq: str | None = None
     bill_group_id: str | None = None
     show_in_group: bool | None = None
+    external_link_id: str | None = None
 
 
 def _validate_month(month: str) -> str:
@@ -355,12 +369,28 @@ def _validate_amount(value: str, field_name: str) -> str:
     return f"{amount.quantize(Decimal('0.01'))}"
 
 
-def _row_from_db(row: dict) -> FundingBucketRow:
+def _row_from_db(
+    row: dict,
+    *,
+    links_by_id: dict[str, dict[str, str]] | None = None,
+) -> FundingBucketRow:
+    link_id = row.get("external_link_id")
+    external_link = None
+    if link_id and links_by_id is not None:
+        link_row = links_by_id.get(link_id)
+        if link_row is not None:
+            external_link = {
+                "id": link_row["id"],
+                "label": link_row["label"],
+                "url": link_row["url"],
+            }
     return FundingBucketRow(
         id=row["id"],
         label=row["label"],
         sort_order=row["sort_order"],
         firefly_account_ids=row["firefly_account_ids"],
+        external_link_id=link_id,
+        external_link=external_link,
     )
 
 
@@ -604,7 +634,17 @@ async def refresh_payment_worksheet(
 @router.get("/payment-run/buckets")
 async def list_buckets(_: None = Depends(require_payment_worksheet)):
     rows = await sidecar_db.list_funding_buckets()
-    return {"data": [_row_from_db(row).model_dump() for row in rows]}
+    link_ids = [
+        row["external_link_id"]
+        for row in rows
+        if row.get("external_link_id")
+    ]
+    links_by_id = await sidecar_db.get_external_links_by_ids(link_ids)
+    return {
+        "data": [
+            _row_from_db(row, links_by_id=links_by_id).model_dump() for row in rows
+        ]
+    }
 
 
 @router.post("/payment-run/buckets")
@@ -614,12 +654,17 @@ async def create_bucket(
     client: FireflyClient = Depends(get_firefly_client),
 ):
     bucket_id = (body.id or "").strip() or uuid.uuid4().hex
-    await _validate_bucket_firefly_account_ids(client, body.firefly_account_ids)
+    if not body.label:
+        raise HTTPException(status_code=422, detail="label is required.")
+    await _validate_bucket_firefly_account_ids(
+        client, body.firefly_account_ids or []
+    )
     await sidecar_db.upsert_funding_bucket(
         id=bucket_id,
         label=body.label,
-        sort_order=body.sort_order,
-        firefly_account_ids=body.firefly_account_ids,
+        sort_order=body.sort_order if body.sort_order is not None else 0,
+        firefly_account_ids=body.firefly_account_ids or [],
+        external_link_id=normalize_external_link_id(body.external_link_id),
     )
     row = await sidecar_db.get_funding_bucket(bucket_id)
     if row is None:
@@ -637,12 +682,29 @@ async def update_bucket(
     existing = await sidecar_db.get_funding_bucket(bucket_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Bucket not found.")
-    await _validate_bucket_firefly_account_ids(client, body.firefly_account_ids)
+    updates = body.model_dump(exclude_unset=True)
+    label = updates.get("label", existing["label"])
+    sort_order = updates.get("sort_order", existing["sort_order"])
+    firefly_account_ids = updates.get(
+        "firefly_account_ids", existing["firefly_account_ids"]
+    )
+    external_link_id = existing.get("external_link_id")
+    if "external_link_id" in updates:
+        external_link_id = normalize_external_link_id(updates["external_link_id"])
+        if external_link_id:
+            try:
+                await _validate_external_link_exists(external_link_id)
+            except BillRegistrationError as exc:
+                raise HTTPException(
+                    status_code=exc.status_code, detail=exc.detail
+                ) from exc
+    await _validate_bucket_firefly_account_ids(client, firefly_account_ids)
     await sidecar_db.upsert_funding_bucket(
         id=bucket_id,
-        label=body.label,
-        sort_order=body.sort_order,
-        firefly_account_ids=body.firefly_account_ids,
+        label=label,
+        sort_order=sort_order,
+        firefly_account_ids=firefly_account_ids,
+        external_link_id=external_link_id,
     )
     row = await sidecar_db.get_funding_bucket(bucket_id)
     if row is None:
@@ -885,7 +947,26 @@ async def update_account_worksheet(
             target_month, account_id, merged, profile_updates
         )
     firefly_reference_cache.clear()
-    return {"account_id": account_id, "profile": merged}
+    response: dict[str, Any] = {"account_id": account_id, "profile": merged}
+    if "external_link_id" in updates:
+        link_id = normalize_external_link_id(updates["external_link_id"])
+        if link_id:
+            try:
+                await _validate_external_link_exists(link_id)
+            except BillRegistrationError as exc:
+                raise HTTPException(
+                    status_code=exc.status_code, detail=exc.detail
+                ) from exc
+            await sidecar_db.upsert_worksheet_account_link(account_id, link_id)
+        else:
+            await sidecar_db.delete_worksheet_account_link(account_id)
+        response["external_link_id"] = link_id
+    else:
+        link_row = await sidecar_db.get_worksheet_account_link(account_id)
+        response["external_link_id"] = (
+            link_row["external_link_id"] if link_row else None
+        )
+    return response
 
 
 def _planned_sync_for_amount_mode(amount_mode: str) -> str:
@@ -1030,6 +1111,11 @@ async def update_bill_registry(
 
     try:
         await validate_registry_bill_group_update(updates, merged)
+    except BillRegistrationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    try:
+        await validate_registry_external_link_update(updates, merged)
     except BillRegistrationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
