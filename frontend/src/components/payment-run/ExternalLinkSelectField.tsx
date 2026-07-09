@@ -41,13 +41,25 @@ export function ExternalLinkSelectField({
         <p className="text-muted-foreground text-sm">Loading links…</p>
       ) : links.length === 0 ? (
         <>
+          {value ? (
+            <p className="text-muted-foreground text-sm">
+              Assigned link no longer in catalog ({value}). Choose None to
+              detach.
+            </p>
+          ) : null}
           <select
             id={id}
             className={selectClassName}
-            value=""
-            disabled
-            aria-disabled
-          />
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+          >
+            <option value="">None</option>
+            {value ? (
+              <option value={value} disabled>
+                {value} (removed)
+              </option>
+            ) : null}
+          </select>
           <p
             className="text-muted-foreground text-sm"
             data-testid="external-link-empty-catalog"
