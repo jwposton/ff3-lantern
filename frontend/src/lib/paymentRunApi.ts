@@ -374,6 +374,7 @@ export type UpdateBillRegistryPayload = {
   repeat_freq?: string | null
   bill_group_id?: string | null
   show_in_group?: boolean
+  external_link_id?: string | null
 }
 
 export type BillRegistryEditDetails = {
@@ -391,6 +392,7 @@ export type BillRegistryEditDetails = {
   repeat_freq: string | null
   bill_group_id?: string | null
   show_in_group?: boolean
+  external_link_id?: string | null
   rule_sync_status?: RuleLinkSyncStatus
 }
 
@@ -466,6 +468,32 @@ export type FundingBucketInput = {
   label: string
   sort_order?: number
   firefly_account_ids: string[]
+  external_link_id?: string | null
+}
+
+export type ExternalLinkDependents = {
+  bills?: number
+  liabilities?: number
+  buckets?: number
+  accounts?: number
+  total?: number
+}
+
+export type ExternalLink = {
+  id: string
+  label: string
+  url: string
+  dependents: ExternalLinkDependents
+}
+
+export type ExternalLinkCreateInput = {
+  label: string
+  url: string
+}
+
+export type ExternalLinkPatchInput = {
+  label?: string
+  url?: string
 }
 
 export type BillGroupMember = {
@@ -586,6 +614,31 @@ async function parseError(res: Response, fallback: string): Promise<never> {
     const json = (await res.json()) as { detail?: string }
     if (typeof json.detail === "string" && json.detail.trim()) {
       detail = json.detail
+    }
+  } catch {
+    // ignore parse errors
+  }
+  throw new Error(detail)
+}
+
+async function parseExternalLinkError(
+  res: Response,
+  fallback: string,
+): Promise<never> {
+  let detail = fallback
+  try {
+    const json = (await res.json()) as {
+      detail?: string | Array<{ msg?: string }>
+    }
+    if (typeof json.detail === "string" && json.detail.trim()) {
+      detail = json.detail
+    } else if (Array.isArray(json.detail)) {
+      const messages = json.detail
+        .map((item) => item.msg?.trim())
+        .filter((msg): msg is string => Boolean(msg))
+      if (messages.length > 0) {
+        detail = messages.join("; ")
+      }
     }
   } catch {
     // ignore parse errors
@@ -720,6 +773,70 @@ export async function deleteBillGroup(groupId: string): Promise<void> {
   })
   if (!res.ok) {
     await parseError(res, `Failed to delete bill group (${res.status})`)
+  }
+}
+
+export function externalLinksQueryKey() {
+  return ["paymentRun", "externalLinks"] as const
+}
+
+export async function fetchExternalLinks(): Promise<{ data: ExternalLink[] }> {
+  const res = await fetch("/api/payment-run/external-links")
+  if (!res.ok) {
+    await parseError(res, `Failed to fetch external links (${res.status})`)
+  }
+  return (await res.json()) as { data: ExternalLink[] }
+}
+
+export async function fetchExternalLink(linkId: string): Promise<ExternalLink> {
+  const res = await fetch(`/api/payment-run/external-links/${linkId}`)
+  if (!res.ok) {
+    await parseError(res, `Failed to fetch external link (${res.status})`)
+  }
+  return (await res.json()) as ExternalLink
+}
+
+export async function createExternalLink(
+  body: ExternalLinkCreateInput,
+): Promise<ExternalLink> {
+  const res = await fetch("/api/payment-run/external-links", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    await parseExternalLinkError(
+      res,
+      `Failed to create external link (${res.status})`,
+    )
+  }
+  return (await res.json()) as ExternalLink
+}
+
+export async function patchExternalLink(
+  linkId: string,
+  body: ExternalLinkPatchInput,
+): Promise<ExternalLink> {
+  const res = await fetch(`/api/payment-run/external-links/${linkId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    await parseExternalLinkError(
+      res,
+      `Failed to update external link (${res.status})`,
+    )
+  }
+  return (await res.json()) as ExternalLink
+}
+
+export async function deleteExternalLink(linkId: string): Promise<void> {
+  const res = await fetch(`/api/payment-run/external-links/${linkId}`, {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    await parseError(res, `Failed to delete external link (${res.status})`)
   }
 }
 
@@ -1074,6 +1191,7 @@ export async function putAccountWorksheet(
     special_apr_start?: string | null
     special_apr_end?: string | null
     sort_order?: number | null
+    external_link_id?: string | null
   },
 ): Promise<{ account_id: string; profile: Record<string, unknown> }> {
   const params = new URLSearchParams({ month })
