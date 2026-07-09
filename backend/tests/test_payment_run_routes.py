@@ -3768,3 +3768,39 @@ def test_put_worksheet_promo_clear_all_null(
     finally:
         app.dependency_overrides.clear()
 
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com",
+        "javascript:alert(1)",
+        "data:text/html,<script>",
+        "//evil.com",
+        "",
+        "   ",
+    ],
+)
+def test_external_link_url_validation_rejects_non_https(url):
+    from payment_worksheet_bills import validate_portal_url
+
+    with pytest.raises(ValueError):
+        validate_portal_url(url)
+
+
+def test_external_link_url_validation_accepts_https():
+    from payment_worksheet_bills import validate_portal_url
+
+    stored = validate_portal_url("  https://example.com/Path/  ")
+    assert stored == "https://example.com/Path/"
+
+
+def test_build_dependents_payload_sparse_shape():
+    from payment_worksheet_bills import build_dependents_payload
+
+    assert build_dependents_payload(bills=2, liabilities=0, buckets=0, accounts=0) == {
+        "bills": 2
+    }
+    assert build_dependents_payload(
+        bills=2, liabilities=0, buckets=1, accounts=0
+    ) == {"bills": 2, "buckets": 1, "total": 3}
+
