@@ -83,7 +83,19 @@ CREATE TABLE IF NOT EXISTS funding_buckets (
   id TEXT PRIMARY KEY,
   label TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
-  firefly_account_ids_json TEXT NOT NULL DEFAULT '[]'
+  firefly_account_ids_json TEXT NOT NULL DEFAULT '[]',
+  external_link_id TEXT REFERENCES external_links(id)
+);
+
+CREATE TABLE IF NOT EXISTS external_links (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  url TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS worksheet_account_links (
+  account_id TEXT PRIMARY KEY,
+  external_link_id TEXT REFERENCES external_links(id)
 );
 
 CREATE TABLE IF NOT EXISTS worksheet_bill_groups (
@@ -104,7 +116,8 @@ CREATE TABLE IF NOT EXISTS worksheet_registry (
   rule_id TEXT,
   row_label TEXT,
   bill_group_id TEXT REFERENCES worksheet_bill_groups(id) ON DELETE SET NULL,
-  show_in_group INTEGER NOT NULL DEFAULT 0
+  show_in_group INTEGER NOT NULL DEFAULT 0,
+  external_link_id TEXT REFERENCES external_links(id)
 );
 
 CREATE TABLE IF NOT EXISTS worksheet_state (
@@ -275,6 +288,47 @@ async def init_db() -> None:
             )
         except aiosqlite.OperationalError:
             pass
+        try:
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS external_links (
+                  id TEXT PRIMARY KEY,
+                  label TEXT NOT NULL,
+                  url TEXT NOT NULL
+                )
+                """
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS worksheet_account_links (
+                  account_id TEXT PRIMARY KEY,
+                  external_link_id TEXT REFERENCES external_links(id)
+                )
+                """
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                """
+                ALTER TABLE worksheet_registry ADD COLUMN external_link_id TEXT
+                REFERENCES external_links(id)
+                """
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await db.execute(
+                """
+                ALTER TABLE funding_buckets ADD COLUMN external_link_id TEXT
+                REFERENCES external_links(id)
+                """
+            )
+        except aiosqlite.OperationalError:
+            pass
         cursor = await db.execute("PRAGMA table_info(discover_settings)")
         discover_columns = {row[1] for row in await cursor.fetchall()}
         if "defaults_version" in discover_columns:
@@ -381,6 +435,7 @@ def _row_to_funding_bucket(row: aiosqlite.Row) -> dict[str, Any]:
         "label": row["label"],
         "sort_order": row["sort_order"],
         "firefly_account_ids": json.loads(row["firefly_account_ids_json"]),
+        "external_link_id": row["external_link_id"],
     }
 
 
@@ -390,7 +445,7 @@ async def list_funding_buckets() -> list[dict[str, Any]]:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """
-            SELECT id, label, sort_order, firefly_account_ids_json
+            SELECT id, label, sort_order, firefly_account_ids_json, external_link_id
             FROM funding_buckets
             ORDER BY sort_order ASC, id ASC
             """
@@ -405,7 +460,7 @@ async def get_funding_bucket(bucket_id: str) -> dict[str, Any] | None:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """
-            SELECT id, label, sort_order, firefly_account_ids_json
+            SELECT id, label, sort_order, firefly_account_ids_json, external_link_id
             FROM funding_buckets
             WHERE id = ?
             """,
@@ -421,20 +476,24 @@ async def upsert_funding_bucket(
     label: str,
     sort_order: int,
     firefly_account_ids: list[str],
+    external_link_id: str | None = None,
 ) -> None:
     await init_db()
     ids_json = json.dumps(firefly_account_ids)
     async with aiosqlite.connect(get_db_path()) as db:
         await db.execute(
             """
-            INSERT INTO funding_buckets (id, label, sort_order, firefly_account_ids_json)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO funding_buckets (
+              id, label, sort_order, firefly_account_ids_json, external_link_id
+            )
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               label = excluded.label,
               sort_order = excluded.sort_order,
-              firefly_account_ids_json = excluded.firefly_account_ids_json
+              firefly_account_ids_json = excluded.firefly_account_ids_json,
+              external_link_id = excluded.external_link_id
             """,
-            (id, label, sort_order, ids_json),
+            (id, label, sort_order, ids_json, external_link_id),
         )
         await db.commit()
 
@@ -660,13 +719,15 @@ def _row_to_worksheet_registry(row: aiosqlite.Row) -> dict[str, Any]:
         "credit_card_account_id": row["credit_card_account_id"],
         "bill_group_id": row["bill_group_id"],
         "show_in_group": bool(row["show_in_group"]),
+        "external_link_id": row["external_link_id"],
     }
 
 
 _REGISTRY_SELECT = """
     SELECT id, firefly_bill_id, worksheet_section, funding_bucket_key,
            amount_mode, planned_sync, payment_rail, counts_toward_cash_plan,
-           rule_id, row_label, credit_card_account_id, bill_group_id, show_in_group
+           rule_id, row_label, credit_card_account_id, bill_group_id, show_in_group,
+           external_link_id
     FROM worksheet_registry
 """
 
@@ -705,9 +766,10 @@ async def insert_worksheet_registry(data: dict[str, Any]) -> int:
             INSERT INTO worksheet_registry (
               firefly_bill_id, worksheet_section, funding_bucket_key,
               amount_mode, planned_sync, payment_rail, counts_toward_cash_plan,
-              rule_id, row_label, credit_card_account_id, bill_group_id, show_in_group
+              rule_id, row_label, credit_card_account_id, bill_group_id, show_in_group,
+              external_link_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data.get("firefly_bill_id"),
@@ -722,6 +784,7 @@ async def insert_worksheet_registry(data: dict[str, Any]) -> int:
                 data.get("credit_card_account_id"),
                 data.get("bill_group_id"),
                 show_in_group,
+                data.get("external_link_id"),
             ),
         )
         await db.commit()
@@ -752,7 +815,8 @@ async def update_worksheet_registry(registry_id: int, data: dict[str, Any]) -> N
               row_label = ?,
               credit_card_account_id = ?,
               bill_group_id = ?,
-              show_in_group = ?
+              show_in_group = ?,
+              external_link_id = ?
             WHERE id = ?
             """,
             (
@@ -768,6 +832,7 @@ async def update_worksheet_registry(registry_id: int, data: dict[str, Any]) -> N
                 merged.get("credit_card_account_id"),
                 merged.get("bill_group_id"),
                 show_in_group,
+                merged.get("external_link_id"),
                 registry_id,
             ),
         )
