@@ -63,10 +63,57 @@ const BASE_ROW: CreditCardRow = {
   paid_at: null,
 }
 
+const portalLink = {
+  id: "cc-portal",
+  label: "Card Portal",
+  url: "https://cards.example.com/login",
+}
+
 describe("CreditCardsTable", () => {
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+  })
+
+  it("shows portal anchor before pencil when external_link is set", () => {
+    renderTable(
+      <CreditCardsTable
+        rows={[{ ...BASE_ROW, external_link: portalLink }]}
+        buckets={[]}
+        month="2026-07"
+        onPlannedBlur={async () => {}}
+        onPaidChange={async () => {}}
+        onEditDetails={() => {}}
+      />,
+    )
+
+    const portal = screen.getByTestId("portal-link-cc-portal")
+    expect(portal.getAttribute("href")).toBe("https://cards.example.com/login")
+    expect(portal.getAttribute("aria-label")).toContain("Chase VISA")
+
+    const actionsCell = portal.closest("td")
+    expect(actionsCell).not.toBeNull()
+    const pencil = within(actionsCell!).getByRole("button", {
+      name: "Edit Chase VISA worksheet details",
+    })
+    expect(
+      portal.compareDocumentPosition(pencil) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it("hides portal anchor when external_link is null", () => {
+    renderTable(
+      <CreditCardsTable
+        rows={[{ ...BASE_ROW, external_link: null }]}
+        buckets={[]}
+        month="2026-07"
+        onPlannedBlur={async () => {}}
+        onPaidChange={async () => {}}
+        onEditDetails={() => {}}
+      />,
+    )
+
+    expect(screen.queryByTestId(/^portal-link-/)).toBeNull()
   })
 
   it("shows expand control only when new transactions exist", () => {

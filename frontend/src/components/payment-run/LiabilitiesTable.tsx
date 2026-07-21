@@ -4,6 +4,7 @@ import { Link } from "react-router-dom"
 import { AmountDueInput } from "@/components/payment-run/AmountDueInput"
 import { COMPACT_TABLE, countPaidRows } from "@/components/payment-run/BillsTable"
 import { PlannedAmountInput } from "@/components/payment-run/PlannedAmountInput"
+import { WorksheetPortalLinkAnchor } from "@/components/payment-run/WorksheetPortalLinkAnchor"
 import {
   ACTIONS_CELL_CLASS,
   ACTIONS_HEAD_CLASS,
@@ -208,41 +209,49 @@ export function LiabilitiesTable({
                   />
                 </TableCell>
                 <TableCell className={ACTIONS_CELL_CLASS}>
-                  {isAccount && onEditAccount ? (
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-foreground rounded p-0.5"
-                      aria-label={`Edit ${name}`}
-                      onClick={() => onEditAccount(row)}
-                    >
-                      <Pencil className="size-3" aria-hidden />
-                    </button>
-                  ) : isAccount ? (
-                    <Link
-                      to={`/manage/liabilities?account=${encodeURIComponent(row.account_id!)}`}
-                      className="text-muted-foreground hover:text-foreground inline-flex rounded p-0.5"
-                      aria-label={`Manage ${name}`}
-                    >
-                      <Pencil className="size-3" aria-hidden />
-                    </Link>
-                  ) : onEditRegistration ? (
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-foreground rounded p-0.5"
-                      aria-label={`Edit ${name} registration`}
-                      onClick={() => onEditRegistration(row)}
-                    >
-                      <Pencil className="size-3" aria-hidden />
-                    </button>
-                  ) : row.registry_id ? (
-                    <Link
-                      to={`/manage/bills/${row.registry_id}`}
-                      className="text-muted-foreground hover:text-foreground inline-flex rounded p-0.5"
-                      aria-label={`Manage ${name}`}
-                    >
-                      <Pencil className="size-3" aria-hidden />
-                    </Link>
-                  ) : null}
+                  <div className="inline-flex items-center justify-center gap-0.5">
+                    {row.external_link ? (
+                      <WorksheetPortalLinkAnchor
+                        link={row.external_link}
+                        rowName={name}
+                      />
+                    ) : null}
+                    {isAccount && onEditAccount ? (
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground rounded p-0.5"
+                        aria-label={`Edit ${name}`}
+                        onClick={() => onEditAccount(row)}
+                      >
+                        <Pencil className="size-3" aria-hidden />
+                      </button>
+                    ) : isAccount ? (
+                      <Link
+                        to={`/manage/liabilities?account=${encodeURIComponent(row.account_id!)}`}
+                        className="text-muted-foreground hover:text-foreground inline-flex rounded p-0.5"
+                        aria-label={`Manage ${name}`}
+                      >
+                        <Pencil className="size-3" aria-hidden />
+                      </Link>
+                    ) : onEditRegistration ? (
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground rounded p-0.5"
+                        aria-label={`Edit ${name} registration`}
+                        onClick={() => onEditRegistration(row)}
+                      >
+                        <Pencil className="size-3" aria-hidden />
+                      </button>
+                    ) : row.registry_id ? (
+                      <Link
+                        to={`/manage/bills/${row.registry_id}`}
+                        className="text-muted-foreground hover:text-foreground inline-flex rounded p-0.5"
+                        aria-label={`Manage ${name}`}
+                      >
+                        <Pencil className="size-3" aria-hidden />
+                      </Link>
+                    ) : null}
+                  </div>
                 </TableCell>
               </TableRow>
             )
