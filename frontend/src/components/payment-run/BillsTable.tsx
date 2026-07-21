@@ -4,6 +4,7 @@ import { Link } from "react-router-dom"
 
 import { AmountDueInput } from "@/components/payment-run/AmountDueInput"
 import { PlannedAmountInput } from "@/components/payment-run/PlannedAmountInput"
+import { WorksheetPortalLinkAnchor } from "@/components/payment-run/WorksheetPortalLinkAnchor"
 import {
   ACTIONS_CELL_CLASS,
   ACTIONS_HEAD_CLASS,
@@ -279,24 +280,32 @@ export function BillsTable({
           />
         </TableCell>
         <TableCell className={ACTIONS_CELL_CLASS}>
-          {onEditRegistration ? (
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground rounded p-0.5"
-              aria-label={`Edit ${billName} registration`}
-              onClick={() => onEditRegistration(row)}
-            >
-              <Pencil className="size-3" aria-hidden />
-            </button>
-          ) : row.registry_id ? (
-            <Link
-              to={`/manage/bills/${row.registry_id}`}
-              className="text-muted-foreground hover:text-foreground inline-flex rounded p-0.5"
-              aria-label={`Manage ${billName}`}
-            >
-              <Pencil className="size-3" aria-hidden />
-            </Link>
-          ) : null}
+          <div className="inline-flex items-center justify-center gap-0.5">
+            {row.external_link ? (
+              <WorksheetPortalLinkAnchor
+                link={row.external_link}
+                rowName={billName}
+              />
+            ) : null}
+            {onEditRegistration ? (
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground rounded p-0.5"
+                aria-label={`Edit ${billName} registration`}
+                onClick={() => onEditRegistration(row)}
+              >
+                <Pencil className="size-3" aria-hidden />
+              </button>
+            ) : row.registry_id ? (
+              <Link
+                to={`/manage/bills/${row.registry_id}`}
+                className="text-muted-foreground hover:text-foreground inline-flex rounded p-0.5"
+                aria-label={`Manage ${billName}`}
+              >
+                <Pencil className="size-3" aria-hidden />
+              </Link>
+            ) : null}
+          </div>
         </TableCell>
       </TableRow>
     )

@@ -9,8 +9,8 @@ import { cn } from "@/lib/utils"
 export const COMPACT_TABLE =
   "text-xs [&_th]:h-8 [&_th]:px-2 [&_th]:py-1 [&_th]:text-xs [&_td]:px-2 [&_td]:py-1.5 [&_td]:text-xs [&_td]:min-h-0"
 
-export const ACTIONS_HEAD_CLASS = "w-12 text-center"
-export const ACTIONS_CELL_CLASS = "w-12 text-center"
+export const ACTIONS_HEAD_CLASS = "w-16 text-center"
+export const ACTIONS_CELL_CLASS = "w-16 text-center"
 
 export const FIREFLY_NAME_LINK_CLASS =
   "text-primary truncate font-medium underline-offset-2 hover:underline"

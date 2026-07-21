@@ -92,6 +92,12 @@ const groupedFixtureRows = [
 
 const subtotals = { owed: "0.00", due: "175.25", planned_cash: "175.25" }
 
+const portalLink = {
+  id: "portal-1",
+  label: "Provider Portal",
+  url: "https://portal.example.com/login",
+}
+
 function renderBillsTable(
   overrides: Partial<ComponentProps<typeof BillsTable>> = {},
 ) {
@@ -101,6 +107,7 @@ function renderBillsTable(
 
   render(
     <MemoryRouter>
+      <TooltipProvider>
       <BillsTable
         rows={groupedFixtureRows}
         billGroups={[utilitiesGroup]}
@@ -123,6 +130,7 @@ function renderBillsTable(
         onPaidChange={onPaidChange}
         {...overrides}
       />
+      </TooltipProvider>
     </MemoryRouter>,
   )
 
@@ -240,6 +248,81 @@ describe("BillsTable expandable bill groups", () => {
     expect(manageLink.getAttribute("href")).toBe(
       "/manage/payment-run/bill-groups?group=utilities",
     )
+  })
+
+  it("shows portal anchor before pencil when external_link is set", () => {
+    renderBillsTable({
+      rows: [
+        makeBill({
+          registry_id: 20,
+          row_key: "bills:20",
+          row_label: "Internet",
+          external_link: portalLink,
+        }),
+      ],
+      billGroups: [],
+    })
+
+    const portal = screen.getByTestId("portal-link-portal-1")
+    expect(portal.getAttribute("href")).toBe("https://portal.example.com/login")
+    expect(portal.getAttribute("aria-label")).toContain("Internet")
+
+    const actionsCell = portal.closest("td")
+    expect(actionsCell).not.toBeNull()
+    const pencil = within(actionsCell!).getByRole("link", {
+      name: "Manage Internet",
+    })
+    expect(
+      portal.compareDocumentPosition(pencil) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it("hides portal anchor when external_link is null", () => {
+    renderBillsTable({
+      rows: [
+        makeBill({
+          registry_id: 21,
+          row_key: "bills:21",
+          row_label: "No Portal",
+          external_link: null,
+        }),
+      ],
+      billGroups: [],
+    })
+
+    expect(screen.queryByTestId(/^portal-link-/)).toBeNull()
+  })
+
+  it("does not show portal anchor on group parent row", () => {
+    renderBillsTable()
+
+    const utilitiesRow = screen.getByText("Utilities").closest("tr")
+    expect(utilitiesRow).not.toBeNull()
+    expect(within(utilitiesRow!).queryByTestId(/^portal-link-/)).toBeNull()
+  })
+
+  it("portal href differs from Firefly name link when both present", () => {
+    renderBillsTable({
+      rows: [
+        makeBill({
+          registry_id: 22,
+          row_key: "bills:22",
+          row_label: "Electric Co",
+          firefly_bill_id: "99",
+          external_link: portalLink,
+        }),
+      ],
+      billGroups: [],
+      fireflyBaseUrl: "https://ff.example",
+    })
+
+    const portal = screen.getByTestId("portal-link-portal-1")
+    const fireflyLink = screen.getByRole("link", { name: "Electric Co" })
+    expect(portal.getAttribute("href")).toBe("https://portal.example.com/login")
+    expect(fireflyLink.getAttribute("href")).toBe(
+      "https://ff.example/bills/show/99",
+    )
+    expect(portal.getAttribute("href")).not.toBe(fireflyLink.getAttribute("href"))
   })
 
   it("links per-row Manage to bill detail, not Bills hub", async () => {
