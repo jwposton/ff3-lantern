@@ -459,10 +459,12 @@ function mockPaymentFetch(options: {
 }
 
 describe("PaymentWorksheetPage", () => {
-  let windowOpenSpy: ReturnType<typeof vi.spyOn>
+  let windowOpenSpy: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    windowOpenSpy = vi.spyOn(window, "open").mockReturnValue({} as Window)
+    windowOpenSpy = vi.spyOn(window, "open").mockReturnValue({} as Window) as ReturnType<
+      typeof vi.fn
+    >
     toastSuccess.mockClear()
   })
 

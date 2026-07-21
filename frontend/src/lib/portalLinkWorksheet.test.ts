@@ -4,6 +4,7 @@ import type {
   BillRow,
   CreditCardRow,
   FundingBucketRollup,
+  GrandTotals,
   LiabilityRow,
   PaymentWorksheetEnvelope,
   ResolvedExternalLink,
@@ -98,9 +99,34 @@ function makeLiability(
     planned_amount_override: false,
     amount_due: "0",
     amount_due_override: false,
-    worksheet_section: "liabilities",
     ...overrides,
   }
+}
+
+const EMPTY_GRAND_TOTALS: GrandTotals = {
+  owed: "0",
+  due: "0",
+  planned_cash: "0",
+  planned_total: "0",
+  breakdown: {
+    owed: { liabilities: "0", revolving: "0" },
+    due: { cash: "0", credit: "0" },
+    planned: { cash: "0", credit: "0" },
+    due_planned: {
+      liabilities: {
+        cash: { due: "0", planned: "0" },
+        credit: { due: "0", planned: "0" },
+      },
+      bills: {
+        cash: { due: "0", planned: "0" },
+        credit: { due: "0", planned: "0" },
+      },
+      credit_card_pmts: {
+        cash: { due: "0", planned: "0" },
+        credit: { due: "0", planned: "0" },
+      },
+    },
+  },
 }
 
 function makeGroup(
@@ -133,16 +159,7 @@ function makeWorksheet(
       liabilities: { owed: "0", due: "0", planned_cash: "0" },
       credit_cards: { planned_cash: "0" },
     },
-    grand_totals: {
-      owed: { liabilities: "0", revolving: "0" },
-      due: { cash: "0", credit: "0" },
-      planned: { cash: "0", credit: "0" },
-      due_planned: {
-        liabilities: { cash: { due: "0", planned: "0" }, credit: { due: "0", planned: "0" } },
-        bills: { cash: { due: "0", planned: "0" }, credit: { due: "0", planned: "0" } },
-        credit_cards: { cash: { due: "0", planned: "0" }, credit: { due: "0", planned: "0" } },
-      },
-    },
+    grand_totals: EMPTY_GRAND_TOTALS,
     shortfall: false,
     totals: { reported_balance: "0", user_balance: "0", remaining: "0" },
     ...overrides,
