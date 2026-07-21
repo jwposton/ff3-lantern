@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
-import { CircleHelp, RefreshCw } from "lucide-react"
+import { CircleHelp, ExternalLink, RefreshCw } from "lucide-react"
+import { toast } from "sonner"
 import { useQueryClient } from "@tanstack/react-query"
 
 import {
@@ -19,6 +20,16 @@ import { LiabilitiesTable } from "@/components/payment-run/LiabilitiesTable"
 import { FundingBucketBar } from "@/components/payment-run/FundingBucketBar"
 import { ShortfallBanner } from "@/components/payment-run/ShortfallBanner"
 import { WorksheetGrandTotal } from "@/components/payment-run/WorksheetGrandTotal"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -49,6 +60,11 @@ import {
   type LiabilityRow,
   type RegisterBillPayload,
 } from "@/lib/paymentRunApi"
+import {
+  collectOpenAllPortalUrls,
+  openPortalUrls,
+  OPEN_ALL_WARN_THRESHOLD,
+} from "@/lib/portalLinkWorksheet"
 
 function formatRefreshedAt(value: string | null | undefined): string {
   if (!value) return "Not refreshed this month"
@@ -80,6 +96,7 @@ export function PaymentWorksheetPage() {
   >("bills")
   const [billEditTarget, setBillEditTarget] =
     useState<BillRegistrationEditTarget | null>(null)
+  const [pendingOpenUrls, setPendingOpenUrls] = useState<string[] | null>(null)
 
   const accountNameById = useMemo(() => {
     const map = new Map<string, string>()
@@ -125,6 +142,21 @@ export function PaymentWorksheetPage() {
     }
     return null
   }, [data])
+
+  const portalUrls = useMemo(
+    () => (data ? collectOpenAllPortalUrls(data) : []),
+    [data],
+  )
+
+  function handleOpenAllPortals() {
+    if (portalUrls.length === 0) return
+    if (portalUrls.length > OPEN_ALL_WARN_THRESHOLD) {
+      setPendingOpenUrls(portalUrls)
+      return
+    }
+    openPortalUrls(portalUrls)
+    toast.success(`Opened ${portalUrls.length} tabs`, { duration: 4000 })
+  }
 
   if (searchParams.get("configure") === "1") {
     return <Navigate to="/manage/payment-run/buckets" replace />
@@ -346,6 +378,29 @@ export function PaymentWorksheetPage() {
               </Tooltip>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      data-testid="worksheet-open-all-portals"
+                      disabled={portalUrls.length === 0}
+                      onClick={handleOpenAllPortals}
+                    >
+                      <ExternalLink className="mr-2 size-4" />
+                      Open all portals
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {portalUrls.length === 0 ? (
+                  <TooltipContent>
+                    No portal links configured. Attach links on domain hubs or
+                    Manage external links.
+                  </TooltipContent>
+                ) : null}
+              </Tooltip>
               <Button asChild variant="outline" size="sm">
                 <Link
                   to="/manage/payment-run/external-links"
@@ -669,6 +724,39 @@ export function PaymentWorksheetPage() {
         onSave={handleCardDetailsSave}
         onExclude={handleExcludeCard}
       />
+
+      <AlertDialog
+        open={pendingOpenUrls !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingOpenUrls(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Open all portals?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will open {pendingOpenUrls?.length ?? 0} portal tabs in your
+              browser. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                if (!pendingOpenUrls) return
+                openPortalUrls(pendingOpenUrls)
+                toast.success(`Opened ${pendingOpenUrls.length} tabs`, {
+                  duration: 4000,
+                })
+                setPendingOpenUrls(null)
+              }}
+            >
+              Open tabs
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
