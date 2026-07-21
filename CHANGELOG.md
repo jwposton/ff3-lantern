@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Worksheet portal link anchors (bills)** — leaf bill rows show a portal icon before the pencil in Actions when an external link is assigned; group parents are excluded (#124, PORT-08)
 - **Worksheet portal link anchors (cards and liabilities)** — credit card and liability rows show a portal icon before the pencil in Actions when an external link is assigned (#124, PORT-08)
 - **Worksheet portal link anchors (funding buckets)** — funding bucket bar shows a portal icon inline after the bucket label when an external link is assigned (#124, PORT-08)
+- **Worksheet portal links** — per-row portal anchors in Actions column (bills, credit cards, liabilities) and inline on cash account buckets; **Open all portals** header action opens links in banking → CC → bills → liabilities order with URL dedupe and confirm when >15 tabs (#127)
 
 ### Changed
 
