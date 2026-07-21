@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom"
 
 import { UserBalanceInput } from "@/components/payment-run/UserBalanceInput"
+import { WorksheetPortalLinkAnchor } from "@/components/payment-run/WorksheetPortalLinkAnchor"
 import { COMPACT_TABLE } from "@/components/payment-run/worksheetTableUtils"
 import { Button } from "@/components/ui/button"
 import {
@@ -115,6 +116,9 @@ export function FundingBucketBar({
                   <TableCell className="max-w-[14rem]">
                     <div className="flex min-w-0 items-center gap-1">
                       <span className="shrink-0 font-medium">{bucket.label}</span>
+                      {bucket.external_link ? (
+                        <WorksheetPortalLinkAnchor link={bucket.external_link} />
+                      ) : null}
                       {accountLabels ? (
                         <span
                           className="text-muted-foreground min-w-0 truncate text-[10px]"
