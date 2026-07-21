@@ -1,13 +1,26 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
 
 import { DateRangeProvider } from "@/context/DateRangeContext"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import type {
+  GrandTotals,
+  PaymentWorksheetEnvelope,
+  ResolvedExternalLink,
+} from "@/lib/paymentRunApi"
+
+const toastSuccess = vi.hoisted(() => vi.fn())
+vi.mock("sonner", () => ({
+  toast: {
+    success: (...args: unknown[]) => toastSuccess(...args),
+    error: vi.fn(),
+  },
+}))
+
 import { PaymentWorksheetPage } from "./PaymentWorksheetPage"
-import type { GrandTotals, PaymentWorksheetEnvelope } from "@/lib/paymentRunApi"
 
 const EMPTY_SECTION_SUBTOTALS = {
   bills: { owed: "0.00", due: "0.00", planned_cash: "0.00" },
@@ -324,6 +337,59 @@ const GROUPED_BILLS_ENVELOPE: PaymentWorksheetEnvelope = {
   },
 }
 
+function makePortalLink(
+  id: string,
+  url?: string,
+  label?: string,
+): ResolvedExternalLink {
+  return {
+    id,
+    label: label ?? `Portal ${id}`,
+    url: url ?? `https://example.com/${id}`,
+  }
+}
+
+const TWO_PORTAL_LINKS_ENVELOPE: PaymentWorksheetEnvelope = {
+  ...WORKSHEET_ENVELOPE,
+  buckets: [
+    {
+      ...WORKSHEET_ENVELOPE.buckets[0],
+      external_link: makePortalLink("bucket", "https://bank.example.com"),
+    },
+  ],
+  credit_cards: [
+    {
+      ...WORKSHEET_ENVELOPE.credit_cards[0],
+      external_link: makePortalLink("cc", "https://cc.example.com"),
+    },
+    WORKSHEET_ENVELOPE.credit_cards[1],
+  ],
+}
+
+const SIXTEEN_PORTAL_LINKS_ENVELOPE: PaymentWorksheetEnvelope = {
+  ...EMPTY_ENVELOPE,
+  refreshed_at: "2026-07-03T12:00:00Z",
+  buckets: Array.from({ length: 16 }, (_, index) => ({
+    id: `bucket-${index}`,
+    label: `Bucket ${index}`,
+    sort_order: index,
+    reported_balance: "100.00",
+    user_balance: "100.00",
+    user_balance_override: false,
+    planned_outflows: "0.00",
+    remaining: "100.00",
+    external_link: makePortalLink(
+      `link-${index}`,
+      `https://bank${index}.example.com`,
+    ),
+  })),
+  totals: {
+    reported_balance: "1600.00",
+    user_balance: "1600.00",
+    remaining: "1600.00",
+  },
+}
+
 function TestProviders({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -393,6 +459,13 @@ function mockPaymentFetch(options: {
 }
 
 describe("PaymentWorksheetPage", () => {
+  let windowOpenSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    windowOpenSpy = vi.spyOn(window, "open").mockReturnValue({} as Window)
+    toastSuccess.mockClear()
+  })
+
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
@@ -678,6 +751,116 @@ describe("PaymentWorksheetPage", () => {
       const link = screen.getByTestId("worksheet-manage-external-links")
       expect(link.getAttribute("href")).toBe("/manage/payment-run/external-links")
       expect(link.textContent).toContain("Manage external links")
+    })
+  })
+
+  it("renders Open all portals button", async () => {
+    mockPaymentFetch({ envelope: TWO_PORTAL_LINKS_ENVELOPE, paymentEnabled: true })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("worksheet-open-all-portals")).toBeTruthy()
+      expect(screen.getByTestId("worksheet-open-all-portals").textContent).toContain(
+        "Open all portals",
+      )
+    })
+  })
+
+  it("disables Open all portals when no external links are configured", async () => {
+    mockPaymentFetch({ envelope: EMPTY_ENVELOPE, paymentEnabled: true })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const button = screen.getByTestId("worksheet-open-all-portals")
+      expect((button as HTMLButtonElement).disabled).toBe(true)
+    })
+  })
+
+  it("opens portal tabs immediately when at most 15 links", async () => {
+    mockPaymentFetch({ envelope: TWO_PORTAL_LINKS_ENVELOPE, paymentEnabled: true })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const button = screen.getByTestId("worksheet-open-all-portals")
+      expect((button as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    fireEvent.click(screen.getByTestId("worksheet-open-all-portals"))
+
+    expect(windowOpenSpy).toHaveBeenCalledTimes(2)
+    expect(windowOpenSpy).toHaveBeenCalledWith(
+      "https://bank.example.com",
+      "_blank",
+      "noopener,noreferrer",
+    )
+    expect(windowOpenSpy).toHaveBeenCalledWith(
+      "https://cc.example.com",
+      "_blank",
+      "noopener,noreferrer",
+    )
+    expect(toastSuccess).toHaveBeenCalledWith("Opened 2 tabs", { duration: 4000 })
+  })
+
+  it("shows confirm dialog when more than 15 portal links", async () => {
+    mockPaymentFetch({
+      envelope: SIXTEEN_PORTAL_LINKS_ENVELOPE,
+      paymentEnabled: true,
+    })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const button = screen.getByTestId("worksheet-open-all-portals")
+      expect((button as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    fireEvent.click(screen.getByTestId("worksheet-open-all-portals"))
+
+    expect(
+      screen.getByText("This will open 16 portal tabs in your browser. Continue?"),
+    ).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open tabs" }))
+
+    expect(windowOpenSpy).toHaveBeenCalledTimes(16)
+    expect(toastSuccess).toHaveBeenCalledWith("Opened 16 tabs", { duration: 4000 })
+  })
+
+  it("places Open all portals before Manage external links in the header", async () => {
+    mockPaymentFetch({ envelope: TWO_PORTAL_LINKS_ENVELOPE, paymentEnabled: true })
+
+    render(
+      <TestProviders>
+        <PaymentWorksheetPage />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const openAll = screen.getByTestId("worksheet-open-all-portals")
+      const manageLinks = screen.getByTestId("worksheet-manage-external-links")
+      expect(
+        openAll.compareDocumentPosition(manageLinks) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
     })
   })
 })
