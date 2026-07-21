@@ -1,3 +1,9 @@
+export type ResolvedExternalLink = {
+  id: string
+  label: string
+  url: string
+}
+
 export type FundingBucketRollup = {
   id: string
   label: string
@@ -8,6 +14,7 @@ export type FundingBucketRollup = {
   user_balance_override: boolean
   planned_outflows: string
   remaining: string
+  external_link?: ResolvedExternalLink | null
 }
 
 export type CreditCardActivityTransaction = {
@@ -74,6 +81,7 @@ export type BillRow = PlannedAmountRow &
   bill_group_id?: string | null
   show_in_group?: boolean
   forecast?: BillForecast
+  external_link?: ResolvedExternalLink | null
 }
 
 export type LiabilityRow = PlannedAmountRow &
@@ -96,6 +104,7 @@ export type LiabilityRow = PlannedAmountRow &
   bill_group_id?: string | null
   show_in_group?: boolean
   external_link_id?: string | null
+  external_link?: ResolvedExternalLink | null
 }
 
 export type SectionSubtotals = {
@@ -414,6 +423,7 @@ export type CreditCardRow = PlannedAmountRow & {
   effective_apr_percent?: string | null
   sort_order?: number | null
   external_link_id?: string | null
+  external_link?: ResolvedExternalLink | null
   owed: string
   new_total: string
   interest_accrued: string
