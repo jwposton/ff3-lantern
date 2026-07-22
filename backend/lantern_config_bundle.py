@@ -10,6 +10,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+import sidecar_db
+from firefly_client import FireflyClient
+from payment_worksheet_profiles import parse_payment_worksheet_from_notes
+
 EXPORT_TOOL_VERSION = "1"
 
 _SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "lantern-config.v1.json"
@@ -143,6 +147,82 @@ def resolve_lantern_version() -> str | None:
 
 def bundle_json_schema() -> dict[str, Any]:
     return LanternConfigBundleV1.model_json_schema()
+
+
+def _registry_row_for_export(row: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in row.items() if key != "id"}
+
+
+def collect_referenced_account_ids(bundle_sections: dict[str, Any]) -> set[str]:
+    account_ids: set[str] = set()
+    for bucket in bundle_sections.get("funding_buckets", []):
+        for account_id in bucket.get("firefly_account_ids", []):
+            if account_id:
+                account_ids.add(str(account_id))
+    for row in bundle_sections.get("worksheet_registry", []):
+        credit_card_id = row.get("credit_card_account_id")
+        if credit_card_id:
+            account_ids.add(str(credit_card_id))
+    for link in bundle_sections.get("worksheet_account_links", []):
+        account_id = link.get("account_id")
+        if account_id:
+            account_ids.add(str(account_id))
+    return account_ids
+
+
+async def export_bundle(
+    *,
+    source_instance: str | None = None,
+    client: FireflyClient,
+) -> dict[str, Any]:
+    external_links = await sidecar_db.list_external_links()
+    funding_buckets = await sidecar_db.list_funding_buckets()
+    worksheet_registry = [
+        _registry_row_for_export(row)
+        for row in await sidecar_db.list_worksheet_registry()
+    ]
+    worksheet_bill_groups = await sidecar_db.list_bill_groups()
+    worksheet_account_links = await sidecar_db.list_worksheet_account_links()
+    discover_settings = await sidecar_db.get_discover_settings()
+
+    section_snapshot = {
+        "funding_buckets": funding_buckets,
+        "worksheet_registry": worksheet_registry,
+        "worksheet_account_links": worksheet_account_links,
+    }
+    referenced_ids = collect_referenced_account_ids(section_snapshot)
+
+    account_profiles: list[dict[str, Any]] = []
+    for account_id in sorted(referenced_ids):
+        account = await client.fetch_account(account_id)
+        notes = (account.get("attributes") or {}).get("notes") or ""
+        profile = parse_payment_worksheet_from_notes(notes)
+        if profile is not None:
+            account_profiles.append(
+                {
+                    "firefly_account_id": account_id,
+                    "profile": profile,
+                }
+            )
+
+    bundle = LanternConfigBundleV1(
+        schema_="lantern-config.v1",
+        exported_at=datetime.now(timezone.utc),
+        source_instance=source_instance,
+        lantern_version=resolve_lantern_version(),
+        export_tool_version=EXPORT_TOOL_VERSION,
+        external_links=external_links,
+        funding_buckets=funding_buckets,
+        worksheet_registry=worksheet_registry,
+        worksheet_bill_groups=worksheet_bill_groups,
+        worksheet_account_links=worksheet_account_links,
+        discover_settings=discover_settings,
+        account_profiles=account_profiles,
+    )
+    validated = LanternConfigBundleV1.model_validate(
+        bundle.model_dump(by_alias=True)
+    )
+    return validated.model_dump(by_alias=True, mode="json")
 
 
 def write_bundle_json_schema(path: Path | None = None) -> Path:
