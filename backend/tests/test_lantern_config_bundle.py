@@ -15,6 +15,7 @@ from lantern_config_bundle import (
     LanternConfigBundleV1,
     bundle_json_schema,
     export_bundle,
+    validate_bundle,
     write_bundle_json_schema,
 )
 from payment_worksheet_profiles import (
@@ -164,4 +165,129 @@ async def test_export_round_trip(data_dir):
 
     LanternConfigBundleV1.model_validate(exported)
     assert PAYMENT_WORKSHEET_MARKER in _profile_notes(profile)
+
+
+def _minimal_valid_bundle(**overrides) -> dict:
+    payload = {
+        "schema": "lantern-config.v1",
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "export_tool_version": "1",
+        "external_links": [],
+        "funding_buckets": [],
+        "worksheet_registry": [],
+        "worksheet_bill_groups": [],
+        "worksheet_account_links": [],
+        "discover_settings": {
+            "ignored_categories": [],
+            "ignored_payees": [],
+        },
+        "account_profiles": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _build_validate_client(
+    *,
+    bill_ids: list[str] | None = None,
+    account_ids: list[str] | None = None,
+) -> FireflyClient:
+    bills = bill_ids if bill_ids is not None else []
+    accounts = account_ids if account_ids is not None else []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET" and path.endswith("/bills"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "bills",
+                            "id": bill_id,
+                            "attributes": {
+                                "name": f"Bill {bill_id}",
+                                "amount_min": "10.00",
+                                "amount_max": "10.00",
+                                "repeat_freq": "monthly",
+                            },
+                        }
+                        for bill_id in bills
+                    ],
+                    "meta": {
+                        "pagination": {"current_page": 1, "total_pages": 1},
+                    },
+                },
+            )
+        if request.method == "GET" and path.endswith("/accounts"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "accounts",
+                            "id": account_id,
+                            "attributes": {
+                                "name": f"Account {account_id}",
+                                "type": "asset",
+                            },
+                        }
+                        for account_id in accounts
+                    ],
+                    "meta": {
+                        "pagination": {"current_page": 1, "total_pages": 1},
+                    },
+                },
+            )
+        return httpx.Response(404)
+
+    return FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+
+
+@pytest.mark.asyncio
+async def test_import_fk_missing_errors(data_dir):
+    before_buckets = await sidecar_db.list_funding_buckets()
+    before_registry = await sidecar_db.list_worksheet_registry()
+
+    bundle = _minimal_valid_bundle(
+        funding_buckets=[
+            {
+                "id": "checking",
+                "label": "Checking",
+                "sort_order": 0,
+                "firefly_account_ids": ["99"],
+            }
+        ],
+        worksheet_registry=[
+            {
+                "firefly_bill_id": "42",
+                "worksheet_section": "bills",
+                "funding_bucket_key": "checking",
+                "amount_mode": "planned",
+                "planned_sync": "bill",
+                "payment_rail": "bank",
+                "row_label": "Missing bill",
+            }
+        ],
+    )
+    client = _build_validate_client(bill_ids=[], account_ids=[])
+
+    report = await validate_bundle(bundle, client=client)
+
+    assert report.valid is False
+    error_codes = {issue.code for issue in report.errors}
+    assert "firefly_bill_missing" in error_codes
+    assert "firefly_account_missing" in error_codes
+    assert report.summary.error_count == len(report.errors)
+    assert report.summary.warning_count == len(report.warnings)
+
+    after_buckets = await sidecar_db.list_funding_buckets()
+    after_registry = await sidecar_db.list_worksheet_registry()
+    assert after_buckets == before_buckets
+    assert after_registry == before_registry
+
 
