@@ -16,6 +16,7 @@ from lantern_config_bundle import (
     LanternConfigBundleV1,
     bundle_json_schema,
     export_bundle,
+    import_bundle,
     validate_bundle,
     write_bundle_json_schema,
 )
@@ -249,6 +250,28 @@ def _build_validate_client(
     )
 
 
+async def _clear_durable_sidecar_config() -> None:
+    await sidecar_db.init_db()
+    async with aiosqlite.connect(sidecar_db.get_db_path()) as db:
+        for table in (
+            "worksheet_account_links",
+            "worksheet_registry",
+            "funding_buckets",
+            "worksheet_bill_groups",
+            "external_links",
+        ):
+            await db.execute(f"DELETE FROM {table}")
+        await db.execute(
+            """
+            UPDATE discover_settings
+            SET ignored_categories_json = ?, ignored_payees_json = '[]'
+            WHERE id = 1
+            """,
+            (json.dumps(sidecar_db.DEFAULT_DISCOVER_IGNORED_CATEGORIES),),
+        )
+        await db.commit()
+
+
 @pytest.mark.asyncio
 async def test_import_fk_missing_errors(data_dir):
     before_buckets = await sidecar_db.list_funding_buckets()
@@ -277,7 +300,7 @@ async def test_import_fk_missing_errors(data_dir):
     )
     client = _build_validate_client(bill_ids=[], account_ids=[])
 
-    report = await validate_bundle(bundle, client=client)
+    report = await import_bundle(bundle, client=client, confirm=True)
 
     assert report.valid is False
     error_codes = {issue.code for issue in report.errors}
@@ -290,6 +313,201 @@ async def test_import_fk_missing_errors(data_dir):
     after_registry = await sidecar_db.list_worksheet_registry()
     assert after_buckets == before_buckets
     assert after_registry == before_registry
+
+
+@pytest.mark.asyncio
+async def test_import_preview_no_write(data_dir):
+    bundle = _minimal_valid_bundle(
+        external_links=[
+            {
+                "id": "chase",
+                "label": "Chase",
+                "url": "https://chase.example/login",
+            }
+        ],
+    )
+    client = _build_validate_client(bill_ids=[], account_ids=[])
+
+    report = await import_bundle(bundle, client=client, confirm=False)
+
+    assert report.valid is True
+    assert await sidecar_db.list_external_links() == []
+    assert await sidecar_db.list_funding_buckets() == []
+
+
+@pytest.mark.asyncio
+async def test_import_rejects_nonempty_sidecar(data_dir):
+    await sidecar_db.insert_external_link_if_absent(
+        id="existing",
+        label="Existing",
+        url="https://existing.example/login",
+    )
+    bundle = _minimal_valid_bundle()
+    client = _build_validate_client(bill_ids=[], account_ids=[])
+
+    report = await import_bundle(bundle, client=client, confirm=True)
+
+    assert report.valid is False
+    assert any(issue.code == "sidecar_not_empty" for issue in report.errors)
+
+
+def _build_round_trip_client(
+    *,
+    bill_ids: list[str],
+    account_ids: list[str],
+    account_notes: dict[str, str] | None = None,
+) -> FireflyClient:
+    notes_by_id = account_notes or {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET" and path.endswith("/bills"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "bills",
+                            "id": bill_id,
+                            "attributes": {
+                                "name": f"Bill {bill_id}",
+                                "amount_min": "10.00",
+                                "amount_max": "10.00",
+                                "repeat_freq": "monthly",
+                            },
+                        }
+                        for bill_id in bill_ids
+                    ],
+                    "meta": {
+                        "pagination": {"current_page": 1, "total_pages": 1},
+                    },
+                },
+            )
+        if request.method == "GET" and path.endswith("/accounts"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "accounts",
+                            "id": account_id,
+                            "attributes": {
+                                "name": f"Account {account_id}",
+                                "type": "asset",
+                            },
+                        }
+                        for account_id in account_ids
+                    ],
+                    "meta": {
+                        "pagination": {"current_page": 1, "total_pages": 1},
+                    },
+                },
+            )
+        if request.method == "GET" and path.startswith("/api/v1/accounts/"):
+            account_id = path.rsplit("/", 1)[-1]
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "type": "accounts",
+                        "id": account_id,
+                        "attributes": {
+                            "name": f"Account {account_id}",
+                            "notes": notes_by_id.get(account_id, ""),
+                        },
+                    }
+                },
+            )
+        if request.method == "PUT" and path.startswith("/api/v1/accounts/"):
+            return httpx.Response(200, json={"data": {}})
+        return httpx.Response(404)
+
+    return FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+
+
+@pytest.mark.asyncio
+async def test_import_round_trip(data_dir):
+    await sidecar_db.insert_external_link_if_absent(
+        id="chase",
+        label="Chase",
+        url="https://chase.example/login",
+    )
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1", "2"],
+        external_link_id="chase",
+    )
+    await sidecar_db.insert_bill_group_if_absent(
+        id="utilities",
+        label="Utilities",
+        sort_order=0,
+    )
+    await sidecar_db.insert_worksheet_registry(
+        {
+            "firefly_bill_id": "10",
+            "worksheet_section": "bills",
+            "funding_bucket_key": "checking",
+            "amount_mode": "planned",
+            "planned_sync": "bill",
+            "payment_rail": "bank",
+            "row_label": "Electric",
+            "bill_group_id": "utilities",
+            "external_link_id": "chase",
+        }
+    )
+    await sidecar_db.upsert_worksheet_account_link("3", "chase")
+    await sidecar_db.update_discover_settings(
+        ignored_categories=["Transfers"],
+        ignored_payees=["Internal"],
+    )
+
+    profile = {"included": True, "worksheet_section": "credit", "sort_order": 1}
+    client = _build_round_trip_client(
+        bill_ids=["10"],
+        account_ids=["1", "2", "3"],
+        account_notes={
+            "1": _profile_notes(profile),
+            "2": "",
+            "3": "",
+        },
+    )
+
+    exported = await export_bundle(source_instance="lab", client=client)
+    await _clear_durable_sidecar_config()
+
+    report = await import_bundle(exported, client=client, confirm=True)
+    assert report.valid is True, report.errors
+
+    links = await sidecar_db.list_external_links()
+    assert len(links) == 1
+    assert links[0]["id"] == "chase"
+
+    buckets = await sidecar_db.list_funding_buckets()
+    assert len(buckets) == 1
+    assert buckets[0]["id"] == "checking"
+
+    registry = await sidecar_db.list_worksheet_registry()
+    assert len(registry) == 1
+    assert registry[0]["row_label"] == "Electric"
+    assert registry[0]["bill_group_id"] == "utilities"
+
+    groups = await sidecar_db.list_bill_groups()
+    assert len(groups) == 1
+    assert groups[0]["id"] == "utilities"
+
+    account_links = await sidecar_db.list_worksheet_account_links()
+    assert len(account_links) == 1
+    assert account_links[0]["account_id"] == "3"
+
+    discover = await sidecar_db.get_discover_settings()
+    assert discover["ignored_categories"] == ["Transfers"]
+    assert discover["ignored_payees"] == ["Internal"]
 
 
 @pytest.mark.asyncio

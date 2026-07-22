@@ -8,12 +8,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+import aiosqlite
 from pydantic import BaseModel, ConfigDict, Field
 
 import sidecar_db
 from firefly_client import FireflyClient
 from payment_worksheet_bills import validate_portal_url
-from payment_worksheet_profiles import parse_payment_worksheet_from_notes
+from payment_worksheet_profiles import (
+    parse_payment_worksheet_from_notes,
+    write_payment_worksheet_profile,
+)
 
 EXPORT_TOOL_VERSION = "1"
 
@@ -447,6 +451,115 @@ async def validate_bundle(
         warnings=warnings,
         summary=summary,
     )
+
+
+async def _blocking_durable_counts() -> dict[str, int]:
+    """Per-table counts that block import; factory discover seed is treated as empty."""
+    counts = await sidecar_db.count_durable_rows()
+    if counts.get("discover_settings", 0) > 0:
+        current = await sidecar_db.get_discover_settings()
+        if (
+            current["ignored_categories"] == sidecar_db.DEFAULT_DISCOVER_IGNORED_CATEGORIES
+            and not current["ignored_payees"]
+        ):
+            counts = {**counts, "discover_settings": 0}
+    return {table: count for table, count in counts.items() if count > 0}
+
+
+def _append_sidecar_not_empty(
+    report: ValidationReport,
+    blocking: dict[str, int],
+    payload: dict[str, Any],
+) -> ValidationReport:
+    tables = ", ".join(f"{table}={count}" for table, count in sorted(blocking.items()))
+    report.errors.append(
+        ValidationIssue(
+            code="sidecar_not_empty",
+            message=f"Sidecar already has durable config: {tables}",
+            entity=",".join(sorted(blocking)),
+        )
+    )
+    report.valid = False
+    report.summary = _validation_summary(report.errors, report.warnings, payload)
+    return report
+
+
+async def import_bundle(
+    bundle: dict[str, Any],
+    *,
+    client: FireflyClient,
+    confirm: bool = False,
+) -> ValidationReport:
+    """Validate and optionally import a lantern-config.v1 bundle (D-11, D-14–D-18)."""
+    payload = dict(bundle)
+    payload.pop("confirm", None)
+
+    report = await validate_bundle(payload, client=client)
+    blocking = await _blocking_durable_counts()
+    if blocking:
+        return _append_sidecar_not_empty(report, blocking, payload)
+
+    if not confirm:
+        return report
+
+    if not report.valid:
+        return report
+
+    parsed = LanternConfigBundleV1.model_validate(payload)
+    await sidecar_db.init_db()
+    db_path = sidecar_db.get_db_path()
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                await sidecar_db.import_durable_config_conn(db, parsed)
+                await db.commit()
+            except Exception as exc:
+                await db.rollback()
+                report.errors.append(
+                    ValidationIssue(
+                        code="import_failed",
+                        message=str(exc),
+                    )
+                )
+                report.valid = False
+                report.summary = _validation_summary(
+                    report.errors, report.warnings, payload
+                )
+                return report
+    except Exception as exc:
+        report.errors.append(
+            ValidationIssue(
+                code="import_failed",
+                message=str(exc),
+            )
+        )
+        report.valid = False
+        report.summary = _validation_summary(report.errors, report.warnings, payload)
+        return report
+
+    profile_failures: list[ValidationIssue] = []
+    for row in parsed.account_profiles:
+        try:
+            await write_payment_worksheet_profile(
+                client, row.firefly_account_id, row.profile
+            )
+        except Exception as exc:
+            profile_failures.append(
+                ValidationIssue(
+                    code="account_profile_write_failed",
+                    message=str(exc),
+                    entity="account_profiles",
+                    firefly_id=row.firefly_account_id,
+                )
+            )
+
+    if profile_failures:
+        report.errors.extend(profile_failures)
+        report.valid = False
+        report.summary = _validation_summary(report.errors, report.warnings, payload)
+
+    return report
 
 
 def write_bundle_json_schema(path: Path | None = None) -> Path:
