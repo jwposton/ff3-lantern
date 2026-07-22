@@ -32,6 +32,11 @@ DURABLE_TABLES: tuple[str, ...] = (
     "external_links",
     "worksheet_account_links",
     "discover_settings",
+    "cc_worksheet_profiles",
+    "liability_worksheet_profiles",
+    "loan_profiles",
+    "loan_profile_split_components",
+    "profile_migration_meta",
 )
 
 __all__ = [
@@ -45,14 +50,21 @@ __all__ = [
     "delete_worksheet_account_link",
     "delete_worksheet_registry",
     "delete_worksheet_state_for_row_key",
+    "delete_cc_worksheet_profile",
+    "delete_liability_worksheet_profile",
+    "delete_loan_profile",
     "get_bill_group",
     "get_bucket_balances_for_month",
+    "get_cc_worksheet_profile",
     "get_data_dir",
     "get_db_path",
     "get_discover_settings",
     "get_external_link",
     "get_external_links_by_ids",
     "get_funding_bucket",
+    "get_liability_worksheet_profile",
+    "get_loan_profile",
+    "get_profile_migration_meta",
     "get_worksheet_account_link",
     "get_worksheet_refresh",
     "get_worksheet_registry",
@@ -64,8 +76,11 @@ __all__ = [
     "is_writable",
     "list_bill_group_members",
     "list_bill_groups",
+    "list_cc_worksheet_profiles",
     "list_external_links",
     "list_funding_buckets",
+    "list_liability_worksheet_profiles",
+    "list_loan_profiles",
     "list_worksheet_account_links",
     "list_worksheet_registry",
     "log_audit",
@@ -81,7 +96,11 @@ __all__ = [
     "update_worksheet_registry",
     "upsert_bill_group",
     "upsert_bucket_balance",
+    "upsert_cc_worksheet_profile",
     "upsert_funding_bucket",
+    "upsert_liability_worksheet_profile",
+    "upsert_loan_profile",
+    "upsert_profile_migration_meta",
     "upsert_suggestion",
     "upsert_worksheet_account_link",
     "upsert_worksheet_refresh",
@@ -178,6 +197,69 @@ CREATE TABLE IF NOT EXISTS discover_settings (
   ignored_categories_json TEXT NOT NULL DEFAULT '[]',
   ignored_payees_json TEXT NOT NULL DEFAULT '[]',
   defaults_version INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS cc_worksheet_profiles (
+  firefly_account_id TEXT PRIMARY KEY,
+  included INTEGER NOT NULL DEFAULT 1,
+  funding_bucket_key TEXT,
+  credit_limit TEXT,
+  default_planned_payment TEXT,
+  apr_percent TEXT,
+  special_apr_percent TEXT,
+  special_apr_start TEXT,
+  special_apr_end TEXT,
+  payment_due_day TEXT,
+  sort_order INTEGER,
+  migrated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS liability_worksheet_profiles (
+  firefly_account_id TEXT PRIMARY KEY,
+  included INTEGER NOT NULL DEFAULT 1,
+  funding_bucket_key TEXT,
+  default_planned_payment TEXT,
+  migrated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS loan_profiles (
+  firefly_account_id TEXT PRIMARY KEY,
+  version INTEGER NOT NULL DEFAULT 1,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  match_type TEXT NOT NULL,
+  match_description_contains TEXT NOT NULL,
+  match_expected_amount TEXT NOT NULL,
+  match_amount_tolerance TEXT NOT NULL DEFAULT '0.50',
+  match_source_account_id TEXT,
+  match_source_account TEXT,
+  match_import_destination_account_id TEXT,
+  match_import_destination_account TEXT,
+  match_max_per_month INTEGER,
+  split_escrow_amount TEXT NOT NULL DEFAULT '0.00',
+  split_budget TEXT,
+  rate_override TEXT,
+  profile_notes TEXT,
+  migrated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS loan_profile_split_components (
+  firefly_account_id TEXT NOT NULL,
+  component_index INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  type TEXT NOT NULL,
+  destination_account_id TEXT NOT NULL,
+  destination_account TEXT NOT NULL,
+  category TEXT,
+  budget TEXT,
+  PRIMARY KEY (firefly_account_id, component_index),
+  FOREIGN KEY (firefly_account_id) REFERENCES loan_profiles(firefly_account_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS profile_migration_meta (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  ran_at TEXT,
+  accounts_scanned INTEGER,
+  accounts_migrated INTEGER
 );
 """
 
@@ -1563,3 +1645,466 @@ async def import_durable_config_conn(
         ignored_categories=settings.ignored_categories,
         ignored_payees=settings.ignored_payees,
     )
+
+
+def _row_to_cc_worksheet_profile(row: aiosqlite.Row) -> dict[str, Any]:
+    profile: dict[str, Any] = {
+        "included": bool(row["included"]),
+        "worksheet_section": "credit",
+    }
+    for key in (
+        "funding_bucket_key",
+        "credit_limit",
+        "default_planned_payment",
+        "apr_percent",
+        "special_apr_percent",
+        "special_apr_start",
+        "special_apr_end",
+        "payment_due_day",
+    ):
+        if row[key] is not None:
+            profile[key] = row[key]
+    if row["sort_order"] is not None:
+        profile["sort_order"] = row["sort_order"]
+    if row["migrated_at"] is not None:
+        profile["migrated_at"] = row["migrated_at"]
+    return profile
+
+
+def _row_to_liability_worksheet_profile(row: aiosqlite.Row) -> dict[str, Any]:
+    profile: dict[str, Any] = {"included": bool(row["included"])}
+    for key in ("funding_bucket_key", "default_planned_payment"):
+        if row[key] is not None:
+            profile[key] = row[key]
+    if row["migrated_at"] is not None:
+        profile["migrated_at"] = row["migrated_at"]
+    return profile
+
+
+def _assemble_loan_profile(
+    row: aiosqlite.Row, components: list[aiosqlite.Row]
+) -> dict[str, Any]:
+    profile: dict[str, Any] = {
+        "version": row["version"],
+        "enabled": bool(row["enabled"]),
+        "match": {
+            "type": row["match_type"],
+            "description_contains": row["match_description_contains"],
+            "expected_amount": row["match_expected_amount"],
+            "amount_tolerance": row["match_amount_tolerance"],
+        },
+        "split": {
+            "escrow_amount": row["split_escrow_amount"],
+            "components": [],
+        },
+    }
+    match = profile["match"]
+    for key, col in (
+        ("source_account_id", "match_source_account_id"),
+        ("source_account", "match_source_account"),
+        ("import_destination_account_id", "match_import_destination_account_id"),
+        ("import_destination_account", "match_import_destination_account"),
+        ("max_per_month", "match_max_per_month"),
+    ):
+        if row[col] is not None:
+            match[key] = row[col]
+    split = profile["split"]
+    if row["split_budget"] is not None:
+        split["budget"] = row["split_budget"]
+    if row["rate_override"] is not None:
+        profile["rate_override"] = row["rate_override"]
+    if row["profile_notes"] is not None:
+        profile["notes"] = row["profile_notes"]
+    if row["migrated_at"] is not None:
+        profile["migrated_at"] = row["migrated_at"]
+    for comp in components:
+        entry: dict[str, Any] = {
+            "role": comp["role"],
+            "type": comp["type"],
+            "destination_account_id": comp["destination_account_id"],
+            "destination_account": comp["destination_account"],
+        }
+        if comp["category"] is not None:
+            entry["category"] = comp["category"]
+        if comp["budget"] is not None:
+            entry["budget"] = comp["budget"]
+        split["components"].append(entry)
+    return profile
+
+
+async def get_cc_worksheet_profile(account_id: str) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT firefly_account_id, included, funding_bucket_key, credit_limit,
+                   default_planned_payment, apr_percent, special_apr_percent,
+                   special_apr_start, special_apr_end, payment_due_day, sort_order,
+                   migrated_at
+            FROM cc_worksheet_profiles
+            WHERE firefly_account_id = ?
+            """,
+            (account_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_cc_worksheet_profile(row) if row else None
+
+
+async def list_cc_worksheet_profiles() -> list[dict[str, Any]]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT firefly_account_id, included, funding_bucket_key, credit_limit,
+                   default_planned_payment, apr_percent, special_apr_percent,
+                   special_apr_start, special_apr_end, payment_due_day, sort_order,
+                   migrated_at
+            FROM cc_worksheet_profiles
+            ORDER BY firefly_account_id ASC
+            """
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_cc_worksheet_profile(row) for row in rows]
+
+
+async def upsert_cc_worksheet_profile(
+    account_id: str,
+    profile: dict[str, Any],
+    *,
+    migrated_at: str | None = None,
+) -> None:
+    await init_db()
+    included = 1 if profile.get("included", True) else 0
+    sort_order = profile.get("sort_order")
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT INTO cc_worksheet_profiles (
+              firefly_account_id, included, funding_bucket_key, credit_limit,
+              default_planned_payment, apr_percent, special_apr_percent,
+              special_apr_start, special_apr_end, payment_due_day, sort_order,
+              migrated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(firefly_account_id) DO UPDATE SET
+              included = excluded.included,
+              funding_bucket_key = excluded.funding_bucket_key,
+              credit_limit = excluded.credit_limit,
+              default_planned_payment = excluded.default_planned_payment,
+              apr_percent = excluded.apr_percent,
+              special_apr_percent = excluded.special_apr_percent,
+              special_apr_start = excluded.special_apr_start,
+              special_apr_end = excluded.special_apr_end,
+              payment_due_day = excluded.payment_due_day,
+              sort_order = excluded.sort_order,
+              migrated_at = COALESCE(excluded.migrated_at, cc_worksheet_profiles.migrated_at)
+            """,
+            (
+                account_id,
+                included,
+                profile.get("funding_bucket_key"),
+                profile.get("credit_limit"),
+                profile.get("default_planned_payment"),
+                profile.get("apr_percent"),
+                profile.get("special_apr_percent"),
+                profile.get("special_apr_start"),
+                profile.get("special_apr_end"),
+                profile.get("payment_due_day"),
+                sort_order,
+                migrated_at or profile.get("migrated_at"),
+            ),
+        )
+        await db.commit()
+
+
+async def delete_cc_worksheet_profile(account_id: str) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            "DELETE FROM cc_worksheet_profiles WHERE firefly_account_id = ?",
+            (account_id,),
+        )
+        await db.commit()
+
+
+async def get_liability_worksheet_profile(account_id: str) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT firefly_account_id, included, funding_bucket_key,
+                   default_planned_payment, migrated_at
+            FROM liability_worksheet_profiles
+            WHERE firefly_account_id = ?
+            """,
+            (account_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_liability_worksheet_profile(row) if row else None
+
+
+async def list_liability_worksheet_profiles() -> list[dict[str, Any]]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT firefly_account_id, included, funding_bucket_key,
+                   default_planned_payment, migrated_at
+            FROM liability_worksheet_profiles
+            ORDER BY firefly_account_id ASC
+            """
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_liability_worksheet_profile(row) for row in rows]
+
+
+async def upsert_liability_worksheet_profile(
+    account_id: str,
+    profile: dict[str, Any],
+    *,
+    migrated_at: str | None = None,
+) -> None:
+    await init_db()
+    included = 1 if profile.get("included", True) else 0
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT INTO liability_worksheet_profiles (
+              firefly_account_id, included, funding_bucket_key,
+              default_planned_payment, migrated_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(firefly_account_id) DO UPDATE SET
+              included = excluded.included,
+              funding_bucket_key = excluded.funding_bucket_key,
+              default_planned_payment = excluded.default_planned_payment,
+              migrated_at = COALESCE(
+                excluded.migrated_at, liability_worksheet_profiles.migrated_at
+              )
+            """,
+            (
+                account_id,
+                included,
+                profile.get("funding_bucket_key"),
+                profile.get("default_planned_payment"),
+                migrated_at or profile.get("migrated_at"),
+            ),
+        )
+        await db.commit()
+
+
+async def delete_liability_worksheet_profile(account_id: str) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            "DELETE FROM liability_worksheet_profiles WHERE firefly_account_id = ?",
+            (account_id,),
+        )
+        await db.commit()
+
+
+async def get_loan_profile(account_id: str) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT firefly_account_id, version, enabled, match_type,
+                   match_description_contains, match_expected_amount,
+                   match_amount_tolerance, match_source_account_id,
+                   match_source_account, match_import_destination_account_id,
+                   match_import_destination_account, match_max_per_month,
+                   split_escrow_amount, split_budget, rate_override, profile_notes,
+                   migrated_at
+            FROM loan_profiles
+            WHERE firefly_account_id = ?
+            """,
+            (account_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        comp_cursor = await db.execute(
+            """
+            SELECT role, type, destination_account_id, destination_account,
+                   category, budget
+            FROM loan_profile_split_components
+            WHERE firefly_account_id = ?
+            ORDER BY component_index ASC
+            """,
+            (account_id,),
+        )
+        components = await comp_cursor.fetchall()
+        return _assemble_loan_profile(row, components)
+
+
+async def list_loan_profiles() -> list[dict[str, Any]]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT firefly_account_id
+            FROM loan_profiles
+            ORDER BY firefly_account_id ASC
+            """
+        )
+        account_ids = [row["firefly_account_id"] for row in await cursor.fetchall()]
+    profiles: list[dict[str, Any]] = []
+    for account_id in account_ids:
+        profile = await get_loan_profile(account_id)
+        if profile is not None:
+            profiles.append(profile)
+    return profiles
+
+
+async def upsert_loan_profile(
+    account_id: str,
+    profile: dict[str, Any],
+    *,
+    migrated_at: str | None = None,
+) -> None:
+    await init_db()
+    match = profile.get("match") or {}
+    split = profile.get("split") or {}
+    components = split.get("components") or []
+    enabled = 1 if profile.get("enabled", True) else 0
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT INTO loan_profiles (
+              firefly_account_id, version, enabled, match_type,
+              match_description_contains, match_expected_amount,
+              match_amount_tolerance, match_source_account_id,
+              match_source_account, match_import_destination_account_id,
+              match_import_destination_account, match_max_per_month,
+              split_escrow_amount, split_budget, rate_override, profile_notes,
+              migrated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(firefly_account_id) DO UPDATE SET
+              version = excluded.version,
+              enabled = excluded.enabled,
+              match_type = excluded.match_type,
+              match_description_contains = excluded.match_description_contains,
+              match_expected_amount = excluded.match_expected_amount,
+              match_amount_tolerance = excluded.match_amount_tolerance,
+              match_source_account_id = excluded.match_source_account_id,
+              match_source_account = excluded.match_source_account,
+              match_import_destination_account_id = excluded.match_import_destination_account_id,
+              match_import_destination_account = excluded.match_import_destination_account,
+              match_max_per_month = excluded.match_max_per_month,
+              split_escrow_amount = excluded.split_escrow_amount,
+              split_budget = excluded.split_budget,
+              rate_override = excluded.rate_override,
+              profile_notes = excluded.profile_notes,
+              migrated_at = COALESCE(excluded.migrated_at, loan_profiles.migrated_at)
+            """,
+            (
+                account_id,
+                profile.get("version", 1),
+                enabled,
+                match.get("type", "transfer"),
+                match.get("description_contains", ""),
+                match.get("expected_amount", "0.00"),
+                match.get("amount_tolerance", "0.50"),
+                match.get("source_account_id"),
+                match.get("source_account"),
+                match.get("import_destination_account_id"),
+                match.get("import_destination_account"),
+                match.get("max_per_month"),
+                split.get("escrow_amount", "0.00"),
+                split.get("budget"),
+                profile.get("rate_override"),
+                profile.get("notes"),
+                migrated_at or profile.get("migrated_at"),
+            ),
+        )
+        await db.execute(
+            "DELETE FROM loan_profile_split_components WHERE firefly_account_id = ?",
+            (account_id,),
+        )
+        for index, comp in enumerate(components):
+            await db.execute(
+                """
+                INSERT INTO loan_profile_split_components (
+                  firefly_account_id, component_index, role, type,
+                  destination_account_id, destination_account, category, budget
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    account_id,
+                    index,
+                    comp.get("role"),
+                    comp.get("type"),
+                    comp.get("destination_account_id"),
+                    comp.get("destination_account"),
+                    comp.get("category"),
+                    comp.get("budget"),
+                ),
+            )
+        await db.commit()
+
+
+async def delete_loan_profile(account_id: str) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            "DELETE FROM loan_profile_split_components WHERE firefly_account_id = ?",
+            (account_id,),
+        )
+        await db.execute(
+            "DELETE FROM loan_profiles WHERE firefly_account_id = ?",
+            (account_id,),
+        )
+        await db.commit()
+
+
+async def get_profile_migration_meta() -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, ran_at, accounts_scanned, accounts_migrated
+            FROM profile_migration_meta
+            WHERE id = 1
+            """
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "ran_at": row["ran_at"],
+            "accounts_scanned": row["accounts_scanned"],
+            "accounts_migrated": row["accounts_migrated"],
+        }
+
+
+async def upsert_profile_migration_meta(
+    *,
+    ran_at: str,
+    accounts_scanned: int,
+    accounts_migrated: int,
+) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT INTO profile_migration_meta (
+              id, ran_at, accounts_scanned, accounts_migrated
+            )
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              ran_at = excluded.ran_at,
+              accounts_scanned = excluded.accounts_scanned,
+              accounts_migrated = excluded.accounts_migrated
+            """,
+            (ran_at, accounts_scanned, accounts_migrated),
+        )
+        await db.commit()
