@@ -1,0 +1,391 @@
+{
+  "$defs": {
+    "AccountProfileRow": {
+      "properties": {
+        "firefly_account_id": {
+          "title": "Firefly Account Id",
+          "type": "string"
+        },
+        "profile": {
+          "additionalProperties": true,
+          "title": "Profile",
+          "type": "object"
+        }
+      },
+      "required": [
+        "firefly_account_id",
+        "profile"
+      ],
+      "title": "AccountProfileRow",
+      "type": "object"
+    },
+    "BillGroupRow": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "sort_order": {
+          "title": "Sort Order",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "sort_order"
+      ],
+      "title": "BillGroupRow",
+      "type": "object"
+    },
+    "DiscoverSettingsRow": {
+      "properties": {
+        "ignored_categories": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ignored Categories",
+          "type": "array"
+        },
+        "ignored_payees": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ignored Payees",
+          "type": "array"
+        }
+      },
+      "title": "DiscoverSettingsRow",
+      "type": "object"
+    },
+    "ExternalLinkRow": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "url"
+      ],
+      "title": "ExternalLinkRow",
+      "type": "object"
+    },
+    "FundingBucketRow": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "sort_order": {
+          "title": "Sort Order",
+          "type": "integer"
+        },
+        "firefly_account_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Firefly Account Ids",
+          "type": "array"
+        },
+        "external_link_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Link Id"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "sort_order",
+        "firefly_account_ids"
+      ],
+      "title": "FundingBucketRow",
+      "type": "object"
+    },
+    "WorksheetAccountLinkRow": {
+      "properties": {
+        "account_id": {
+          "title": "Account Id",
+          "type": "string"
+        },
+        "external_link_id": {
+          "title": "External Link Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "external_link_id"
+      ],
+      "title": "WorksheetAccountLinkRow",
+      "type": "object"
+    },
+    "WorksheetRegistryRow": {
+      "properties": {
+        "firefly_bill_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Firefly Bill Id"
+        },
+        "worksheet_section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worksheet Section"
+        },
+        "funding_bucket_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Funding Bucket Key"
+        },
+        "amount_mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount Mode"
+        },
+        "planned_sync": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Planned Sync"
+        },
+        "payment_rail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Payment Rail"
+        },
+        "counts_toward_cash_plan": {
+          "default": false,
+          "title": "Counts Toward Cash Plan",
+          "type": "boolean"
+        },
+        "rule_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Id"
+        },
+        "row_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Label"
+        },
+        "credit_card_account_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Credit Card Account Id"
+        },
+        "bill_group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bill Group Id"
+        },
+        "show_in_group": {
+          "default": false,
+          "title": "Show In Group",
+          "type": "boolean"
+        },
+        "external_link_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Link Id"
+        }
+      },
+      "title": "WorksheetRegistryRow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "lantern-config.v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "exported_at": {
+      "format": "date-time",
+      "title": "Exported At",
+      "type": "string"
+    },
+    "source_instance": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Instance"
+    },
+    "lantern_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lantern Version"
+    },
+    "export_tool_version": {
+      "title": "Export Tool Version",
+      "type": "string"
+    },
+    "external_links": {
+      "items": {
+        "$ref": "#/$defs/ExternalLinkRow"
+      },
+      "title": "External Links",
+      "type": "array"
+    },
+    "funding_buckets": {
+      "items": {
+        "$ref": "#/$defs/FundingBucketRow"
+      },
+      "title": "Funding Buckets",
+      "type": "array"
+    },
+    "worksheet_registry": {
+      "items": {
+        "$ref": "#/$defs/WorksheetRegistryRow"
+      },
+      "title": "Worksheet Registry",
+      "type": "array"
+    },
+    "worksheet_bill_groups": {
+      "items": {
+        "$ref": "#/$defs/BillGroupRow"
+      },
+      "title": "Worksheet Bill Groups",
+      "type": "array"
+    },
+    "worksheet_account_links": {
+      "items": {
+        "$ref": "#/$defs/WorksheetAccountLinkRow"
+      },
+      "title": "Worksheet Account Links",
+      "type": "array"
+    },
+    "discover_settings": {
+      "$ref": "#/$defs/DiscoverSettingsRow"
+    },
+    "account_profiles": {
+      "items": {
+        "$ref": "#/$defs/AccountProfileRow"
+      },
+      "title": "Account Profiles",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "exported_at",
+    "export_tool_version"
+  ],
+  "title": "LanternConfigBundleV1",
+  "type": "object"
+}
