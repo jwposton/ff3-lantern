@@ -13,17 +13,31 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
+
+if TYPE_CHECKING:
+    from lantern_config_bundle import LanternConfigBundleV1
 
 
 class ConflictError(Exception):
     """Raised when an insert would conflict with an existing row."""
 
 
+DURABLE_TABLES: tuple[str, ...] = (
+    "funding_buckets",
+    "worksheet_registry",
+    "worksheet_bill_groups",
+    "external_links",
+    "worksheet_account_links",
+    "discover_settings",
+)
+
 __all__ = [
     "ConflictError",
+    "DURABLE_TABLES",
+    "count_durable_rows",
     "count_external_link_dependents",
     "delete_bill_group",
     "delete_external_link",
@@ -43,6 +57,7 @@ __all__ = [
     "get_worksheet_refresh",
     "get_worksheet_registry",
     "get_worksheet_state_for_month",
+    "import_durable_config_conn",
     "init_db",
     "insert_external_link_if_absent",
     "insert_worksheet_registry",
@@ -1374,3 +1389,177 @@ async def add_discover_ignored_payee(payee: str) -> dict[str, Any]:
         "ignored_payees": updated["ignored_payees"],
         "ignored_payee": text,
     }
+
+
+async def count_durable_rows() -> dict[str, int]:
+    """Return row counts for each durable sidecar table (D-15)."""
+    await init_db()
+    counts: dict[str, int] = {}
+    async with aiosqlite.connect(get_db_path()) as db:
+        for table in DURABLE_TABLES:
+            cursor = await db.execute(f"SELECT COUNT(*) FROM {table}")
+            row = await cursor.fetchone()
+            counts[table] = int(row[0]) if row else 0
+    return counts
+
+
+async def _insert_external_link_conn(
+    db: aiosqlite.Connection,
+    *,
+    id: str,
+    label: str,
+    url: str,
+) -> None:
+    await db.execute(
+        """
+        INSERT INTO external_links (id, label, url)
+        VALUES (?, ?, ?)
+        """,
+        (id, label, url),
+    )
+
+
+async def _insert_funding_bucket_conn(
+    db: aiosqlite.Connection,
+    *,
+    id: str,
+    label: str,
+    sort_order: int,
+    firefly_account_ids: list[str],
+    external_link_id: str | None = None,
+) -> None:
+    await db.execute(
+        """
+        INSERT INTO funding_buckets (
+          id, label, sort_order, firefly_account_ids_json, external_link_id
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (id, label, sort_order, json.dumps(firefly_account_ids), external_link_id),
+    )
+
+
+async def _insert_bill_group_conn(
+    db: aiosqlite.Connection,
+    *,
+    id: str,
+    label: str,
+    sort_order: int,
+) -> None:
+    await db.execute(
+        """
+        INSERT INTO worksheet_bill_groups (id, label, sort_order)
+        VALUES (?, ?, ?)
+        """,
+        (id, label, sort_order),
+    )
+
+
+async def _insert_worksheet_registry_conn(
+    db: aiosqlite.Connection,
+    data: dict[str, Any],
+) -> None:
+    payment_rail = data.get("payment_rail") or "bank"
+    counts = _counts_toward_cash_plan(payment_rail)
+    show_in_group = 1 if data.get("show_in_group") else 0
+    await db.execute(
+        """
+        INSERT INTO worksheet_registry (
+          firefly_bill_id, worksheet_section, funding_bucket_key,
+          amount_mode, planned_sync, payment_rail, counts_toward_cash_plan,
+          rule_id, row_label, credit_card_account_id, bill_group_id, show_in_group,
+          external_link_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            data.get("firefly_bill_id"),
+            data.get("worksheet_section"),
+            data.get("funding_bucket_key"),
+            data.get("amount_mode"),
+            data.get("planned_sync"),
+            payment_rail,
+            counts,
+            data.get("rule_id"),
+            data.get("row_label"),
+            data.get("credit_card_account_id"),
+            data.get("bill_group_id"),
+            show_in_group,
+            data.get("external_link_id"),
+        ),
+    )
+
+
+async def _insert_worksheet_account_link_conn(
+    db: aiosqlite.Connection,
+    account_id: str,
+    external_link_id: str,
+) -> None:
+    await db.execute(
+        """
+        INSERT INTO worksheet_account_links (account_id, external_link_id)
+        VALUES (?, ?)
+        """,
+        (account_id, external_link_id),
+    )
+
+
+async def _insert_discover_settings_conn(
+    db: aiosqlite.Connection,
+    *,
+    ignored_categories: list[str],
+    ignored_payees: list[str],
+) -> None:
+    await db.execute(
+        """
+        INSERT INTO discover_settings (id, ignored_categories_json, ignored_payees_json)
+        VALUES (1, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          ignored_categories_json = excluded.ignored_categories_json,
+          ignored_payees_json = excluded.ignored_payees_json
+        """,
+        (json.dumps(ignored_categories), json.dumps(ignored_payees)),
+    )
+
+
+async def import_durable_config_conn(
+    db: aiosqlite.Connection,
+    bundle: LanternConfigBundleV1,
+) -> None:
+    """Insert durable sidecar rows in dependency order (D-18). Caller owns txn/commit."""
+    for link in bundle.external_links:
+        await _insert_external_link_conn(
+            db, id=link.id, label=link.label, url=link.url
+        )
+
+    for bucket in bundle.funding_buckets:
+        await _insert_funding_bucket_conn(
+            db,
+            id=bucket.id,
+            label=bucket.label,
+            sort_order=bucket.sort_order,
+            firefly_account_ids=bucket.firefly_account_ids,
+            external_link_id=bucket.external_link_id,
+        )
+
+    for group in bundle.worksheet_bill_groups:
+        await _insert_bill_group_conn(
+            db, id=group.id, label=group.label, sort_order=group.sort_order
+        )
+
+    for row in bundle.worksheet_registry:
+        await _insert_worksheet_registry_conn(
+            db, row.model_dump(exclude_none=False)
+        )
+
+    for link in bundle.worksheet_account_links:
+        await _insert_worksheet_account_link_conn(
+            db, link.account_id, link.external_link_id
+        )
+
+    settings = bundle.discover_settings
+    await _insert_discover_settings_conn(
+        db,
+        ignored_categories=settings.ignored_categories,
+        ignored_payees=settings.ignored_payees,
+    )

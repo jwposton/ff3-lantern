@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+import aiosqlite
 import httpx
 import pytest
 
@@ -289,5 +290,51 @@ async def test_import_fk_missing_errors(data_dir):
     after_registry = await sidecar_db.list_worksheet_registry()
     assert after_buckets == before_buckets
     assert after_registry == before_registry
+
+
+@pytest.mark.asyncio
+async def test_import_atomic_rollback(data_dir, monkeypatch):
+    await sidecar_db.init_db()
+
+    bundle = LanternConfigBundleV1.model_validate(
+        _minimal_valid_bundle(
+            external_links=[
+                {
+                    "id": "chase",
+                    "label": "Chase",
+                    "url": "https://chase.example/login",
+                }
+            ],
+            funding_buckets=[
+                {
+                    "id": "checking",
+                    "label": "Checking",
+                    "sort_order": 0,
+                    "firefly_account_ids": [],
+                }
+            ],
+        )
+    )
+
+    original_insert_bucket = sidecar_db._insert_funding_bucket_conn
+
+    async def failing_insert_bucket(db, **kwargs):
+        await original_insert_bucket(db, **kwargs)
+        raise RuntimeError("simulated mid-import failure")
+
+    monkeypatch.setattr(
+        sidecar_db, "_insert_funding_bucket_conn", failing_insert_bucket
+    )
+
+    db_path = sidecar_db.get_db_path()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        with pytest.raises(RuntimeError, match="simulated mid-import failure"):
+            await sidecar_db.import_durable_config_conn(db, bundle)
+        await db.rollback()
+
+    counts = await sidecar_db.count_durable_rows()
+    assert counts["external_links"] == 0
+    assert counts["funding_buckets"] == 0
 
 
