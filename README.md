@@ -144,6 +144,80 @@ After the first publish, set each package to **Public** under GitHub → Package
 
 Ensure the repository has **Actions → Workflow permissions → Read and write packages** enabled for `GITHUB_TOKEN`.
 
+## Config export/import
+
+Lantern stores worksheet layout, portal links, bill discovery settings, and related account profiles in the SQLite sidecar (`ff3lantern.db` under `FF3LANTERN_DATA_PATH`). Export/import moves that durable configuration as a portable `lantern-config.v1` JSON bundle — worksheet registry and bill groups, funding buckets, external portal links, discover settings, and referenced account profiles. Ephemeral worksheet state (current-month refresh snapshots, AI suggestions, audit log) is not included.
+
+### Volume backup (primary recovery)
+
+Back up the sidecar file on a schedule alongside your Firefly database:
+
+```bash
+cp "${FF3LANTERN_DATA_PATH:-./data}/ff3lantern.db" /path/to/backups/ff3lantern-$(date +%F).db
+```
+
+If you bind-mount `FF3LANTERN_DATA_PATH` to the host, copying that file is the fastest full recovery path. Restore by stopping the stack, replacing `ff3lantern.db`, and starting again.
+
+### Periodic JSON export (complement)
+
+A periodic export gives you a human-readable snapshot you can diff, archive off-host, or restore onto a fresh sidecar. It does **not** replace volume backup — keep both.
+
+```bash
+# Write bundle to the sidecar volume (/data in the container)
+docker compose exec backend python scripts/export_lantern_config.py --output /data/lantern-config.json
+
+# Optional label recorded in the bundle header (e.g. hostname or environment)
+docker compose exec backend python scripts/export_lantern_config.py \
+  --output /data/lantern-config.json \
+  --label "debian-03-prod"
+```
+
+Store export files securely — they contain worksheet layout metadata and portal URLs (no Firefly API tokens).
+
+### Import (preview, then confirm)
+
+Import only writes into an **empty** durable sidecar (no existing worksheet layout, portal links, or discover settings). Validation checks the bundle against the **live** Firefly instance on the target — missing bill or account IDs block the write.
+
+**CLI** — preview prints a validation report to stdout; add `--confirm` to write after zero errors:
+
+```bash
+# Preview only (no writes)
+docker compose exec backend python scripts/import_lantern_config.py --input /data/lantern-config.json
+
+# Write after reviewing the preview report
+docker compose exec backend python scripts/import_lantern_config.py --input /data/lantern-config.json --confirm
+```
+
+**API** — same two-step flow via `confirm` on the request body:
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| `GET` | `/api/admin/config/export` | File download (`Content-Disposition: attachment`) |
+| `POST` | `/api/admin/config/import` | Body: bundle JSON + `"confirm": false` (preview) or `"confirm": true` (write) |
+
+Example preview (replace host/port with your deployment):
+
+```bash
+curl -sf -X POST http://localhost:18001/api/admin/config/import \
+  -H 'Content-Type: application/json' \
+  -d @lantern-config.json
+```
+
+Confirm write:
+
+```bash
+jq '. + {"confirm": true}' lantern-config.json | \
+  curl -sf -X POST http://localhost:18001/api/admin/config/import \
+    -H 'Content-Type: application/json' \
+    -d @-
+```
+
+### Trusted network (no in-app auth yet)
+
+Admin config routes are **not** gated by in-app authentication in this release — the same trusted-network assumption as the rest of the API when `FF3LANTERN_AUTH_MODE=none`. Do not expose `/api/admin/config/*` to the public internet. In-app auth and RBAC (Phase 33) will protect these routes without changing their paths.
+
+There is no in-app upload/download UI for config bundles in this release; use the CLI or API above.
+
 ## Upgrading from v1.x (FF3Analytics)
 
 v2.0.0 is a **breaking** rename to **FF3 Lantern**. Your Firefly ledger data is unchanged; update deployment config and images as follows.
