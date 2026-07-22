@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import httpx
 import sidecar_db
 from api_normalized_transactions import router as api_router
+from routes.admin_config import router as admin_config_router
 from routes.cache import router as cache_router
 from routes.categorize import router as categorize_router
 from routes.loans import router as loans_router
@@ -31,6 +32,7 @@ app.include_router(loans_router, prefix="/api")
 app.include_router(payment_run_router, prefix="/api")
 app.include_router(transactions_router, prefix="/api")
 app.include_router(cache_router, prefix="/api")
+app.include_router(admin_config_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

@@ -9,6 +9,7 @@ from pathlib import Path
 import aiosqlite
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
 import sidecar_db
 from firefly_client import FireflyClient
@@ -554,5 +555,39 @@ async def test_import_atomic_rollback(data_dir, monkeypatch):
     counts = await sidecar_db.count_durable_rows()
     assert counts["external_links"] == 0
     assert counts["funding_buckets"] == 0
+
+
+def test_api_export_download(data_dir, monkeypatch):
+    from main import app
+    import routes.admin_config as admin_config_mod
+
+    async def _seed():
+        await sidecar_db.insert_external_link_if_absent(
+            id="chase",
+            label="Chase",
+            url="https://chase.example/login",
+        )
+
+    import asyncio
+
+    asyncio.run(_seed())
+
+    mock_client = _build_validate_client(bill_ids=[], account_ids=[])
+    app.dependency_overrides[admin_config_mod.get_firefly_client] = (
+        lambda: mock_client
+    )
+    try:
+        client = TestClient(app)
+        response = client.get("/api/admin/config/export")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "attachment" in response.headers.get("content-disposition", "").lower()
+    assert "lantern-config-" in response.headers.get("content-disposition", "")
+    payload = response.json()
+    assert payload["schema"] == "lantern-config.v1"
+    assert len(payload["external_links"]) == 1
+    assert payload["external_links"][0]["id"] == "chase"
 
 
