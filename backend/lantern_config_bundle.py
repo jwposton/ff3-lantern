@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import sidecar_db
 from firefly_client import FireflyClient
+from payment_worksheet_bills import validate_portal_url
 from payment_worksheet_profiles import parse_payment_worksheet_from_notes
 
 EXPORT_TOOL_VERSION = "1"
@@ -223,6 +224,229 @@ async def export_bundle(
         bundle.model_dump(by_alias=True)
     )
     return validated.model_dump(by_alias=True, mode="json")
+
+
+def collect_firefly_references(bundle: dict[str, Any]) -> tuple[set[str], set[str]]:
+    bill_ids: set[str] = set()
+    account_ids: set[str] = set()
+    for row in bundle.get("worksheet_registry", []):
+        if not isinstance(row, dict):
+            continue
+        bill_id = row.get("firefly_bill_id")
+        if bill_id:
+            bill_ids.add(str(bill_id))
+        account_id = row.get("credit_card_account_id")
+        if account_id:
+            account_ids.add(str(account_id))
+    for bucket in bundle.get("funding_buckets", []):
+        if not isinstance(bucket, dict):
+            continue
+        for account_id in bucket.get("firefly_account_ids", []):
+            if account_id:
+                account_ids.add(str(account_id))
+    for link in bundle.get("worksheet_account_links", []):
+        if not isinstance(link, dict):
+            continue
+        account_id = link.get("account_id")
+        if account_id:
+            account_ids.add(str(account_id))
+    return bill_ids, account_ids
+
+
+def _bundle_section_names(bundle: dict[str, Any]) -> list[str]:
+    sections: list[str] = []
+    for key in (
+        "external_links",
+        "funding_buckets",
+        "worksheet_registry",
+        "worksheet_bill_groups",
+        "worksheet_account_links",
+        "discover_settings",
+        "account_profiles",
+    ):
+        value = bundle.get(key)
+        if key == "discover_settings":
+            if isinstance(value, dict) and value:
+                sections.append(key)
+        elif isinstance(value, list) and value:
+            sections.append(key)
+    return sections
+
+
+def _validation_summary(
+    errors: list[ValidationIssue],
+    warnings: list[ValidationIssue],
+    bundle: dict[str, Any],
+) -> ValidationSummary:
+    return ValidationSummary(
+        error_count=len(errors),
+        warning_count=len(warnings),
+        sections=_bundle_section_names(bundle),
+    )
+
+
+def _append_schema_errors(
+    errors: list[ValidationIssue], exc: Exception
+) -> None:
+    from pydantic import ValidationError
+
+    if isinstance(exc, ValidationError):
+        for issue in exc.errors():
+            loc = ".".join(str(part) for part in issue.get("loc", ()))
+            errors.append(
+                ValidationIssue(
+                    code="bundle_schema_invalid",
+                    message=issue.get("msg", "invalid bundle"),
+                    entity=loc or None,
+                )
+            )
+        return
+    errors.append(
+        ValidationIssue(
+            code="bundle_schema_invalid",
+            message=str(exc),
+        )
+    )
+
+
+async def validate_bundle(
+    bundle: dict[str, Any],
+    *,
+    client: FireflyClient,
+) -> ValidationReport:
+    errors: list[ValidationIssue] = []
+    warnings: list[ValidationIssue] = []
+
+    for key in scan_unknown_top_level_keys(bundle):
+        warnings.append(
+            ValidationIssue(
+                code="unknown_field",
+                message=f"Unknown top-level field: {key}",
+                entity=key,
+            )
+        )
+
+    parsed: LanternConfigBundleV1 | None = None
+    try:
+        parsed = LanternConfigBundleV1.model_validate(bundle)
+    except Exception as exc:
+        _append_schema_errors(errors, exc)
+        summary = _validation_summary(errors, warnings, bundle)
+        return ValidationReport(
+            valid=False,
+            errors=errors,
+            warnings=warnings,
+            summary=summary,
+        )
+
+    bundle_dict = parsed.model_dump(by_alias=True)
+
+    current_version = resolve_lantern_version()
+    bundle_version = bundle_dict.get("lantern_version")
+    if bundle_version and current_version and bundle_version != current_version:
+        warnings.append(
+            ValidationIssue(
+                code="schema_version_mismatch",
+                message=(
+                    f"Bundle lantern_version {bundle_version!r} differs from "
+                    f"current {current_version!r}"
+                ),
+            )
+        )
+
+    link_ids = {
+        str(link["id"])
+        for link in bundle_dict.get("external_links", [])
+        if isinstance(link, dict) and link.get("id")
+    }
+
+    for index, link in enumerate(bundle_dict.get("external_links", [])):
+        if not isinstance(link, dict):
+            continue
+        url = link.get("url")
+        if not isinstance(url, str):
+            continue
+        try:
+            validate_portal_url(url)
+        except ValueError as exc:
+            errors.append(
+                ValidationIssue(
+                    code="invalid_portal_url",
+                    message=str(exc),
+                    entity=f"external_links[{index}].url",
+                )
+            )
+
+    def _warn_orphaned_external_link(
+        external_link_id: str | None, entity: str
+    ) -> None:
+        if not external_link_id:
+            return
+        link_id = str(external_link_id)
+        if link_id not in link_ids:
+            warnings.append(
+                ValidationIssue(
+                    code="orphaned_external_link_id",
+                    message=f"external_link_id {link_id!r} not found in external_links",
+                    entity=entity,
+                )
+            )
+
+    for index, bucket in enumerate(bundle_dict.get("funding_buckets", [])):
+        if not isinstance(bucket, dict):
+            continue
+        _warn_orphaned_external_link(
+            bucket.get("external_link_id"),
+            f"funding_buckets[{index}].external_link_id",
+        )
+
+    for index, row in enumerate(bundle_dict.get("worksheet_registry", [])):
+        if not isinstance(row, dict):
+            continue
+        _warn_orphaned_external_link(
+            row.get("external_link_id"),
+            f"worksheet_registry[{index}].external_link_id",
+        )
+
+    for index, link in enumerate(bundle_dict.get("worksheet_account_links", [])):
+        if not isinstance(link, dict):
+            continue
+        _warn_orphaned_external_link(
+            link.get("external_link_id"),
+            f"worksheet_account_links[{index}].external_link_id",
+        )
+
+    bill_ids, account_ids = collect_firefly_references(bundle_dict)
+    live_bills = {str(bill["id"]) for bill in await client.fetch_bills()}
+    live_accounts = set((await client.fetch_accounts()).keys())
+
+    for bill_id in sorted(bill_ids - live_bills):
+        errors.append(
+            ValidationIssue(
+                code="firefly_bill_missing",
+                message=f"Firefly bill not found: {bill_id}",
+                entity="worksheet_registry",
+                firefly_id=bill_id,
+            )
+        )
+
+    for account_id in sorted(account_ids - live_accounts):
+        errors.append(
+            ValidationIssue(
+                code="firefly_account_missing",
+                message=f"Firefly account not found: {account_id}",
+                entity="funding_buckets",
+                firefly_id=account_id,
+            )
+        )
+
+    summary = _validation_summary(errors, warnings, bundle_dict)
+    return ValidationReport(
+        valid=not errors,
+        errors=errors,
+        warnings=warnings,
+        summary=summary,
+    )
 
 
 def write_bundle_json_schema(path: Path | None = None) -> Path:
