@@ -10,9 +10,9 @@ from pydantic import BaseModel
 from decimal import Decimal
 
 from firefly_client import FireflyClient
+import profile_store
 from loan_matcher import amount_outside_tolerance
 from loan_profile_validate import validate_profile
-from loan_profiles import parse_loan_profile_from_notes, write_loan_profile
 from loan_splits import apply_loan_split, apply_penny_adjust_to_amounts
 from loan_split_infer import (
     infer_loan_profile,
@@ -104,7 +104,7 @@ async def get_loans(client: FireflyClient = Depends(get_firefly_client)):
             acct = await client.fetch_account(aid)
             attrs = acct.get("attributes", {})
             notes = attrs.get("notes") or ""
-            profile = parse_loan_profile_from_notes(notes)
+            profile = await profile_store.get_loan_profile(aid, notes)
             rows.append(_account_row(aid, attrs, profile))
     except Exception as exc:
         raise HTTPException(
@@ -169,7 +169,7 @@ async def get_loan(
     if not _is_liability_account(attrs):
         raise HTTPException(status_code=404, detail="Account is not a liability.")
     notes = attrs.get("notes") or ""
-    profile = parse_loan_profile_from_notes(notes)
+    profile = await profile_store.get_loan_profile(account_id, notes)
     start, end = bill_history_date_window()
     suggested_profile = profile
     inference_available = False
@@ -230,7 +230,7 @@ async def get_inferred_loan_profile(
     if inferred is None:
         return {"profile": None}
     notes = attrs.get("notes") or ""
-    existing = parse_loan_profile_from_notes(notes)
+    existing = await profile_store.get_loan_profile(account_id, notes)
     return {"profile": merge_inferred_profile(existing, inferred)}
 
 
@@ -272,7 +272,9 @@ async def put_loan(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
-        await write_loan_profile(client, account_id, validated)
+        await profile_store.save_loan_profile(
+            client, account_id, validated, accounts_by_id=accounts
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=502,

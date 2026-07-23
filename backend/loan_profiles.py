@@ -92,6 +92,7 @@ async def read_loan_profile(client: FireflyClient, account_id: str) -> dict | No
 async def write_loan_profile(
     client: FireflyClient, account_id: str, profile: dict
 ) -> dict:
+    """Deprecated for route persistence — use profile_store.save_loan_profile (Phase 32)."""
     account = await client.fetch_account(account_id)
     attrs = account.get("attributes", {})
     existing_notes = attrs.get("notes") or ""

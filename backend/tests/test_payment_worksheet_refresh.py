@@ -34,6 +34,7 @@ LOAN_PROFILE = {
                 "role": "principal",
                 "type": "transfer",
                 "destination_account_id": "42",
+                "destination_account": "Mortgage",
             },
         ],
     },
@@ -386,6 +387,31 @@ async def test_refresh_snapshots_profile_fields(data_dir, payment_worksheet_env)
     assert cc["name"] == "Chase VISA"
     assert cc["credit_limit"] == "10000.00"
     assert cc["funding_bucket_key"] == "checking"
+
+
+@pytest.mark.asyncio
+async def test_refresh_uses_sidecar_profile_when_row_exists(
+    data_dir, payment_worksheet_env
+):
+    fixture = _fixture()
+    await sidecar_db.upsert_cc_worksheet_profile(
+        "3",
+        {
+            "included": True,
+            "funding_bucket_key": "checking",
+            "credit_limit": "7500.00",
+            "apr_percent": "4.99",
+        },
+    )
+    client = _build_client(fixture)
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+
+    await run_refresh(client, month)
+
+    balances = json.loads((await sidecar_db.get_worksheet_refresh(month))["balances_json"])
+    cc = balances["credit_cards"]["3"]
+    assert cc["credit_limit"] == "7500.00"
+    assert cc["apr_percent"] == "4.99"
 
 
 @pytest.mark.asyncio

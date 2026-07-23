@@ -6,6 +6,7 @@ import copy
 import json
 
 import httpx
+import sidecar_db
 
 from loan_profiles import LOAN_PROFILE_MARKER, serialize_loan_profile_to_notes
 from tests.test_firefly_write import SAMPLE_PROFILE
@@ -70,7 +71,11 @@ def _accounts_payload():
     }
 
 
-def test_get_loans_list(client, firefly_env):
+def test_get_loans_list(client, firefly_env, tmp_path, monkeypatch):
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    import asyncio
+
+    asyncio.run(sidecar_db.init_db())
     from main import app
     from routes import loans as loans_mod
 
@@ -108,7 +113,11 @@ def test_get_loans_list(client, firefly_env):
         app.dependency_overrides.clear()
 
 
-def test_put_loan_profile_roundtrip(client, firefly_env):
+def test_put_loan_profile_roundtrip(client, firefly_env, tmp_path, monkeypatch):
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    import asyncio
+
+    asyncio.run(sidecar_db.init_db())
     from main import app
     from routes import loans as loans_mod
 
@@ -156,8 +165,10 @@ def test_put_loan_profile_roundtrip(client, firefly_env):
         response = client.put("/api/loans/42", json=FULL_PROFILE)
         assert response.status_code == 200
         assert response.json()["ok"] is True
-        assert len(put_bodies) == 1
-        assert LOAN_PROFILE_MARKER in put_bodies[0]["notes"]
+        stored = asyncio.run(sidecar_db.get_loan_profile("42"))
+        assert stored is not None
+        assert stored["match"]["expected_amount"] == FULL_PROFILE["match"]["expected_amount"]
+        assert len(put_bodies) == 0
     finally:
         app.dependency_overrides.clear()
 

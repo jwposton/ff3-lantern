@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import httpx
 import pytest
+import sidecar_db
 from fastapi.testclient import TestClient
 
 from firefly_client import FireflyClient
@@ -112,8 +113,12 @@ def test_merge_included_false_not_treated_as_clear():
     assert merged["included"] is False
 
 
-def test_put_worksheet_writes_marker_to_firefly(monkeypatch, client, firefly_env):
+def test_put_worksheet_writes_marker_to_firefly(monkeypatch, client, firefly_env, tmp_path):
     monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    import asyncio
+
+    asyncio.run(sidecar_db.init_db())
     put_bodies: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -162,12 +167,11 @@ def test_put_worksheet_writes_marker_to_firefly(monkeypatch, client, firefly_env
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert len(put_bodies) == 1
-    notes = put_bodies[0].get("notes", "")
-    assert PAYMENT_WORKSHEET_MARKER in notes
-    parsed = parse_payment_worksheet_from_notes(notes)
-    assert parsed["funding_bucket_key"] == "checking"
-    assert parsed["credit_limit"] == "5000.00"
+    stored = asyncio.run(sidecar_db.get_cc_worksheet_profile("cc1"))
+    assert stored is not None
+    assert stored["funding_bucket_key"] == "checking"
+    assert stored["credit_limit"] == "5000.00"
+    assert len(put_bodies) == 0
 
 
 @pytest.mark.asyncio

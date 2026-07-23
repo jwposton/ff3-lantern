@@ -286,9 +286,10 @@ def test_put_worksheet_ccasset_account_sanitizes_firefly_body(
             json={"credit_limit": "15000.00", "funding_bucket_key": "checking"},
         )
         assert put_response.status_code == 200
-        assert put_bodies
-        assert put_bodies[0]["credit_card_type"] == "monthlyFull"
-        assert "liability_type" not in put_bodies[0]
+        stored = asyncio.run(sidecar_db.get_cc_worksheet_profile("cc9"))
+        assert stored is not None
+        assert stored["credit_limit"] == "15000.00"
+        assert stored["funding_bucket_key"] == "checking"
 
         get_response = client.get("/api/payment-run", params={"month": month})
         cards = get_response.json()["credit_cards"]
@@ -448,12 +449,9 @@ def test_put_worksheet_clears_bucket_unassign(
         assert after_unassign.status_code == 200
         assert after_unassign.json()["credit_cards"][0]["funding_bucket_key"] is None
 
-        assert len(put_bodies) == 2
-        last_notes = put_bodies[-1].get("notes", "")
-        assert PAYMENT_WORKSHEET_MARKER in last_notes
-        parsed = parse_payment_worksheet_from_notes(last_notes)
-        assert parsed is not None
-        assert "funding_bucket_key" not in parsed
+        stored = asyncio.run(sidecar_db.get_cc_worksheet_profile("cc1"))
+        assert stored is not None
+        assert "funding_bucket_key" not in stored
     finally:
         app.dependency_overrides.clear()
 
@@ -1976,6 +1974,7 @@ def test_liability_history(monkeypatch, client, data_dir, payment_worksheet_env)
                     "role": "principal",
                     "type": "transfer",
                     "destination_account_id": "42",
+                    "destination_account": "Mortgage",
                 },
             ],
         },
@@ -3641,12 +3640,11 @@ def test_put_worksheet_promo_full_bundle(
             },
         )
         assert response.status_code == 200
-        notes = put_bodies[-1].get("notes", "")
-        assert PAYMENT_WORKSHEET_MARKER in notes
-        parsed = parse_payment_worksheet_from_notes(notes)
-        assert parsed["special_apr_percent"] == "0.00"
-        assert parsed["special_apr_start"] == "2026-07-01"
-        assert parsed["special_apr_end"] == "2026-09-30"
+        stored = asyncio.run(sidecar_db.get_cc_worksheet_profile("cc1"))
+        assert stored is not None
+        assert stored["special_apr_percent"] == "0.00"
+        assert stored["special_apr_start"] == "2026-07-01"
+        assert stored["special_apr_end"] == "2026-09-30"
 
         row = asyncio.run(sidecar_db.get_worksheet_refresh(month))
         snapshot = json.loads(row["balances_json"])["credit_cards"]["cc1"]
@@ -3755,10 +3753,11 @@ def test_put_worksheet_promo_clear_all_null(
             },
         )
         assert clear.status_code == 200
-        parsed = parse_payment_worksheet_from_notes(put_bodies[-1].get("notes", ""))
-        assert "special_apr_percent" not in parsed
-        assert "special_apr_start" not in parsed
-        assert "special_apr_end" not in parsed
+        stored = asyncio.run(sidecar_db.get_cc_worksheet_profile("cc1"))
+        assert stored is not None
+        assert "special_apr_percent" not in stored
+        assert "special_apr_start" not in stored
+        assert "special_apr_end" not in stored
 
         row = asyncio.run(sidecar_db.get_worksheet_refresh(month))
         snapshot = json.loads(row["balances_json"])["credit_cards"]["cc1"]
@@ -4287,9 +4286,6 @@ def test_account_worksheet_put_external_link_id(
         assert attach.status_code == 200
         body = attach.json()
         assert body["external_link_id"] == "chase-login"
-        notes = put_bodies[-1].get("notes", "")
-        parsed = parse_payment_worksheet_from_notes(notes)
-        assert "external_link_id" not in parsed
 
         link_row = asyncio.run(sidecar_db.get_worksheet_account_link("cc1"))
         assert link_row is not None

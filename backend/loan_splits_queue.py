@@ -9,7 +9,6 @@ from typing import Any
 from amortization import balance_for_interest_calc, compute_payment_split
 from firefly_client import FireflyClient
 from loan_matcher import amount_outside_tolerance, find_matching_profile
-from loan_profiles import parse_loan_profile_from_notes
 from loan_split_infer import infer_loan_profile, merge_inferred_profile
 
 
@@ -43,6 +42,8 @@ def _annual_rate(profile: dict[str, Any], liability_attrs: dict[str, Any]) -> De
 
 
 async def load_enabled_loan_profiles(client: FireflyClient) -> list[dict[str, Any]]:
+    import profile_store
+
     accounts = await client.fetch_accounts()
     profiles: list[dict[str, Any]] = []
     for aid, summary in accounts.items():
@@ -50,7 +51,9 @@ async def load_enabled_loan_profiles(client: FireflyClient) -> list[dict[str, An
             continue
         acct = await client.fetch_account(aid)
         attrs = acct.get("attributes", {})
-        profile = parse_loan_profile_from_notes(attrs.get("notes") or "")
+        profile = await profile_store.get_loan_profile(
+            aid, attrs.get("notes") or ""
+        )
         if profile and profile.get("enabled"):
             enriched = dict(profile)
             enriched["_account_id"] = aid

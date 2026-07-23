@@ -12,6 +12,7 @@ from typing import Any
 
 import app_clock
 import firefly_reference_cache
+import profile_store
 from firefly_client import firefly_public_base_url
 import sidecar_db
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,14 +22,10 @@ from firefly_client import FireflyClient
 from payment_worksheet_promo import validate_promo_bundle
 from payment_worksheet_profiles import (
     current_month_key,
-    effective_profile_from_notes,
     is_credit_card_asset,
     is_funding_bucket_eligible_summary,
-    merge_payment_worksheet_profile,
-    parse_payment_worksheet_from_notes,
     patch_worksheet_refresh_liability_profile,
     patch_worksheet_refresh_profile,
-    write_payment_worksheet_profile,
 )
 from payment_worksheet_bill_suggestions import (
     LOOKBACK_CHOICES,
@@ -57,7 +54,6 @@ from payment_worksheet_bills import (
     _validate_external_link_exists,
 )
 from loan_journal_splits import count_liability_anchor_journals
-from loan_profiles import parse_loan_profile_from_notes
 from loan_split_infer import infer_loan_profile, merge_inferred_profile
 from payment_worksheet_bill_forecast import compute_intermittent_bill_forecast
 from payment_worksheet_bill_history import (
@@ -888,8 +884,6 @@ async def update_account_worksheet(
             status_code=422,
             detail="Account must be an asset credit card or liability account.",
         )
-    existing_notes = attrs.get("notes") or ""
-    existing_profile = parse_payment_worksheet_from_notes(existing_notes)
     updates = body.model_dump(exclude_unset=True)
     profile_updates = {
         key: value for key, value in updates.items() if key in _PROFILE_FIELD_KEYS
@@ -936,16 +930,17 @@ async def update_account_worksheet(
             )
         profile_updates["special_apr_start"] = start_raw
         profile_updates["special_apr_end"] = end_raw
-    merged = merge_payment_worksheet_profile(existing_profile, profile_updates)
     try:
-        await write_payment_worksheet_profile(
+        merged = await profile_store.save_cc_worksheet_profile(
             client,
             account_id,
-            merged,
-            None,
+            attrs,
+            profile_updates,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if is_credit_card_asset(attrs):
         await patch_worksheet_refresh_profile(
             target_month, account_id, merged, profile_updates
@@ -1343,7 +1338,9 @@ async def _require_worksheet_credit_card(
     attrs = account.get("attributes", {})
     if not is_credit_card_asset(attrs):
         raise HTTPException(status_code=404, detail="Credit card not found.")
-    profile = effective_profile_from_notes(attrs.get("notes") or "")
+    profile = await profile_store.get_cc_worksheet_profile(
+        account_id, attrs.get("notes") or ""
+    )
     if profile.get("included") is False:
         raise HTTPException(
             status_code=404,
@@ -1362,13 +1359,16 @@ async def _require_worksheet_liability(
     attrs = account.get("attributes", {})
     if not is_liability_account(attrs):
         raise HTTPException(status_code=404, detail="Liability account not found.")
-    worksheet_profile = effective_profile_from_notes(attrs.get("notes") or "")
+    notes = attrs.get("notes") or ""
+    worksheet_profile = await profile_store.get_liability_worksheet_profile(
+        account_id, notes
+    )
     if worksheet_profile.get("included") is False:
         raise HTTPException(
             status_code=404,
             detail="Liability account is excluded from the payment worksheet.",
         )
-    loan_profile = parse_loan_profile_from_notes(attrs.get("notes") or "")
+    loan_profile = await profile_store.get_loan_profile(account_id, notes)
     return account, worksheet_profile, loan_profile, attrs
 
 

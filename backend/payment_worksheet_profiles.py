@@ -312,6 +312,7 @@ async def write_payment_worksheet_profile(
     profile: dict[str, Any],
     account_updates: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Deprecated for route persistence — use profile_store.save_cc_worksheet_profile (Phase 32)."""
     account = await client.fetch_account(account_id)
     attrs = account.get("attributes", {})
     existing_notes = attrs.get("notes") or ""

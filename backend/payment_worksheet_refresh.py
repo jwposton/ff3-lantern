@@ -10,9 +10,9 @@ from decimal import Decimal
 from typing import Any
 
 import app_clock
+import profile_store
 import sidecar_db
 from firefly_client import FireflyClient
-from loan_profiles import parse_loan_profile_from_notes
 from payment_worksheet_bills import (
     compute_bill_owed_from_firefly,
     compute_bill_owed_from_linked_payments,
@@ -39,7 +39,6 @@ from payment_worksheet_liabilities import (
 from payment_worksheet_profiles import (
     _due_day_from_monthly_payment_date,
     current_month_key,
-    effective_profile_from_notes,
 )
 
 DEFAULT_INTEREST_CATEGORIES = "Credit Card Interest"
@@ -323,7 +322,7 @@ async def run_refresh(
     for account_id, account in cc_accounts:
         attrs = account.get("attributes", {})
         notes = attrs.get("notes") or ""
-        profile = effective_profile_from_notes(notes)
+        profile = await profile_store.get_cc_worksheet_profile(account_id, notes)
         if profile.get("included") is False:
             excluded_credit_cards[account_id] = {"name": attrs.get("name")}
             continue
@@ -376,13 +375,15 @@ async def run_refresh(
     for account_id, account in liability_accounts:
         attrs = account.get("attributes", {})
         notes = attrs.get("notes") or ""
-        worksheet_profile = effective_profile_from_notes(notes)
+        worksheet_profile = await profile_store.get_liability_worksheet_profile(
+            account_id, notes
+        )
         if worksheet_profile.get("included") is False:
             excluded_liabilities[account_id] = {"name": attrs.get("name")}
             continue
 
         owed = abs(_decimal_amount(attrs.get("current_balance")))
-        loan_profile = parse_loan_profile_from_notes(notes)
+        loan_profile = await profile_store.get_loan_profile(account_id, notes)
         split = (loan_profile or {}).get("split") or {}
         escrow_amount = _decimal_amount(split.get("escrow_amount"))
         has_escrow = escrow_amount > 0 or any(
