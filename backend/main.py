@@ -4,8 +4,10 @@ import os
 from contextlib import asynccontextmanager
 
 import httpx
+import profile_migration
 import sidecar_db
 from api_normalized_transactions import router as api_router
+from firefly_client import FireflyClient
 from routes.admin_config import router as admin_config_router
 from routes.cache import router as cache_router
 from routes.categorize import router as categorize_router
@@ -22,6 +24,17 @@ from pydantic import BaseModel
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await sidecar_db.init_db()
+    if _is_set("FIREFLY_BASE_URL") and _is_set("FIREFLY_API_TOKEN"):
+        try:
+            client = FireflyClient()
+            await profile_migration.maybe_run_on_boot(client)
+        except Exception:
+            logger.warning(
+                "Profile migration on boot skipped — Firefly unavailable",
+                exc_info=True,
+            )
+    else:
+        logger.info("Profile migration on boot skipped — Firefly not configured")
     yield
 
 
