@@ -1604,6 +1604,127 @@ async def _insert_discover_settings_conn(
     )
 
 
+async def _insert_cc_worksheet_profile_conn(
+    db: aiosqlite.Connection,
+    account_id: str,
+    profile: dict[str, Any],
+) -> None:
+    included = 1 if profile.get("included", True) else 0
+    await db.execute(
+        """
+        INSERT INTO cc_worksheet_profiles (
+          firefly_account_id, included, funding_bucket_key, credit_limit,
+          default_planned_payment, apr_percent, special_apr_percent,
+          special_apr_start, special_apr_end, payment_due_day, sort_order,
+          migrated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            account_id,
+            included,
+            profile.get("funding_bucket_key"),
+            profile.get("credit_limit"),
+            profile.get("default_planned_payment"),
+            profile.get("apr_percent"),
+            profile.get("special_apr_percent"),
+            profile.get("special_apr_start"),
+            profile.get("special_apr_end"),
+            profile.get("payment_due_day"),
+            profile.get("sort_order"),
+            profile.get("migrated_at"),
+        ),
+    )
+
+
+async def _insert_liability_worksheet_profile_conn(
+    db: aiosqlite.Connection,
+    account_id: str,
+    profile: dict[str, Any],
+) -> None:
+    included = 1 if profile.get("included", True) else 0
+    await db.execute(
+        """
+        INSERT INTO liability_worksheet_profiles (
+          firefly_account_id, included, funding_bucket_key,
+          default_planned_payment, migrated_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            account_id,
+            included,
+            profile.get("funding_bucket_key"),
+            profile.get("default_planned_payment"),
+            profile.get("migrated_at"),
+        ),
+    )
+
+
+async def _insert_loan_profile_conn(
+    db: aiosqlite.Connection,
+    account_id: str,
+    profile: dict[str, Any],
+) -> None:
+    match = profile.get("match") or {}
+    split = profile.get("split") or {}
+    components = split.get("components") or []
+    enabled = 1 if profile.get("enabled", True) else 0
+    await db.execute(
+        """
+        INSERT INTO loan_profiles (
+          firefly_account_id, version, enabled, match_type,
+          match_description_contains, match_expected_amount,
+          match_amount_tolerance, match_source_account_id,
+          match_source_account, match_import_destination_account_id,
+          match_import_destination_account, match_max_per_month,
+          split_escrow_amount, split_budget, rate_override, profile_notes,
+          migrated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            account_id,
+            profile.get("version", 1),
+            enabled,
+            match.get("type", "transfer"),
+            match.get("description_contains", ""),
+            match.get("expected_amount", "0.00"),
+            match.get("amount_tolerance", "0.50"),
+            match.get("source_account_id"),
+            match.get("source_account"),
+            match.get("import_destination_account_id"),
+            match.get("import_destination_account"),
+            match.get("max_per_month"),
+            split.get("escrow_amount", "0.00"),
+            split.get("budget"),
+            profile.get("rate_override"),
+            profile.get("notes"),
+            profile.get("migrated_at"),
+        ),
+    )
+    for index, comp in enumerate(components):
+        await db.execute(
+            """
+            INSERT INTO loan_profile_split_components (
+              firefly_account_id, component_index, role, type,
+              destination_account_id, destination_account, category, budget
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                account_id,
+                index,
+                comp.get("role"),
+                comp.get("type"),
+                comp.get("destination_account_id"),
+                comp.get("destination_account"),
+                comp.get("category"),
+                comp.get("budget"),
+            ),
+        )
+
+
 async def import_durable_config_conn(
     db: aiosqlite.Connection,
     bundle: LanternConfigBundleV1,
@@ -1645,6 +1766,19 @@ async def import_durable_config_conn(
         ignored_categories=settings.ignored_categories,
         ignored_payees=settings.ignored_payees,
     )
+
+    for row in bundle.account_profiles:
+        if row.profile_kind == "cc_worksheet":
+            await _insert_cc_worksheet_profile_conn(
+                db, row.firefly_account_id, row.profile
+            )
+        else:
+            await _insert_liability_worksheet_profile_conn(
+                db, row.firefly_account_id, row.profile
+            )
+
+    for row in bundle.loan_profiles:
+        await _insert_loan_profile_conn(db, row.firefly_account_id, row.profile)
 
 
 def _row_to_cc_worksheet_profile(row: aiosqlite.Row) -> dict[str, Any]:
@@ -1766,7 +1900,13 @@ async def list_cc_worksheet_profiles() -> list[dict[str, Any]]:
             """
         )
         rows = await cursor.fetchall()
-        return [_row_to_cc_worksheet_profile(row) for row in rows]
+        return [
+            {
+                "firefly_account_id": row["firefly_account_id"],
+                "profile": _row_to_cc_worksheet_profile(row),
+            }
+            for row in rows
+        ]
 
 
 async def upsert_cc_worksheet_profile(
@@ -1859,7 +1999,13 @@ async def list_liability_worksheet_profiles() -> list[dict[str, Any]]:
             """
         )
         rows = await cursor.fetchall()
-        return [_row_to_liability_worksheet_profile(row) for row in rows]
+        return [
+            {
+                "firefly_account_id": row["firefly_account_id"],
+                "profile": _row_to_liability_worksheet_profile(row),
+            }
+            for row in rows
+        ]
 
 
 async def upsert_liability_worksheet_profile(
@@ -1958,7 +2104,9 @@ async def list_loan_profiles() -> list[dict[str, Any]]:
     for account_id in account_ids:
         profile = await get_loan_profile(account_id)
         if profile is not None:
-            profiles.append(profile)
+            profiles.append(
+                {"firefly_account_id": account_id, "profile": profile}
+            )
     return profiles
 
 

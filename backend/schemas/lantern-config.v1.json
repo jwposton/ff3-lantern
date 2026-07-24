@@ -6,6 +6,14 @@
           "title": "Firefly Account Id",
           "type": "string"
         },
+        "profile_kind": {
+          "enum": [
+            "cc_worksheet",
+            "liability_worksheet"
+          ],
+          "title": "Profile Kind",
+          "type": "string"
+        },
         "profile": {
           "additionalProperties": true,
           "title": "Profile",
@@ -14,6 +22,7 @@
       },
       "required": [
         "firefly_account_id",
+        "profile_kind",
         "profile"
       ],
       "title": "AccountProfileRow",
@@ -126,6 +135,25 @@
         "firefly_account_ids"
       ],
       "title": "FundingBucketRow",
+      "type": "object"
+    },
+    "LoanProfileBundleRow": {
+      "properties": {
+        "firefly_account_id": {
+          "title": "Firefly Account Id",
+          "type": "string"
+        },
+        "profile": {
+          "additionalProperties": true,
+          "title": "Profile",
+          "type": "object"
+        }
+      },
+      "required": [
+        "firefly_account_id",
+        "profile"
+      ],
+      "title": "LoanProfileBundleRow",
       "type": "object"
     },
     "WorksheetAccountLinkRow": {
@@ -378,6 +406,13 @@
         "$ref": "#/$defs/AccountProfileRow"
       },
       "title": "Account Profiles",
+      "type": "array"
+    },
+    "loan_profiles": {
+      "items": {
+        "$ref": "#/$defs/LoanProfileBundleRow"
+      },
+      "title": "Loan Profiles",
       "type": "array"
     }
   },

@@ -13,11 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import sidecar_db
 from firefly_client import FireflyClient
+from loan_profile_validate import validate_profile
 from payment_worksheet_bills import validate_portal_url
-from payment_worksheet_profiles import (
-    parse_payment_worksheet_from_notes,
-    write_payment_worksheet_profile,
-)
 
 EXPORT_TOOL_VERSION = "1"
 
@@ -38,6 +35,7 @@ KNOWN_BUNDLE_TOP_LEVEL_KEYS = frozenset(
         "worksheet_account_links",
         "discover_settings",
         "account_profiles",
+        "loan_profiles",
     }
 )
 
@@ -90,6 +88,12 @@ class DiscoverSettingsRow(BaseModel):
 
 class AccountProfileRow(BaseModel):
     firefly_account_id: str
+    profile_kind: Literal["cc_worksheet", "liability_worksheet"]
+    profile: dict[str, Any]
+
+
+class LoanProfileBundleRow(BaseModel):
+    firefly_account_id: str
     profile: dict[str, Any]
 
 
@@ -108,6 +112,7 @@ class LanternConfigBundleV1(BaseModel):
     worksheet_account_links: list[WorksheetAccountLinkRow] = Field(default_factory=list)
     discover_settings: DiscoverSettingsRow = Field(default_factory=DiscoverSettingsRow)
     account_profiles: list[AccountProfileRow] = Field(default_factory=list)
+    loan_profiles: list[LoanProfileBundleRow] = Field(default_factory=list)
 
 
 class ValidationIssue(BaseModel):
@@ -175,6 +180,46 @@ def collect_referenced_account_ids(bundle_sections: dict[str, Any]) -> set[str]:
     return account_ids
 
 
+async def _collect_account_profiles_for_export() -> list[AccountProfileRow]:
+    rows: list[AccountProfileRow] = []
+    for item in await sidecar_db.list_cc_worksheet_profiles():
+        profile = dict(item["profile"])
+        profile.pop("migrated_at", None)
+        rows.append(
+            AccountProfileRow(
+                firefly_account_id=item["firefly_account_id"],
+                profile_kind="cc_worksheet",
+                profile=profile,
+            )
+        )
+    for item in await sidecar_db.list_liability_worksheet_profiles():
+        profile = dict(item["profile"])
+        profile.pop("migrated_at", None)
+        rows.append(
+            AccountProfileRow(
+                firefly_account_id=item["firefly_account_id"],
+                profile_kind="liability_worksheet",
+                profile=profile,
+            )
+        )
+    rows.sort(key=lambda row: row.firefly_account_id)
+    return rows
+
+
+async def _collect_loan_profiles_for_export() -> list[LoanProfileBundleRow]:
+    rows: list[LoanProfileBundleRow] = []
+    for item in await sidecar_db.list_loan_profiles():
+        profile = dict(item["profile"])
+        profile.pop("migrated_at", None)
+        rows.append(
+            LoanProfileBundleRow(
+                firefly_account_id=item["firefly_account_id"],
+                profile=profile,
+            )
+        )
+    return rows
+
+
 async def export_bundle(
     *,
     source_instance: str | None = None,
@@ -189,26 +234,8 @@ async def export_bundle(
     worksheet_bill_groups = await sidecar_db.list_bill_groups()
     worksheet_account_links = await sidecar_db.list_worksheet_account_links()
     discover_settings = await sidecar_db.get_discover_settings()
-
-    section_snapshot = {
-        "funding_buckets": funding_buckets,
-        "worksheet_registry": worksheet_registry,
-        "worksheet_account_links": worksheet_account_links,
-    }
-    referenced_ids = collect_referenced_account_ids(section_snapshot)
-
-    account_profiles: list[dict[str, Any]] = []
-    for account_id in sorted(referenced_ids):
-        account = await client.fetch_account(account_id)
-        notes = (account.get("attributes") or {}).get("notes") or ""
-        profile = parse_payment_worksheet_from_notes(notes)
-        if profile is not None:
-            account_profiles.append(
-                {
-                    "firefly_account_id": account_id,
-                    "profile": profile,
-                }
-            )
+    account_profiles = await _collect_account_profiles_for_export()
+    loan_profiles = await _collect_loan_profiles_for_export()
 
     bundle = LanternConfigBundleV1(
         schema_="lantern-config.v1",
@@ -223,6 +250,7 @@ async def export_bundle(
         worksheet_account_links=worksheet_account_links,
         discover_settings=discover_settings,
         account_profiles=account_profiles,
+        loan_profiles=loan_profiles,
     )
     validated = LanternConfigBundleV1.model_validate(
         bundle.model_dump(by_alias=True)
@@ -267,6 +295,7 @@ def _bundle_section_names(bundle: dict[str, Any]) -> list[str]:
         "worksheet_account_links",
         "discover_settings",
         "account_profiles",
+        "loan_profiles",
     ):
         value = bundle.get(key)
         if key == "discover_settings":
@@ -506,6 +535,24 @@ async def import_bundle(
         return report
 
     parsed = LanternConfigBundleV1.model_validate(payload)
+    accounts_by_id = await client.fetch_accounts()
+    for row in parsed.loan_profiles:
+        try:
+            validate_profile(row.profile, accounts_by_id)
+        except ValueError as exc:
+            report.errors.append(
+                ValidationIssue(
+                    code="loan_profile_invalid",
+                    message=str(exc),
+                    entity="loan_profiles",
+                    firefly_id=row.firefly_account_id,
+                )
+            )
+    if report.errors:
+        report.valid = False
+        report.summary = _validation_summary(report.errors, report.warnings, payload)
+        return report
+
     await sidecar_db.init_db()
     db_path = sidecar_db.get_db_path()
     try:
@@ -537,27 +584,6 @@ async def import_bundle(
         report.valid = False
         report.summary = _validation_summary(report.errors, report.warnings, payload)
         return report
-
-    profile_failures: list[ValidationIssue] = []
-    for row in parsed.account_profiles:
-        try:
-            await write_payment_worksheet_profile(
-                client, row.firefly_account_id, row.profile
-            )
-        except Exception as exc:
-            profile_failures.append(
-                ValidationIssue(
-                    code="account_profile_write_failed",
-                    message=str(exc),
-                    entity="account_profiles",
-                    firefly_id=row.firefly_account_id,
-                )
-            )
-
-    if profile_failures:
-        report.errors.extend(profile_failures)
-        report.valid = False
-        report.summary = _validation_summary(report.errors, report.warnings, payload)
 
     return report
 
