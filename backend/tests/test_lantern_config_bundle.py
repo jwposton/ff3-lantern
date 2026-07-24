@@ -21,10 +21,6 @@ from lantern_config_bundle import (
     validate_bundle,
     write_bundle_json_schema,
 )
-from payment_worksheet_profiles import (
-    PAYMENT_WORKSHEET_MARKER,
-    serialize_payment_worksheet_to_notes,
-)
 
 _SCHEMA_FILE = Path(__file__).resolve().parent.parent / "schemas" / "lantern-config.v1.json"
 
@@ -35,30 +31,8 @@ def data_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
-def _profile_notes(profile: dict) -> str:
-    return serialize_payment_worksheet_to_notes(profile, "")
-
-
-def _build_export_client(*, account_notes: dict[str, str] | None = None) -> FireflyClient:
-    notes_by_id = account_notes or {}
-
+def _build_export_client() -> FireflyClient:
     def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if request.method == "GET" and path.startswith("/api/v1/accounts/"):
-            account_id = path.rsplit("/", 1)[-1]
-            return httpx.Response(
-                200,
-                json={
-                    "data": {
-                        "type": "accounts",
-                        "id": account_id,
-                        "attributes": {
-                            "name": f"Account {account_id}",
-                            "notes": notes_by_id.get(account_id, ""),
-                        },
-                    }
-                },
-            )
         return httpx.Response(404)
 
     return FireflyClient(
@@ -83,6 +57,7 @@ def test_bundle_schema_valid():
             "ignored_payees": [],
         },
         "account_profiles": [],
+        "loan_profiles": [],
     }
     parsed = LanternConfigBundleV1.model_validate(minimal)
     assert parsed.schema_ == "lantern-config.v1"
@@ -139,13 +114,8 @@ async def test_export_round_trip(data_dir):
     )
 
     profile = {"included": True, "worksheet_section": "credit", "sort_order": 1}
-    client = _build_export_client(
-        account_notes={
-            "1": _profile_notes(profile),
-            "2": "",
-            "3": "",
-        }
-    )
+    await sidecar_db.upsert_cc_worksheet_profile("1", profile)
+    client = _build_export_client()
 
     exported = await export_bundle(source_instance="lab", client=client)
 
@@ -164,10 +134,11 @@ async def test_export_round_trip(data_dir):
 
     profile_ids = {row["firefly_account_id"] for row in exported["account_profiles"]}
     assert profile_ids == {"1"}
+    assert exported["account_profiles"][0]["profile_kind"] == "cc_worksheet"
     assert exported["account_profiles"][0]["profile"]["sort_order"] == 1
+    assert exported["loan_profiles"] == []
 
     LanternConfigBundleV1.model_validate(exported)
-    assert PAYMENT_WORKSHEET_MARKER in _profile_notes(profile)
 
 
 def _minimal_valid_bundle(**overrides) -> dict:
@@ -185,6 +156,7 @@ def _minimal_valid_bundle(**overrides) -> dict:
             "ignored_payees": [],
         },
         "account_profiles": [],
+        "loan_profiles": [],
     }
     payload.update(overrides)
     return payload
@@ -255,6 +227,10 @@ async def _clear_durable_sidecar_config() -> None:
     await sidecar_db.init_db()
     async with aiosqlite.connect(sidecar_db.get_db_path()) as db:
         for table in (
+            "loan_profile_split_components",
+            "loan_profiles",
+            "cc_worksheet_profiles",
+            "liability_worksheet_profiles",
             "worksheet_account_links",
             "worksheet_registry",
             "funding_buckets",
@@ -356,9 +332,8 @@ def _build_round_trip_client(
     *,
     bill_ids: list[str],
     account_ids: list[str],
-    account_notes: dict[str, str] | None = None,
 ) -> FireflyClient:
-    notes_by_id = account_notes or {}
+    patch_calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -404,30 +379,18 @@ def _build_round_trip_client(
                     },
                 },
             )
-        if request.method == "GET" and path.startswith("/api/v1/accounts/"):
-            account_id = path.rsplit("/", 1)[-1]
-            return httpx.Response(
-                200,
-                json={
-                    "data": {
-                        "type": "accounts",
-                        "id": account_id,
-                        "attributes": {
-                            "name": f"Account {account_id}",
-                            "notes": notes_by_id.get(account_id, ""),
-                        },
-                    }
-                },
-            )
         if request.method == "PUT" and path.startswith("/api/v1/accounts/"):
+            patch_calls.append(path)
             return httpx.Response(200, json={"data": {}})
         return httpx.Response(404)
 
-    return FireflyClient(
+    client = FireflyClient(
         transport=httpx.MockTransport(handler),
         base_url="https://firefly.example",
         api_token="tok",
     )
+    client._test_patch_calls = patch_calls  # type: ignore[attr-defined]
+    return client
 
 
 @pytest.mark.asyncio
@@ -469,14 +432,10 @@ async def test_import_round_trip(data_dir):
     )
 
     profile = {"included": True, "worksheet_section": "credit", "sort_order": 1}
+    await sidecar_db.upsert_cc_worksheet_profile("1", profile)
     client = _build_round_trip_client(
         bill_ids=["10"],
         account_ids=["1", "2", "3"],
-        account_notes={
-            "1": _profile_notes(profile),
-            "2": "",
-            "3": "",
-        },
     )
 
     exported = await export_bundle(source_instance="lab", client=client)
@@ -484,6 +443,11 @@ async def test_import_round_trip(data_dir):
 
     report = await import_bundle(exported, client=client, confirm=True)
     assert report.valid is True, report.errors
+    assert client._test_patch_calls == []  # type: ignore[attr-defined]
+
+    restored = await sidecar_db.get_cc_worksheet_profile("1")
+    assert restored is not None
+    assert restored["sort_order"] == 1
 
     links = await sidecar_db.list_external_links()
     assert len(links) == 1
@@ -589,5 +553,131 @@ def test_api_export_download(data_dir, monkeypatch):
     assert payload["schema"] == "lantern-config.v1"
     assert len(payload["external_links"]) == 1
     assert payload["external_links"][0]["id"] == "chase"
+
+
+@pytest.mark.asyncio
+async def test_export_does_not_fetch_firefly_accounts_for_profiles(data_dir):
+    await sidecar_db.upsert_funding_bucket(
+        id="checking",
+        label="Checking",
+        sort_order=0,
+        firefly_account_ids=["1"],
+    )
+    await sidecar_db.upsert_cc_worksheet_profile(
+        "1",
+        {"included": True, "worksheet_section": "credit", "sort_order": 3},
+    )
+
+    fetch_calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET" and path.startswith("/api/v1/accounts/"):
+            fetch_calls.append(path)
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+
+    exported = await export_bundle(client=client)
+
+    assert fetch_calls == []
+    assert len(exported["account_profiles"]) == 1
+    assert exported["account_profiles"][0]["firefly_account_id"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_loan_profiles_round_trip(data_dir):
+    loan_profile = {
+        "version": 1,
+        "enabled": True,
+        "match": {
+            "type": "transfer",
+            "description_contains": "Mortgage Payment",
+            "expected_amount": "1500.00",
+            "amount_tolerance": "0.50",
+        },
+        "split": {
+            "escrow_amount": "200.00",
+            "budget": "Housing",
+            "components": [
+                {
+                    "role": "principal",
+                    "type": "transfer",
+                    "destination_account_id": "42",
+                    "destination_account": "Mortgage",
+                },
+                {
+                    "role": "interest",
+                    "type": "transfer",
+                    "destination_account_id": "88",
+                    "destination_account": "Mortgage Interest",
+                    "category": "Interest",
+                },
+            ],
+        },
+    }
+    await sidecar_db.upsert_loan_profile("loan-1", loan_profile)
+
+    account_specs = {
+        "42": "liabilities",
+        "88": "expense",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET" and path.endswith("/bills"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": [],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if request.method == "GET" and path.endswith("/accounts"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "type": "accounts",
+                            "id": account_id,
+                            "attributes": {
+                                "name": f"Account {account_id}",
+                                "type": account_type,
+                            },
+                        }
+                        for account_id, account_type in account_specs.items()
+                    ],
+                    "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+                },
+            )
+        if request.method == "PUT" and path.startswith("/api/v1/accounts/"):
+            return httpx.Response(200, json={"data": {}})
+        return httpx.Response(404)
+
+    client = FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="tok",
+    )
+
+    exported = await export_bundle(client=client)
+    assert len(exported["loan_profiles"]) == 1
+    assert exported["loan_profiles"][0]["firefly_account_id"] == "loan-1"
+    assert len(exported["loan_profiles"][0]["profile"]["split"]["components"]) == 2
+
+    await _clear_durable_sidecar_config()
+    report = await import_bundle(exported, client=client, confirm=True)
+    assert report.valid is True, report.errors
+
+    restored = await sidecar_db.get_loan_profile("loan-1")
+    assert restored is not None
+    assert restored["match"]["expected_amount"] == "1500.00"
+    assert len(restored["split"]["components"]) == 2
+    assert restored["split"]["components"][1]["category"] == "Interest"
 
 
