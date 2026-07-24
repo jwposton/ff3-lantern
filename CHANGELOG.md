@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Sidecar profile storage** — normalized CC, liability, and loan profile tables in the sidecar with a unified resolver (sidecar-first read, legacy Firefly notes fallback, strip-on-save); META-01 field inventory published to epic #97 (#128)
+- **Sidecar profile storage and migration** — worksheet and loan profiles now live in the Lantern sidecar with automatic migration from Firefly account notes on upgrade; config export/import round-trips profiles from sidecar tables (including loan profiles); no operator action required beyond upgrade; META-01 field inventory published to epic #97 (#128)
 - **Intermittent bill forecast (backend)** — intermittent bills with sufficient payment history receive likelihood and suggested amount on refresh; worksheet rows expose forecast metadata and amount-due source; seasonal clustering, cadence lookback, and posted-payment precedence are enforced server-side (#95)
 - **Special/promo APR windows (worksheet UI)** — configure promo rate and dates in the credit card settings sheet; active promos highlight the regular APR with a tooltip and shift the balance-weighted APR subtotal (#107)
 - **Special/promo APR windows (hub and detail)** — configure promo rate and dates on the card profile; the worksheet highlights active promos for the selected month and uses the promo rate in the balance-weighted APR subtotal; the CC hub and card detail pages show active promos for the current calendar month (#107)
