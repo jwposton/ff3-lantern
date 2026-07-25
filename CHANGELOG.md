@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Session auth middleware (backend)** — when `FF3LANTERN_AUTH_MODE` is `local` or `oidc`, unauthenticated `/api/*` requests return `401 Not authenticated`; `none` mode skips middleware registration so the API stays open (#99)
 - **Auth foundation (backend)** — `FF3LANTERN_AUTH_MODE` (`none` | `local` | `oidc`, default `none`) is validated at startup; `GET /api/auth/config` returns `{ auth_mode, secured }` for the Phase 36 insecure badge; sidecar auth tables are created as empty stubs (#99)
 - **Sidecar profile storage and migration** — worksheet and loan profiles now live in the Lantern sidecar with automatic migration from Firefly account notes on upgrade; config export/import round-trips profiles from sidecar tables (including loan profiles); no operator action required beyond upgrade; META-01 field inventory published to epic #97 (#128)
 - **Intermittent bill forecast (backend)** — intermittent bills with sufficient payment history receive likelihood and suggested amount on refresh; worksheet rows expose forecast metadata and amount-due source; seasonal clustering, cadence lookback, and posted-payment precedence are enforced server-side (#95)
