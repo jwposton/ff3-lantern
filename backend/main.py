@@ -8,6 +8,7 @@ import profile_migration
 import sidecar_db
 from api_normalized_transactions import router as api_router
 from auth.config import load_auth_settings
+from auth.middleware import SessionAuthMiddleware
 from firefly_client import FireflyClient
 from routes.admin_config import router as admin_config_router
 from routes.auth import router as auth_router
@@ -51,6 +52,9 @@ app.include_router(transactions_router, prefix="/api")
 app.include_router(cache_router, prefix="/api")
 app.include_router(admin_config_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
+
+if auth_settings.auth_mode != "none":
+    app.add_middleware(SessionAuthMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
