@@ -7,8 +7,10 @@ import httpx
 import profile_migration
 import sidecar_db
 from api_normalized_transactions import router as api_router
+from auth.config import load_auth_settings
 from firefly_client import FireflyClient
 from routes.admin_config import router as admin_config_router
+from routes.auth import router as auth_router
 from routes.cache import router as cache_router
 from routes.categorize import router as categorize_router
 from routes.loans import router as loans_router
@@ -38,6 +40,8 @@ async def lifespan(app: FastAPI):
     yield
 
 
+auth_settings = load_auth_settings()
+
 app = FastAPI(title="FF3 Lantern API", version="2.0.0", lifespan=lifespan)
 app.include_router(api_router, prefix="/api")
 app.include_router(categorize_router, prefix="/api")
@@ -46,6 +50,7 @@ app.include_router(payment_run_router, prefix="/api")
 app.include_router(transactions_router, prefix="/api")
 app.include_router(cache_router, prefix="/api")
 app.include_router(admin_config_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
