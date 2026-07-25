@@ -261,6 +261,65 @@ CREATE TABLE IF NOT EXISTS profile_migration_meta (
   accounts_scanned INTEGER,
   accounts_migrated INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS lantern_roles (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  slug TEXT NOT NULL UNIQUE,
+  is_system INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS lantern_role_permissions (
+  role_id INTEGER NOT NULL,
+  resource TEXT NOT NULL,
+  level TEXT NOT NULL,
+  actions_json TEXT,
+  PRIMARY KEY (role_id, resource)
+);
+
+CREATE TABLE IF NOT EXISTS lantern_users (
+  id INTEGER PRIMARY KEY,
+  username TEXT UNIQUE,
+  email TEXT UNIQUE,
+  password_hash TEXT,
+  oidc_sub TEXT UNIQUE,
+  display_name TEXT,
+  role_id INTEGER NOT NULL,
+  enabled INTEGER NOT NULL,
+  must_change_password INTEGER,
+  created_at TEXT NOT NULL,
+  last_login_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS lantern_refresh_tokens (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS lantern_access_log (
+  id INTEGER PRIMARY KEY,
+  occurred_at TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  user_id INTEGER,
+  actor_user_id INTEGER,
+  ip_address TEXT,
+  user_agent TEXT,
+  detail_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS lantern_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  access_token_hash TEXT NOT NULL UNIQUE,
+  user_id INTEGER NOT NULL REFERENCES lantern_users(id),
+  refresh_token_id INTEGER NOT NULL REFERENCES lantern_refresh_tokens(id),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 """
 
 
