@@ -16,6 +16,7 @@ def none_mode_client(monkeypatch, tmp_path):
 
     importlib.reload(main)
     yield TestClient(main.app)
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "none")
     importlib.reload(main)
 
 
@@ -27,6 +28,19 @@ def local_mode_client(monkeypatch, tmp_path):
 
     importlib.reload(main)
     yield TestClient(main.app)
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "none")
+    importlib.reload(main)
+
+
+@pytest.fixture
+def secured_client(monkeypatch, tmp_path):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    import main
+
+    importlib.reload(main)
+    yield TestClient(main.app)
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "none")
     importlib.reload(main)
 
 
@@ -92,3 +106,24 @@ def test_invalid_auth_mode_blocks_main_import(monkeypatch):
 
     with pytest.raises(SystemExit):
         importlib.reload(main)
+
+
+def test_none_mode_api_open(none_mode_client):
+    import main
+
+    assert (
+        len([m for m in main.app.user_middleware if "SessionAuth" in str(m)]) == 0
+    )
+    response = none_mode_client.post("/api/cache/clear")
+    assert response.status_code != 401
+
+
+def test_secured_mode_requires_session(secured_client):
+    response = secured_client.post("/api/cache/clear")
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+
+
+def test_secured_mode_auth_config_public(secured_client):
+    response = secured_client.get("/api/auth/config")
+    assert response.status_code == 200
