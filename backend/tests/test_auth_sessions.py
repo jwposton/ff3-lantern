@@ -119,6 +119,14 @@ def test_none_mode_api_open(none_mode_client):
     assert response.status_code != 401
 
 
+def test_none_mode_middleware_absent(none_mode_client):
+    """D-26: none mode must not register SessionAuthMiddleware."""
+    import main
+
+    middleware_names = [str(m) for m in main.app.user_middleware]
+    assert not any("SessionAuth" in name for name in middleware_names)
+
+
 def test_secured_mode_requires_session(secured_client):
     response = secured_client.post("/api/cache/clear")
     assert response.status_code == 401
@@ -351,6 +359,26 @@ async def _count_unrevoked_refresh_tokens(user_id: int) -> int:
             (user_id,),
         )
         return int((await cursor.fetchone())[0])
+
+
+@pytest.mark.asyncio
+async def test_expired_access_401(secured_client, create_test_session):
+    """D-15: expired access token yields immediate 401 with no grace period."""
+    session = await create_test_session()
+    past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            "UPDATE lantern_sessions SET expires_at = ? WHERE user_id = 1",
+            (past,),
+        )
+        await db.commit()
+
+    response = secured_client.post(
+        "/api/cache/clear",
+        cookies={ACCESS_COOKIE_NAME: session["access"]},
+    )
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
 
 
 @pytest.mark.asyncio
