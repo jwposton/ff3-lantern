@@ -186,9 +186,9 @@ def test_access_ttl_is_fifteen_minutes():
 async def test_create_session_pair_stores_hashes_only(data_dir):
     await _seed_test_user()
     pair = await create_session_pair(user_id=1)
-    assert pair["access"]
-    assert pair["refresh"]
-    assert pair["access"] != pair["refresh"]
+    assert pair.access
+    assert pair.refresh
+    assert pair.access != pair.refresh
 
     async with aiosqlite.connect(get_db_path()) as db:
         refresh_cursor = await db.execute(
@@ -200,10 +200,10 @@ async def test_create_session_pair_stores_hashes_only(data_dir):
         )
         access_hash = (await session_cursor.fetchone())[0]
 
-    assert refresh_hash == hash_token(pair["refresh"])
-    assert access_hash == hash_token(pair["access"])
-    assert refresh_hash != pair["refresh"]
-    assert access_hash != pair["access"]
+    assert refresh_hash == hash_token(pair.refresh)
+    assert access_hash == hash_token(pair.access)
+    assert refresh_hash != pair.refresh
+    assert access_hash != pair.access
 
 
 @pytest.mark.asyncio
@@ -218,7 +218,7 @@ async def test_validate_access_token_expired_returns_none(data_dir):
         )
         await db.commit()
 
-    assert await validate_access_token(pair["access"]) is None
+    assert await validate_access_token(pair.access) is None
 
     async with aiosqlite.connect(get_db_path()) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM lantern_sessions WHERE user_id = 1")
@@ -235,9 +235,9 @@ async def test_rotate_refresh_inherits_parent_expires_at(data_dir):
         )
         parent_expires = (await cursor.fetchone())[0]
 
-    rotated = await rotate_refresh(pair["refresh"])
-    assert rotated["access"] != pair["access"]
-    assert rotated["refresh"] != pair["refresh"]
+    rotated = await rotate_refresh(pair.refresh)
+    assert rotated.access != pair.access
+    assert rotated.refresh != pair.refresh
 
     async with aiosqlite.connect(get_db_path()) as db:
         cursor = await db.execute(
@@ -245,7 +245,7 @@ async def test_rotate_refresh_inherits_parent_expires_at(data_dir):
             SELECT expires_at FROM lantern_refresh_tokens
             WHERE token_hash = ? AND revoked_at IS NULL
             """,
-            (hash_token(rotated["refresh"]),),
+            (hash_token(rotated.refresh),),
         )
         child_expires = (await cursor.fetchone())[0]
 
@@ -276,6 +276,6 @@ async def test_revoke_all_user_sessions_clears_rows(data_dir):
 async def test_rotate_refresh_reuse_raises_reuse_detected(data_dir):
     await _seed_test_user()
     pair = await create_session_pair(user_id=1)
-    await rotate_refresh(pair["refresh"])
+    await rotate_refresh(pair.refresh)
     with pytest.raises(ReuseDetected):
-        await rotate_refresh(pair["refresh"])
+        await rotate_refresh(pair.refresh)

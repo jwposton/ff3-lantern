@@ -9,8 +9,11 @@ Tables:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -23,6 +26,20 @@ if TYPE_CHECKING:
 
 class ConflictError(Exception):
     """Raised when an insert would conflict with an existing row."""
+
+
+class ReuseDetected(Exception):
+    """Refresh token reuse after revocation (D-08)."""
+
+
+class InvalidRefreshToken(Exception):
+    """Refresh token missing, expired, or unknown."""
+
+
+@dataclass(frozen=True, slots=True)
+class SessionPairIds:
+    refresh_id: int
+    session_id: int
 
 
 DURABLE_TABLES: tuple[str, ...] = (
@@ -105,6 +122,14 @@ __all__ = [
     "upsert_worksheet_account_link",
     "upsert_worksheet_refresh",
     "upsert_worksheet_state_row",
+    "create_session_pair_conn",
+    "rotate_refresh_conn",
+    "validate_access_token_conn",
+    "revoke_refresh_token_conn",
+    "revoke_all_user_sessions_conn",
+    "get_refresh_by_hash_conn",
+    "get_session_by_access_hash_conn",
+    "delete_session_by_id_conn",
 ]
 
 _SCHEMA = """
@@ -2315,3 +2340,202 @@ async def upsert_profile_migration_meta(
             (ran_at, accounts_scanned, accounts_migrated),
         )
         await db.commit()
+
+
+def _token_hash_matches(stored_hash: str, candidate_hash: str) -> bool:
+    return hmac.compare_digest(stored_hash, candidate_hash)
+
+
+async def get_refresh_by_hash_conn(
+    db: aiosqlite.Connection, token_hash: str
+) -> dict[str, Any] | None:
+    cursor = await db.execute(
+        """
+        SELECT id, user_id, token_hash, expires_at, created_at, revoked_at
+        FROM lantern_refresh_tokens
+        WHERE token_hash = ?
+        """,
+        (token_hash,),
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return None
+    if not _token_hash_matches(row[2], token_hash):
+        return None
+    return {
+        "id": row[0],
+        "user_id": row[1],
+        "token_hash": row[2],
+        "expires_at": row[3],
+        "created_at": row[4],
+        "revoked_at": row[5],
+    }
+
+
+async def get_session_by_access_hash_conn(
+    db: aiosqlite.Connection, access_hash: str
+) -> dict[str, Any] | None:
+    cursor = await db.execute(
+        """
+        SELECT id, access_token_hash, user_id, refresh_token_id, expires_at, created_at
+        FROM lantern_sessions
+        WHERE access_token_hash = ?
+        """,
+        (access_hash,),
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return None
+    if not _token_hash_matches(row[1], access_hash):
+        return None
+    return {
+        "id": row[0],
+        "access_token_hash": row[1],
+        "user_id": row[2],
+        "refresh_token_id": row[3],
+        "expires_at": row[4],
+        "created_at": row[5],
+    }
+
+
+async def delete_session_by_id_conn(db: aiosqlite.Connection, session_id: int) -> None:
+    await db.execute("DELETE FROM lantern_sessions WHERE id = ?", (session_id,))
+
+
+async def revoke_refresh_token_conn(
+    db: aiosqlite.Connection, *, refresh_id: int, revoked_at: str
+) -> None:
+    await db.execute(
+        """
+        UPDATE lantern_refresh_tokens
+        SET revoked_at = ?
+        WHERE id = ? AND revoked_at IS NULL
+        """,
+        (revoked_at, refresh_id),
+    )
+
+
+async def revoke_all_user_sessions_conn(
+    db: aiosqlite.Connection, *, user_id: int, revoked_at: str
+) -> None:
+    await db.execute("DELETE FROM lantern_sessions WHERE user_id = ?", (user_id,))
+    await db.execute(
+        """
+        UPDATE lantern_refresh_tokens
+        SET revoked_at = ?
+        WHERE user_id = ? AND revoked_at IS NULL
+        """,
+        (revoked_at, user_id),
+    )
+
+
+async def create_session_pair_conn(
+    db: aiosqlite.Connection,
+    *,
+    user_id: int,
+    refresh_hash: str,
+    access_hash: str,
+    refresh_expires_at: str,
+    access_expires_at: str,
+    created_at: str,
+) -> SessionPairIds:
+    await db.execute("BEGIN IMMEDIATE")
+    refresh_cursor = await db.execute(
+        """
+        INSERT INTO lantern_refresh_tokens (
+          user_id, token_hash, expires_at, created_at
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (user_id, refresh_hash, refresh_expires_at, created_at),
+    )
+    refresh_id = int(refresh_cursor.lastrowid)
+    session_cursor = await db.execute(
+        """
+        INSERT INTO lantern_sessions (
+          access_token_hash, user_id, refresh_token_id, expires_at, created_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (access_hash, user_id, refresh_id, access_expires_at, created_at),
+    )
+    session_id = int(session_cursor.lastrowid)
+    return SessionPairIds(refresh_id=refresh_id, session_id=session_id)
+
+
+async def validate_access_token_conn(
+    db: aiosqlite.Connection, *, token_hash: str, now: str
+) -> int | None:
+    session = await get_session_by_access_hash_conn(db, token_hash)
+    if session is None:
+        return None
+    if session["expires_at"] <= now:
+        await delete_session_by_id_conn(db, session["id"])
+        return None
+    return int(session["user_id"])
+
+
+async def rotate_refresh_conn(
+    db: aiosqlite.Connection,
+    *,
+    refresh_hash: str,
+    new_refresh_hash: str,
+    new_access_hash: str,
+    access_expires_at: str,
+    created_at: str,
+    now: str,
+) -> SessionPairIds:
+    await db.execute("BEGIN IMMEDIATE")
+    refresh = await get_refresh_by_hash_conn(db, refresh_hash)
+    if refresh is None:
+        raise InvalidRefreshToken("unknown refresh token")
+    if refresh["revoked_at"] is not None:
+        await revoke_all_user_sessions_conn(
+            db, user_id=int(refresh["user_id"]), revoked_at=created_at
+        )
+        raise ReuseDetected("refresh token reuse")
+    if refresh["expires_at"] <= now:
+        await revoke_refresh_token_conn(
+            db, refresh_id=int(refresh["id"]), revoked_at=created_at
+        )
+        raise InvalidRefreshToken("expired refresh token")
+
+    parent_expires_at = refresh["expires_at"]
+    user_id = int(refresh["user_id"])
+    old_refresh_id = int(refresh["id"])
+
+    await revoke_refresh_token_conn(db, refresh_id=old_refresh_id, revoked_at=created_at)
+
+    new_refresh_cursor = await db.execute(
+        """
+        INSERT INTO lantern_refresh_tokens (
+          user_id, token_hash, expires_at, created_at
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (user_id, new_refresh_hash, parent_expires_at, created_at),
+    )
+    new_refresh_id = int(new_refresh_cursor.lastrowid)
+
+    session_cursor = await db.execute(
+        """
+        SELECT id FROM lantern_sessions
+        WHERE refresh_token_id = ?
+        """,
+        (old_refresh_id,),
+    )
+    session_row = await session_cursor.fetchone()
+    if session_row is not None:
+        await delete_session_by_id_conn(db, int(session_row[0]))
+
+    new_session_cursor = await db.execute(
+        """
+        INSERT INTO lantern_sessions (
+          access_token_hash, user_id, refresh_token_id, expires_at, created_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (new_access_hash, user_id, new_refresh_id, access_expires_at, created_at),
+    )
+    session_id = int(new_session_cursor.lastrowid)
+    return SessionPairIds(refresh_id=new_refresh_id, session_id=session_id)

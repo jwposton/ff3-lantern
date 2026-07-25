@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from starlette.responses import JSONResponse
 
-from auth.sessions import ACCESS_COOKIE_NAME, validate_access_token
+from auth.cookies import ACCESS_COOKIE_NAME
+from auth.sessions import validate_access_token
 
 def _unauthenticated_response() -> JSONResponse:
     return JSONResponse({"detail": "Not authenticated"}, status_code=401)
