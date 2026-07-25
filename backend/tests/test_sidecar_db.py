@@ -227,6 +227,63 @@ def test_external_links_crud_sidecar(data_dir):
     assert asyncio.run(sidecar_db.get_external_link("zebra-portal")) is None
 
 
+def test_auth_tables_exist(data_dir):
+    asyncio.run(sidecar_db.init_db())
+
+    assert _table_columns(data_dir, "lantern_roles") == {
+        "id",
+        "name",
+        "slug",
+        "is_system",
+        "created_at",
+    }
+    assert _table_columns(data_dir, "lantern_role_permissions") == {
+        "role_id",
+        "resource",
+        "level",
+        "actions_json",
+    }
+    assert _table_columns(data_dir, "lantern_users") == {
+        "id",
+        "username",
+        "email",
+        "password_hash",
+        "oidc_sub",
+        "display_name",
+        "role_id",
+        "enabled",
+        "must_change_password",
+        "created_at",
+        "last_login_at",
+    }
+    assert _table_columns(data_dir, "lantern_refresh_tokens") == {
+        "id",
+        "user_id",
+        "token_hash",
+        "expires_at",
+        "created_at",
+        "revoked_at",
+    }
+    assert _table_columns(data_dir, "lantern_access_log") == {
+        "id",
+        "occurred_at",
+        "event_type",
+        "user_id",
+        "actor_user_id",
+        "ip_address",
+        "user_agent",
+        "detail_json",
+    }
+    assert _table_columns(data_dir, "lantern_sessions") == {
+        "id",
+        "access_token_hash",
+        "user_id",
+        "refresh_token_id",
+        "expires_at",
+        "created_at",
+    }
+
+
 def test_count_external_link_dependents_sidecar(data_dir):
     asyncio.run(sidecar_db.init_db())
     asyncio.run(
