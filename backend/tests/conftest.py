@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Allow imports of backend modules (main, firefly_client, …) from tests/
@@ -12,9 +14,13 @@ _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
+import aiosqlite
 import httpx
 import pytest
+from auth.cookies import ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME
+from auth.sessions import create_session_pair
 from fastapi.testclient import TestClient
+from sidecar_db import get_db_path, init_db
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -95,3 +101,60 @@ def _clear_firefly_env_between_tests(monkeypatch):
     for key in ("FIREFLY_BASE_URL", "FIREFLY_API_TOKEN"):
         if key not in os.environ:
             monkeypatch.delenv(key, raising=False)
+
+
+@pytest.fixture
+def data_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    return tmp_path
+
+
+@pytest.fixture
+def secured_client(monkeypatch, data_dir):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    import main
+
+    importlib.reload(main)
+    yield TestClient(main.app)
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "none")
+    importlib.reload(main)
+
+
+async def _ensure_test_user(user_id: int = 1) -> None:
+    await init_db()
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO lantern_roles (id, name, slug, is_system, created_at)
+            VALUES (1, 'Test', 'test', 0, ?)
+            """,
+            (now,),
+        )
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO lantern_users (
+              id, username, role_id, enabled, created_at
+            )
+            VALUES (?, 'testuser', 1, 1, ?)
+            """,
+            (user_id, now),
+        )
+        await db.commit()
+
+
+@pytest.fixture
+def create_test_session(data_dir):
+    async def _create(user_id: int = 1) -> dict[str, str | dict[str, str]]:
+        await _ensure_test_user(user_id)
+        pair = await create_session_pair(user_id=user_id)
+        return {
+            "access": pair.access,
+            "refresh": pair.refresh,
+            "cookies": {
+                ACCESS_COOKIE_NAME: pair.access,
+                REFRESH_COOKIE_NAME: pair.refresh,
+            },
+        }
+
+    return _create

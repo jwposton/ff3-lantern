@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 from datetime import datetime, timedelta, timezone
 
@@ -36,18 +35,6 @@ def none_mode_client(monkeypatch, tmp_path):
 
 @pytest.fixture
 def local_mode_client(monkeypatch, tmp_path):
-    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
-    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
-    import main
-
-    importlib.reload(main)
-    yield TestClient(main.app)
-    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "none")
-    importlib.reload(main)
-
-
-@pytest.fixture
-def secured_client(monkeypatch, tmp_path):
     monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
     monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
     import main
@@ -141,12 +128,6 @@ def test_secured_mode_requires_session(secured_client):
 def test_secured_mode_auth_config_public(secured_client):
     response = secured_client.get("/api/auth/config")
     assert response.status_code == 200
-
-
-@pytest.fixture
-def data_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
-    return tmp_path
 
 
 async def _seed_test_user(user_id: int = 1) -> None:
@@ -279,3 +260,69 @@ async def test_rotate_refresh_reuse_raises_reuse_detected(data_dir):
     await rotate_refresh(pair.refresh)
     with pytest.raises(ReuseDetected):
         await rotate_refresh(pair.refresh)
+
+
+@pytest.mark.asyncio
+async def test_refresh_rotation(secured_client, create_test_session):
+    session = await create_test_session()
+    orig_access = session["access"]
+    orig_refresh = session["refresh"]
+
+    response = secured_client.post(
+        "/api/auth/refresh",
+        cookies={REFRESH_COOKIE_NAME: orig_refresh},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    new_access = response.cookies[ACCESS_COOKIE_NAME]
+    new_refresh = response.cookies[REFRESH_COOKIE_NAME]
+    assert new_access != orig_access
+    assert new_refresh != orig_refresh
+
+    response = secured_client.post(
+        "/api/auth/refresh",
+        cookies={REFRESH_COOKIE_NAME: new_refresh},
+    )
+    assert response.status_code == 200
+    rotated_refresh = response.cookies[REFRESH_COOKIE_NAME]
+    assert rotated_refresh != new_refresh
+
+
+@pytest.mark.asyncio
+async def test_logout_revokes(secured_client, create_test_session):
+    session = await create_test_session()
+
+    response = secured_client.post(
+        "/api/auth/logout",
+        cookies={
+            REFRESH_COOKIE_NAME: session["refresh"],
+            ACCESS_COOKIE_NAME: session["access"],
+        },
+    )
+    assert response.status_code == 200
+    set_cookies = " ".join(response.headers.get_list("set-cookie"))
+    assert ACCESS_COOKIE_NAME in set_cookies
+    assert REFRESH_COOKIE_NAME in set_cookies
+
+    response = secured_client.post(
+        "/api/auth/refresh",
+        cookies={REFRESH_COOKIE_NAME: session["refresh"]},
+    )
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+
+
+@pytest.mark.asyncio
+async def test_valid_access_passes_middleware(secured_client, create_test_session):
+    session = await create_test_session()
+    response = secured_client.post(
+        "/api/cache/clear",
+        cookies={ACCESS_COOKIE_NAME: session["access"]},
+    )
+    assert response.status_code != 401
+
+
+def test_refresh_without_cookie_returns_401(secured_client):
+    response = secured_client.post("/api/auth/refresh")
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
