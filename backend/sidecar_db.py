@@ -127,6 +127,7 @@ __all__ = [
     "validate_access_token_conn",
     "revoke_refresh_token_conn",
     "revoke_all_user_sessions_conn",
+    "count_active_sessions_conn",
     "get_refresh_by_hash_conn",
     "get_session_by_access_hash_conn",
     "delete_session_by_id_conn",
@@ -2427,6 +2428,20 @@ async def revoke_all_user_sessions_conn(
         """,
         (revoked_at, user_id),
     )
+
+
+async def count_active_sessions_conn(
+    db: aiosqlite.Connection, *, user_id: int, now: str
+) -> int:
+    cursor = await db.execute(
+        """
+        SELECT COUNT(*) FROM lantern_sessions
+        WHERE user_id = ? AND expires_at > ?
+        """,
+        (user_id, now),
+    )
+    row = await cursor.fetchone()
+    return int(row[0]) if row is not None else 0
 
 
 async def create_session_pair_conn(

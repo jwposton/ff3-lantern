@@ -106,8 +106,10 @@ async def rotate_refresh(raw_refresh: str) -> SessionPair:
                 now=_iso(now),
             )
         except sidecar_db.ReuseDetected as exc:
+            await db.commit()
             raise ReuseDetected(str(exc)) from exc
         except sidecar_db.InvalidRefreshToken as exc:
+            await db.commit()
             raise InvalidRefreshToken(str(exc)) from exc
         await db.commit()
     return SessionPair(
@@ -136,3 +138,10 @@ async def revoke_all_user_sessions(user_id: int) -> None:
     async with aiosqlite.connect(get_db_path()) as db:
         await revoke_all_user_sessions_conn(db, user_id=user_id, revoked_at=revoked_at)
         await db.commit()
+
+
+async def count_active_sessions(user_id: int) -> int:
+    await init_db()
+    now = _iso(_utc_now())
+    async with aiosqlite.connect(get_db_path()) as db:
+        return await sidecar_db.count_active_sessions_conn(db, user_id=user_id, now=now)
