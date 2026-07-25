@@ -326,3 +326,85 @@ def test_refresh_without_cookie_returns_401(secured_client):
     response = secured_client.post("/api/auth/refresh")
     assert response.status_code == 401
     assert response.json() == {"detail": "Not authenticated"}
+
+
+async def _count_active_sessions(user_id: int) -> int:
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute(
+            """
+            SELECT COUNT(*) FROM lantern_sessions
+            WHERE user_id = ? AND expires_at > ?
+            """,
+            (user_id, now),
+        )
+        return int((await cursor.fetchone())[0])
+
+
+async def _count_unrevoked_refresh_tokens(user_id: int) -> int:
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute(
+            """
+            SELECT COUNT(*) FROM lantern_refresh_tokens
+            WHERE user_id = ? AND revoked_at IS NULL
+            """,
+            (user_id,),
+        )
+        return int((await cursor.fetchone())[0])
+
+
+@pytest.mark.asyncio
+async def test_refresh_reuse_revokes_all(secured_client, create_test_session):
+    """D-08: replaying a revoked refresh revokes every session for the user."""
+    session_a = await create_test_session(user_id=1)
+    refresh_a = session_a["refresh"]
+
+    response = secured_client.post(
+        "/api/auth/refresh",
+        cookies={REFRESH_COOKIE_NAME: refresh_a},
+    )
+    assert response.status_code == 200
+    access_b = response.cookies[ACCESS_COOKIE_NAME]
+    refresh_b = response.cookies[REFRESH_COOKIE_NAME]
+
+    response = secured_client.post(
+        "/api/auth/refresh",
+        cookies={REFRESH_COOKIE_NAME: refresh_a},
+    )
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+
+    response = secured_client.post(
+        "/api/cache/clear",
+        cookies={ACCESS_COOKIE_NAME: access_b},
+    )
+    assert response.status_code == 401
+
+    session_b = await create_test_session(user_id=1)
+    assert await _count_active_sessions(1) >= 1
+
+    secured_client.post(
+        "/api/auth/refresh",
+        cookies={REFRESH_COOKIE_NAME: refresh_a},
+    )
+
+    assert await _count_active_sessions(1) == 0
+    assert await _count_unrevoked_refresh_tokens(1) == 0
+
+    response = secured_client.post(
+        "/api/cache/clear",
+        cookies={ACCESS_COOKIE_NAME: session_b["access"]},
+    )
+    assert response.status_code == 401
+
+    response = secured_client.post(
+        "/api/cache/clear",
+        cookies={ACCESS_COOKIE_NAME: access_b},
+    )
+    assert response.status_code == 401
+
+    response = secured_client.post(
+        "/api/auth/refresh",
+        cookies={REFRESH_COOKIE_NAME: refresh_b},
+    )
+    assert response.status_code == 401
