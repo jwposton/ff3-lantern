@@ -44,3 +44,27 @@ async def append_logout(request: Request, user_id: int) -> None:
         ip_address=_client_ip(request),
         user_agent=_user_agent(request),
     )
+
+
+async def append_permission_denied(
+    request: Request,
+    user_id: int,
+    *,
+    resource: str,
+    action: str,
+    required_level: str,
+) -> None:
+    await insert_access_log(
+        "permission_denied",
+        user_id=user_id,
+        ip_address=_client_ip(request),
+        user_agent=_user_agent(request),
+        detail_json=json.dumps(
+            {
+                "resource": resource,
+                "action": action,
+                "required_level": required_level,
+                "path": request.url.path,
+            }
+        ),
+    )

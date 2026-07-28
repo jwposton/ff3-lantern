@@ -108,3 +108,48 @@ async def test_user_has_permission_viewer_denies_categorize(monkeypatch, tmp_pat
     viewer = await get_user_by_username("vieweruser")
     assert viewer is not None
     assert await user_has_permission(int(viewer["id"]), "categorize", "read") is False
+
+
+@pytest.mark.asyncio
+async def test_append_permission_denied_helper(monkeypatch, tmp_path):
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    await init_db()
+
+    from auth.access_log import append_permission_denied
+
+    request = MagicMock(spec=Request)
+    request.url.path = "/api/categorize/suggest"
+    request.client = MagicMock()
+    request.client.host = "127.0.0.1"
+    request.headers = {"user-agent": "pytest"}
+
+    await append_permission_denied(
+        request,
+        42,
+        resource="categorize",
+        action="read",
+        required_level="read",
+    )
+
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute(
+            """
+            SELECT event_type, user_id, detail_json
+            FROM lantern_access_log
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        )
+        row = await cursor.fetchone()
+
+    assert row is not None
+    assert row[0] == "permission_denied"
+    assert row[1] == 42
+    detail = json.loads(row[2])
+    assert set(detail.keys()) == {"resource", "action", "required_level", "path"}
+    assert detail == {
+        "resource": "categorize",
+        "action": "read",
+        "required_level": "read",
+        "path": "/api/categorize/suggest",
+    }
