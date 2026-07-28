@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Local auth bootstrap and roles** — bcrypt password helpers, D-11 resource catalog, sidecar user/role CRUD, and startup seeding of admin/Viewer/Member roles with bootstrap admin from `FF3LANTERN_BOOTSTRAP_ADMIN_*` env when `auth_mode=local` (#99, #131)
+- **Admin system gate and roles API** — `require_system_admin` protects `/api/admin/config/*` and `/api/admin/roles/*`; roles CRUD with duplicate endpoint and system-role delete guards (#99, #131)
 - **Local login and password change** — `POST /api/auth/login` with bcrypt verification, failed-login rate limiting, must-change-password gate on protected API routes, and access log entries for login/logout events when `auth_mode=local` (#99, #131)
 - **Auth foundation and sessions** — `FF3LANTERN_AUTH_MODE` (`none` | `local` | `oidc`, default `none`); `GET /api/auth/config`; session cookies with refresh rotation and theft detection when auth is enabled; default `none` preserves today's open API (#129, #130)
 - **Sidecar profile storage and migration** — worksheet and loan profiles now live in the Lantern sidecar with automatic migration from Firefly account notes on upgrade; config export/import round-trips profiles from sidecar tables (including loan profiles); no operator action required beyond upgrade; META-01 field inventory published to epic #97 (#128)

@@ -8,6 +8,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
+from auth.dependencies import AdminUserId
 from firefly_client import FireflyClient
 from lantern_config_bundle import export_bundle, import_bundle
 
@@ -22,6 +23,7 @@ def get_firefly_client() -> FireflyClient:
 
 @router.get("/admin/config/export")
 async def export_config(
+    _admin_user_id: AdminUserId,
     client: FireflyClient = Depends(get_firefly_client),
 ) -> Response:
     bundle = await export_bundle(client=client)
@@ -37,6 +39,7 @@ async def export_config(
 @router.post("/admin/config/import")
 async def import_config(
     request: Request,
+    _admin_user_id: AdminUserId,
     client: FireflyClient = Depends(get_firefly_client),
 ) -> dict:
     raw = await request.body()
