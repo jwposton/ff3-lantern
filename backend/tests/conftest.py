@@ -20,7 +20,7 @@ import pytest
 from auth.cookies import ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME
 from auth.sessions import create_session_pair
 from fastapi.testclient import TestClient
-from sidecar_db import get_db_path, init_db
+from sidecar_db import get_db_path, get_user_by_username, init_db
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -208,3 +208,117 @@ def admin_client(monkeypatch, data_dir, bootstrap_env, admin_session):
     client = TestClient(main.app)
     client.cookies.update(admin_session)
     return client
+
+
+@pytest.fixture
+def payment_worksheet_enabled(monkeypatch):
+    """Enable payment worksheet feature flag and Firefly placeholders."""
+    monkeypatch.setenv("FF3LANTERN_PAYMENT_WORKSHEET_ENABLED", "true")
+    monkeypatch.setenv("FIREFLY_BASE_URL", "https://firefly.example")
+    monkeypatch.setenv("FIREFLY_API_TOKEN", "test-token")
+
+
+@pytest.fixture
+def rbac_local_client(monkeypatch, data_dir, bootstrap_env):
+    """TestClient with local auth mode and isolated data dir (RBAC matrix tests)."""
+    from auth.rate_limit import LOGIN_RATE_LIMITER
+
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(data_dir))
+    LOGIN_RATE_LIMITER.clear("bootstrapadmin")
+    import main
+
+    importlib.reload(main)
+    with TestClient(main.app):
+        pass
+    return TestClient(main.app)
+
+
+async def grant_role_permissions(role_id: int, overrides: dict[str, str]) -> None:
+    """Replace role permissions: all resources default to none, then apply overrides."""
+    from auth.resources import RESOURCES
+    from sidecar_db import replace_role_permissions
+
+    rows = [
+        {"resource": resource, "level": overrides.get(resource, "none")}
+        for resource in sorted(RESOURCES)
+    ]
+    await replace_role_permissions(role_id, rows)
+
+
+async def _rbac_user_session(
+    *,
+    username: str,
+    role_id: int,
+    password: str,
+    monkeypatch,
+    data_dir,
+    bootstrap_env,
+) -> dict[str, str]:
+    from auth.passwords import hash_password
+    from auth.rate_limit import LOGIN_RATE_LIMITER
+    from auth.sessions import create_session_pair
+    from sidecar_db import insert_user
+
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(data_dir))
+    LOGIN_RATE_LIMITER.clear("bootstrapadmin")
+    import main
+
+    importlib.reload(main)
+    with TestClient(main.app):
+        pass
+
+    await insert_user(
+        {
+            "username": username,
+            "role_id": role_id,
+            "enabled": 1,
+            "must_change_password": 0,
+            "password_hash": hash_password(password),
+        }
+    )
+    user = await get_user_by_username(username)
+    assert user is not None
+    pair = await create_session_pair(user_id=int(user["id"]))
+    return {ACCESS_COOKIE_NAME: pair.access}
+
+
+@pytest.fixture
+async def viewer_session(monkeypatch, data_dir, bootstrap_env):
+    """Access cookie for seeded Viewer role (role_id=2)."""
+    return await _rbac_user_session(
+        username="vieweruser",
+        role_id=2,
+        password="viewerpass1234",
+        monkeypatch=monkeypatch,
+        data_dir=data_dir,
+        bootstrap_env=bootstrap_env,
+    )
+
+
+@pytest.fixture
+async def member_session(monkeypatch, data_dir, bootstrap_env):
+    """Access cookie for seeded Member role (role_id=3)."""
+    return await _rbac_user_session(
+        username="memberuser",
+        role_id=3,
+        password="memberpass1234",
+        monkeypatch=monkeypatch,
+        data_dir=data_dir,
+        bootstrap_env=bootstrap_env,
+    )
+
+
+@pytest.fixture
+def viewer_client(rbac_local_client, viewer_session):
+    """Local-auth TestClient authenticated as Viewer."""
+    rbac_local_client.cookies.update(viewer_session)
+    return rbac_local_client
+
+
+@pytest.fixture
+def member_client(rbac_local_client, member_session):
+    """Local-auth TestClient authenticated as Member."""
+    rbac_local_client.cookies.update(member_session)
+    return rbac_local_client

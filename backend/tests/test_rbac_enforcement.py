@@ -410,3 +410,236 @@ async def test_require_bill_register_permission_source_routing(
     assert discover_query.status_code == 403
     assert discover_header.status_code == 403
 
+
+# --- Phase 35 plan 04: D-18 integration 403 matrix (AUTH-08, AUTH-09) ---
+
+
+def test_fixtures_load(viewer_client, payment_worksheet_enabled):
+    """Shared RBAC fixtures authenticate against a protected route."""
+    response = viewer_client.get("/api/payment-run", params={"month": "2026-07"})
+    assert response.status_code != 401
+
+
+def test_viewer_worksheet_refresh_allowed(viewer_client, payment_worksheet_enabled):
+    response = viewer_client.post("/api/payment-run/refresh", params={"month": "2026-07"})
+    assert response.status_code != 403
+
+
+def test_viewer_worksheet_row_put_denied(viewer_client, payment_worksheet_enabled):
+    response = viewer_client.put(
+        "/api/payment-run/rows/test-key",
+        params={"month": "2026-07"},
+        json={"planned_amount": "100.00"},
+    )
+    assert response.status_code == 403
+
+
+def test_viewer_payment_setup_bucket_denied(viewer_client, payment_worksheet_enabled):
+    response = viewer_client.get("/api/payment-run/buckets")
+    assert response.status_code == 403
+
+
+def test_viewer_discover_scan_allowed(viewer_client, payment_worksheet_enabled):
+    import firefly_reference_cache
+    import httpx
+    from firefly_client import FireflyClient
+    from main import app
+    from routes.payment_run import get_firefly_client
+    from test_payment_run_routes import _bill_suggestions_handler
+
+    firefly_reference_cache.clear()
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(_bill_suggestions_handler()),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = viewer_client.get("/api/payment-run/bill-suggestions")
+        assert response.status_code != 403
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
+
+
+def test_viewer_discover_ignore_denied(viewer_client, payment_worksheet_enabled):
+    response = viewer_client.post(
+        "/api/payment-run/discover-settings/ignore-payee",
+        json={"suggestion_id": "spotify", "lookback_months": 12},
+    )
+    assert response.status_code == 403
+
+
+def test_viewer_adopt_discover_denied(viewer_client, payment_worksheet_enabled):
+    response = viewer_client.post(
+        "/api/payment-run/bills/register?source=discover",
+        json={},
+    )
+    assert response.status_code == 403
+
+
+def test_viewer_hub_register_denied(viewer_client, payment_worksheet_enabled):
+    response = viewer_client.post("/api/payment-run/bills/register", json={})
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_member_bills_write_hub_register_allowed(
+    member_client, payment_worksheet_enabled
+):
+    from conftest import grant_role_permissions
+
+    await grant_role_permissions(
+        3,
+        {"bills": "write", "payment_worksheet": "read"},
+    )
+    response = member_client.post("/api/payment-run/bills/register", json={})
+    assert response.status_code != 403
+
+
+@pytest.mark.asyncio
+async def test_adopt_discover_requires_bill_discover_write(
+    member_client, payment_worksheet_enabled
+):
+    from conftest import grant_role_permissions
+
+    await grant_role_permissions(
+        3,
+        {"bills": "write", "payment_worksheet": "read"},
+    )
+    response = member_client.post(
+        "/api/payment-run/bills/register?source=discover",
+        json={},
+    )
+    assert response.status_code == 403
+
+
+def test_admin_bypass_categorize(admin_client, firefly_env):
+    response = admin_client.get(
+        "/api/categorize/pending",
+        params={"start": "2024-01-01", "end": "2024-01-31"},
+    )
+    assert response.status_code != 403
+
+
+def test_none_mode_skips_rbac(client, firefly_env):
+    response = client.get(
+        "/api/categorize/pending",
+        params={"start": "2024-01-01", "end": "2024-01-31"},
+    )
+    assert response.status_code != 401
+
+
+@pytest.mark.asyncio
+async def test_permission_denied_access_log(viewer_client, firefly_env):
+    before = await _permission_denied_count()
+    response = viewer_client.get(
+        "/api/categorize/pending",
+        params={"start": "2024-01-01", "end": "2024-01-31"},
+    )
+    assert response.status_code == 403
+    assert await _permission_denied_count() == before + 1
+
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute(
+            """
+            SELECT event_type, detail_json
+            FROM lantern_access_log
+            WHERE event_type = 'permission_denied'
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        )
+        row = await cursor.fetchone()
+
+    assert row is not None
+    assert row[0] == "permission_denied"
+    detail = json.loads(row[1])
+    assert set(detail.keys()) == {"resource", "action", "required_level", "path"}
+    assert detail["resource"] == "categorize"
+    assert detail["action"] == "read"
+
+
+def test_viewer_loans_denied(viewer_client, firefly_env):
+    response = viewer_client.get("/api/loans")
+    assert response.status_code == 403
+
+
+def test_viewer_transactions_mass_edit_denied(viewer_client, firefly_env):
+    response = viewer_client.post(
+        "/api/transactions/mass-edit",
+        json={"targets": [{"journal_id": "1", "transaction_journal_id": "10"}]},
+    )
+    assert response.status_code == 403
+
+
+def test_viewer_cache_clear_denied(viewer_client):
+    response = viewer_client.post("/api/cache/clear")
+    assert response.status_code == 403
+
+
+def _normalized_transactions_params() -> dict[str, str]:
+    return {"start": "2024-01-01", "end": "2024-01-31"}
+
+
+def _with_normalized_firefly_mock():
+    import httpx
+    from firefly_client import FireflyClient
+    from main import app
+
+    import api_normalized_transactions as api_mod
+    from conftest import _firefly_mock_handler
+
+    app.dependency_overrides[api_mod.get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(_firefly_mock_handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    return app, api_mod
+
+
+def test_normalized_transactions_or_permission(viewer_client, firefly_env):
+    app, api_mod = _with_normalized_firefly_mock()
+    try:
+        viewer_response = viewer_client.get(
+            "/api/normalized_transactions",
+            params=_normalized_transactions_params(),
+        )
+        assert viewer_response.status_code != 403
+    finally:
+        app.dependency_overrides.pop(api_mod.get_firefly_client, None)
+
+
+@pytest.mark.asyncio
+async def test_normalized_transactions_reports_read_allowed(
+    member_client, firefly_env
+):
+    from conftest import grant_role_permissions
+
+    await grant_role_permissions(3, {"reports": "read"})
+    app, api_mod = _with_normalized_firefly_mock()
+    try:
+        response = member_client.get(
+            "/api/normalized_transactions",
+            params=_normalized_transactions_params(),
+        )
+        assert response.status_code != 403
+    finally:
+        app.dependency_overrides.pop(api_mod.get_firefly_client, None)
+
+
+@pytest.mark.asyncio
+async def test_normalized_transactions_dashboard_and_reports_denied(
+    member_client, firefly_env
+):
+    from conftest import grant_role_permissions
+
+    await grant_role_permissions(3, {})
+    app, api_mod = _with_normalized_firefly_mock()
+    try:
+        response = member_client.get(
+            "/api/normalized_transactions",
+            params=_normalized_transactions_params(),
+        )
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.pop(api_mod.get_firefly_client, None)
+
