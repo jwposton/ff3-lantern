@@ -2923,3 +2923,76 @@ async def replace_role_permissions(
                 ),
             )
         await db.commit()
+
+
+async def get_role_by_name(name: str) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, name, slug, is_system, created_at
+            FROM lantern_roles
+            WHERE name = ?
+            """,
+            (name,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_role(row) if row else None
+
+
+async def update_role(role_id: int, name: str, slug: str) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        try:
+            await db.execute(
+                """
+                UPDATE lantern_roles
+                SET name = ?, slug = ?
+                WHERE id = ?
+                """,
+                (name, slug, role_id),
+            )
+            await db.commit()
+        except aiosqlite.IntegrityError as exc:
+            raise ConflictError(
+                f"Role name or slug already exists: {name!r} / {slug!r}"
+            ) from exc
+
+
+async def delete_role(role_id: int) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            "DELETE FROM lantern_role_permissions WHERE role_id = ?",
+            (role_id,),
+        )
+        await db.execute(
+            "DELETE FROM lantern_roles WHERE id = ?",
+            (role_id,),
+        )
+        await db.commit()
+
+
+async def count_users_for_role(role_id: int) -> int:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM lantern_users WHERE role_id = ?",
+            (role_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+
+async def duplicate_role_permissions(source_id: int, target_id: int) -> None:
+    rows = await list_role_permissions(source_id)
+    permission_rows = [
+        {
+            "resource": row["resource"],
+            "level": row["level"],
+            "actions_json": row.get("actions_json"),
+        }
+        for row in rows
+    ]
+    await replace_role_permissions(target_id, permission_rows)

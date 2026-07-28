@@ -12,6 +12,7 @@ from auth.bootstrap import ensure_local_auth_ready
 from auth.middleware import MustChangePasswordMiddleware, SessionAuthMiddleware
 from firefly_client import FireflyClient
 from routes.admin_config import router as admin_config_router
+from routes.admin_roles import router as admin_roles_router
 from routes.auth import router as auth_router
 from routes.cache import router as cache_router
 from routes.categorize import router as categorize_router
@@ -53,6 +54,7 @@ app.include_router(payment_run_router, prefix="/api")
 app.include_router(transactions_router, prefix="/api")
 app.include_router(cache_router, prefix="/api")
 app.include_router(admin_config_router, prefix="/api")
+app.include_router(admin_roles_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 
 if auth_settings.auth_mode != "none":
