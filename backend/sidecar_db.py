@@ -135,8 +135,12 @@ __all__ = [
     "count_roles",
     "get_user",
     "get_user_by_username",
+    "get_user_with_role",
+    "list_users",
     "insert_user",
+    "update_user",
     "update_user_last_login",
+    "count_enabled_system_admins",
     "list_roles",
     "get_role",
     "get_role_by_slug",
@@ -2679,6 +2683,49 @@ async def get_user_by_username(username: str) -> dict[str, Any] | None:
         return _row_to_user(row) if row else None
 
 
+def _row_to_user_with_role(row: aiosqlite.Row) -> dict[str, Any]:
+    user = _row_to_user(row)
+    user["role_name"] = row["role_name"]
+    return user
+
+
+async def list_users() -> list[dict[str, Any]]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT u.id, u.username, u.email, u.password_hash, u.oidc_sub,
+                   u.display_name, u.role_id, u.enabled, u.must_change_password,
+                   u.created_at, u.last_login_at, r.name AS role_name
+            FROM lantern_users u
+            JOIN lantern_roles r ON u.role_id = r.id
+            ORDER BY u.id ASC
+            """
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_user_with_role(row) for row in rows]
+
+
+async def get_user_with_role(user_id: int) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT u.id, u.username, u.email, u.password_hash, u.oidc_sub,
+                   u.display_name, u.role_id, u.enabled, u.must_change_password,
+                   u.created_at, u.last_login_at, r.name AS role_name
+            FROM lantern_users u
+            JOIN lantern_roles r ON u.role_id = r.id
+            WHERE u.id = ?
+            """,
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_user_with_role(row) if row else None
+
+
 async def insert_user(data: dict[str, Any]) -> int:
     await init_db()
     user_id = data.get("id")
@@ -2686,30 +2733,91 @@ async def insert_user(data: dict[str, Any]) -> int:
         user_id = await allocate_next_id("lantern_users")
     created_at = data.get("created_at") or _utc_now()
     async with aiosqlite.connect(get_db_path()) as db:
-        await db.execute(
-            """
-            INSERT INTO lantern_users (
-              id, username, email, password_hash, oidc_sub, display_name,
-              role_id, enabled, must_change_password, created_at, last_login_at
+        try:
+            await db.execute(
+                """
+                INSERT INTO lantern_users (
+                  id, username, email, password_hash, oidc_sub, display_name,
+                  role_id, enabled, must_change_password, created_at, last_login_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    data.get("username"),
+                    data.get("email"),
+                    data.get("password_hash"),
+                    data.get("oidc_sub"),
+                    data.get("display_name"),
+                    data["role_id"],
+                    data.get("enabled", 1),
+                    data.get("must_change_password"),
+                    created_at,
+                    data.get("last_login_at"),
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                user_id,
-                data.get("username"),
-                data.get("email"),
-                data.get("password_hash"),
-                data.get("oidc_sub"),
-                data.get("display_name"),
-                data["role_id"],
-                data.get("enabled", 1),
-                data.get("must_change_password"),
-                created_at,
-                data.get("last_login_at"),
-            ),
-        )
-        await db.commit()
+            await db.commit()
+        except aiosqlite.IntegrityError as exc:
+            username = data.get("username")
+            raise ConflictError(
+                f"Username already exists: {username!r}"
+            ) from exc
     return int(user_id)
+
+
+async def update_user(user_id: int, fields: dict[str, Any]) -> None:
+    await init_db()
+    allowed = ("enabled", "role_id", "display_name")
+    updates: dict[str, Any] = {}
+    for key in allowed:
+        if key not in fields:
+            continue
+        value = fields[key]
+        if value is None:
+            continue
+        if key == "enabled":
+            updates[key] = int(bool(value))
+        else:
+            updates[key] = value
+    if not updates:
+        return
+    columns = ", ".join(f"{col} = ?" for col in updates)
+    values = list(updates.values()) + [user_id]
+    async with aiosqlite.connect(get_db_path()) as db:
+        try:
+            await db.execute(
+                f"UPDATE lantern_users SET {columns} WHERE id = ?",
+                values,
+            )
+            await db.commit()
+        except aiosqlite.IntegrityError as exc:
+            raise ConflictError("User update conflict.") from exc
+
+
+async def count_enabled_system_admins(exclude_user_id: int | None = None) -> int:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        if exclude_user_id is None:
+            cursor = await db.execute(
+                """
+                SELECT COUNT(*)
+                FROM lantern_users u
+                JOIN lantern_roles r ON u.role_id = r.id
+                WHERE r.is_system = 1 AND u.enabled = 1
+                """
+            )
+        else:
+            cursor = await db.execute(
+                """
+                SELECT COUNT(*)
+                FROM lantern_users u
+                JOIN lantern_roles r ON u.role_id = r.id
+                WHERE r.is_system = 1 AND u.enabled = 1 AND u.id != ?
+                """,
+                (exclude_user_id,),
+            )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
 
 
 async def update_user_last_login(user_id: int) -> None:
