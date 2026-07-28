@@ -38,12 +38,14 @@ def fixtures_dir() -> Path:
 
 @pytest.fixture
 def client(monkeypatch):
-    """TestClient with Firefly env cleared unless a test sets values."""
+    """TestClient with Firefly env cleared and auth disabled (isolated from local-auth tests)."""
     monkeypatch.delenv("FIREFLY_BASE_URL", raising=False)
     monkeypatch.delenv("FIREFLY_API_TOKEN", raising=False)
-    from main import app
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "none")
+    import main
 
-    return TestClient(app)
+    importlib.reload(main)
+    return TestClient(main.app)
 
 
 @pytest.fixture
