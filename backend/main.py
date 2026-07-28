@@ -8,6 +8,7 @@ import profile_migration
 import sidecar_db
 from api_normalized_transactions import router as api_router
 from auth.config import load_auth_settings
+from auth.bootstrap import ensure_local_auth_ready
 from auth.middleware import SessionAuthMiddleware
 from firefly_client import FireflyClient
 from routes.admin_config import router as admin_config_router
@@ -27,6 +28,7 @@ from pydantic import BaseModel
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await sidecar_db.init_db()
+    await ensure_local_auth_ready(auth_settings)
     if _is_set("FIREFLY_BASE_URL") and _is_set("FIREFLY_API_TOKEN"):
         try:
             client = FireflyClient()

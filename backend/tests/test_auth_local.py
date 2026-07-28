@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import importlib
+from datetime import datetime, timezone
+
 import pytest
+from fastapi.testclient import TestClient
 
 from auth.resources import (
     RESOURCES,
@@ -11,6 +16,16 @@ from auth.resources import (
     VIEWER_NONE_RESOURCES,
     VIEWER_READ_RESOURCES,
 )
+from sidecar_db import (
+    count_users,
+    get_role_by_slug,
+    get_user_by_username,
+    init_db,
+    list_role_permissions,
+    list_roles,
+)
+import aiosqlite
+from sidecar_db import get_db_path
 
 
 def test_hash_and_verify_password():
@@ -75,3 +90,97 @@ def test_resources_catalog_matches_epic():
         "admin",
         "ops_cache",
     )
+
+
+def test_bootstrap_creates_admin_when_db_empty(monkeypatch, tmp_path, bootstrap_env):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    import main
+
+    importlib.reload(main)
+    with TestClient(main.app):
+        pass
+
+    assert asyncio.run(count_users()) == 1
+    user = asyncio.run(get_user_by_username("bootstrapadmin"))
+    assert user is not None
+    assert user["role_id"] == 1
+    assert user["must_change_password"] is True
+
+
+def test_bootstrap_missing_env_crashes(monkeypatch, tmp_path):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("FF3LANTERN_BOOTSTRAP_ADMIN_USERNAME", raising=False)
+    monkeypatch.delenv("FF3LANTERN_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
+    import auth.config
+    from auth.bootstrap import ensure_local_auth_ready
+
+    importlib.reload(auth.config)
+    settings = auth.config.load_auth_settings()
+    with pytest.raises(SystemExit):
+        asyncio.run(ensure_local_auth_ready(settings))
+
+
+def test_role_seed_three_roles(monkeypatch, tmp_path, bootstrap_env):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    import main
+
+    importlib.reload(main)
+    with TestClient(main.app):
+        pass
+
+    roles = asyncio.run(list_roles())
+    assert len(roles) == 3
+    admin = asyncio.run(get_role_by_slug("admin"))
+    assert admin is not None
+    assert admin["is_system"] is True
+    assert asyncio.run(list_role_permissions(admin["id"])) == []
+
+    viewer = asyncio.run(get_role_by_slug("viewer"))
+    assert viewer is not None
+    viewer_perms = {
+        row["resource"]: row["level"]
+        for row in asyncio.run(list_role_permissions(viewer["id"]))
+    }
+    assert viewer_perms["dashboard"] == "read"
+    assert viewer_perms["admin"] == "none"
+
+
+async def _seed_existing_local_user() -> None:
+    await init_db()
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT INTO lantern_roles (id, name, slug, is_system, created_at)
+            VALUES (1, 'Existing', 'existing', 0, ?)
+            """,
+            (now,),
+        )
+        await db.execute(
+            """
+            INSERT INTO lantern_users (
+              id, username, role_id, enabled, created_at
+            )
+            VALUES (1, 'existinguser', 1, 1, ?)
+            """,
+            (now,),
+        )
+        await db.commit()
+
+
+def test_bootstrap_skipped_when_users_exist(monkeypatch, tmp_path, bootstrap_env):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    asyncio.run(_seed_existing_local_user())
+    import main
+
+    importlib.reload(main)
+    with TestClient(main.app):
+        pass
+
+    assert asyncio.run(count_users()) == 1
+    assert asyncio.run(get_user_by_username("bootstrapadmin")) is None
+    assert asyncio.run(get_user_by_username("existinguser")) is not None

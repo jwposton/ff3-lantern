@@ -110,7 +110,13 @@ def data_dir(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def secured_client(monkeypatch, data_dir):
+def bootstrap_env(monkeypatch):
+    monkeypatch.setenv("FF3LANTERN_BOOTSTRAP_ADMIN_USERNAME", "bootstrapadmin")
+    monkeypatch.setenv("FF3LANTERN_BOOTSTRAP_ADMIN_PASSWORD", "bootstrappass12")
+
+
+@pytest.fixture
+def secured_client(monkeypatch, data_dir, bootstrap_env):
     monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
     import main
 
@@ -121,6 +127,8 @@ def secured_client(monkeypatch, data_dir):
 
 
 async def _ensure_test_user(user_id: int = 1) -> None:
+    from auth.passwords import hash_password
+
     await init_db()
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(get_db_path()) as db:
@@ -134,11 +142,11 @@ async def _ensure_test_user(user_id: int = 1) -> None:
         await db.execute(
             """
             INSERT OR IGNORE INTO lantern_users (
-              id, username, role_id, enabled, created_at
+              id, username, password_hash, role_id, enabled, created_at
             )
-            VALUES (?, 'testuser', 1, 1, ?)
+            VALUES (?, 'testuser', ?, 1, 1, ?)
             """,
-            (user_id, now),
+            (user_id, hash_password("testpassword12"), now),
         )
         await db.commit()
 

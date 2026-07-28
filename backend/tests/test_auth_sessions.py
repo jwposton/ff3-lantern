@@ -37,6 +37,8 @@ def none_mode_client(monkeypatch, tmp_path):
 def local_mode_client(monkeypatch, tmp_path):
     monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
     monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FF3LANTERN_BOOTSTRAP_ADMIN_USERNAME", "bootstrapadmin")
+    monkeypatch.setenv("FF3LANTERN_BOOTSTRAP_ADMIN_PASSWORD", "bootstrappass12")
     import main
 
     importlib.reload(main)
