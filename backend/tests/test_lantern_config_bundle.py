@@ -521,7 +521,8 @@ async def test_import_atomic_rollback(data_dir, monkeypatch):
     assert counts["funding_buckets"] == 0
 
 
-def test_api_export_download(data_dir, monkeypatch):
+def test_api_export_download(data_dir, monkeypatch, bootstrap_env):
+    from auth import dependencies
     from main import app
     import routes.admin_config as admin_config_mod
 
@@ -540,6 +541,7 @@ def test_api_export_download(data_dir, monkeypatch):
     app.dependency_overrides[admin_config_mod.get_firefly_client] = (
         lambda: mock_client
     )
+    app.dependency_overrides[dependencies.require_system_admin] = lambda: 1
     try:
         client = TestClient(app)
         response = client.get("/api/admin/config/export")

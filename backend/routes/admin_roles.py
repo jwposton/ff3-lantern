@@ -201,13 +201,14 @@ async def delete_role_route(
 @router.post("/admin/roles/{role_id}/duplicate", status_code=201)
 async def duplicate_role_route(
     role_id: int,
-    body: RoleDuplicateBody,
     _admin_user_id: AdminUserId,
+    body: RoleDuplicateBody | None = None,
 ) -> dict[str, Any]:
+    duplicate_body = body or RoleDuplicateBody()
     source = await sidecar_db.get_role(role_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Role not found.")
-    name = (body.name or f"{source['name']} copy").strip()
+    name = (duplicate_body.name or f"{source['name']} copy").strip()
     if not name:
         raise HTTPException(status_code=422, detail="Role name is required.")
     await _ensure_unique_role_name(name)

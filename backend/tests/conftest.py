@@ -166,3 +166,27 @@ def create_test_session(data_dir):
         }
 
     return _create
+
+
+@pytest.fixture
+async def admin_session(monkeypatch, data_dir, bootstrap_env):
+    """Authenticated system-admin cookies after local bootstrap."""
+    from auth.rate_limit import LOGIN_RATE_LIMITER
+    from sidecar_db import clear_must_change_password, get_user_by_username
+
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    LOGIN_RATE_LIMITER.clear("bootstrapadmin")
+    import main
+
+    importlib.reload(main)
+    with TestClient(main.app):
+        pass
+
+    user = await get_user_by_username("bootstrapadmin")
+    assert user is not None
+    await clear_must_change_password(int(user["id"]))
+    pair = await create_session_pair(user_id=int(user["id"]))
+    return {
+        ACCESS_COOKIE_NAME: pair.access,
+        REFRESH_COOKIE_NAME: pair.refresh,
+    }
