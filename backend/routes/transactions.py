@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from auth.dependencies import require_permission
 from firefly_client import FireflyClient
 from mass_edit_apply import apply_mass_edit_batch
 
@@ -30,6 +31,7 @@ class MassEditApplyRequest(BaseModel):
 
 @router.get("/transactions/meta")
 async def get_transactions_meta(
+    _: int = Depends(require_permission("transactions", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     try:
@@ -49,6 +51,7 @@ async def get_transactions_meta(
 @router.post("/transactions/mass-edit")
 async def post_transactions_mass_edit(
     body: MassEditApplyRequest,
+    _: int = Depends(require_permission("transactions", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     if body.category_id is None and body.budget_id is None and not body.clear_budget:

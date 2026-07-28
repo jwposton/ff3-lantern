@@ -6,6 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from auth.dependencies import require_any_permission
 from firefly_client import FireflyClient, firefly_public_base_url
 from transaction_normalization import normalize_transactions
 
@@ -20,6 +21,9 @@ def get_firefly_client() -> FireflyClient:
 async def get_normalized_transactions(
     start: str = Query(..., description="Start date YYYY-MM-DD"),
     end: str = Query(..., description="End date YYYY-MM-DD"),
+    _: int = Depends(
+        require_any_permission(("dashboard", "read"), ("reports", "read"))
+    ),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     try:

@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Analytics and ops route RBAC** — categorize, loans, transactions, cache clear, and normalized transactions API routes now require role permissions (`categorize`, `loans`, `transactions`, `ops_cache`, and dashboard-or-reports read for analytics feed) when `auth_mode=local` (#99, #134)
 - **Payment worksheet RBAC enforcement** — all payment-run API routes now require role permissions for worksheet read/refresh/write, payment setup CRUD, bill discover scan/mutations, bills registry, and liabilities history; shared bill register endpoint gates `source=discover` on `bill_discover:write` (#99, #134)
 - **Bill detail forecast** — intermittent bills always show the worksheet forecast card when the API provides forecast data, including `unlikely` and `unknown` months with no suggested amount (#95)
 
