@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Backend RBAC enforcement** — when `FF3LANTERN_AUTH_MODE` is `local` or `oidc`, API routes enforce role permissions; worksheet refresh and bill discover scan are allowed at read level; adopt, ignore, and discover settings require bill discover write; system admin bypasses checks; `none` mode is unchanged (#134)
+
 ### Added
 
 - **RBAC permission dependencies** — `require_permission`, `require_any_permission`, and `require_bill_register_permission` FastAPI factories with level resolver, system-admin bypass, `auth_mode=none` skip, and `permission_denied` access log on 403 (#99, #134) — enable `FF3LANTERN_AUTH_MODE=local` for bcrypt login with bootstrap admin, role seeding (admin/Viewer/Member), and admin APIs to manage roles and users; config export/import now requires system admin when auth is enabled (#99, #131, #132, #133)
