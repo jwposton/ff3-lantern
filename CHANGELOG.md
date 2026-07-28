@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Payment worksheet RBAC enforcement** — all payment-run API routes now require role permissions for worksheet read/refresh/write, payment setup CRUD, bill discover scan/mutations, bills registry, and liabilities history; shared bill register endpoint gates `source=discover` on `bill_discover:write` (#99, #134)
 - **Bill detail forecast** — intermittent bills always show the worksheet forecast card when the API provides forecast data, including `unlikely` and `unknown` months with no suggested amount (#95)
 
 ### Fixed

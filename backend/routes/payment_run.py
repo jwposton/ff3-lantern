@@ -1019,6 +1019,7 @@ async def _validate_credit_card_account(
 async def bill_link_rules(
     bill_id: str,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bills", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     from payment_worksheet_bills import BillRegistrationError, list_link_rules_for_bill
@@ -1036,6 +1037,7 @@ async def bill_link_rules(
 async def register_bill_route(
     body: RegisterBillBody,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_bill_register_permission),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     if body.payment_rail == "credit_card" and body.credit_card_account_id:
@@ -1055,6 +1057,7 @@ async def register_bill_route(
 async def get_bill_registry(
     registry_id: int,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bills", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     existing = await sidecar_db.get_worksheet_registry(registry_id)
@@ -1098,6 +1101,7 @@ async def update_bill_registry(
     registry_id: int,
     body: UpdateBillRegistryBody,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bills", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     existing = await sidecar_db.get_worksheet_registry(registry_id)
@@ -1190,6 +1194,7 @@ async def update_bill_registry(
 async def repair_bill_link_rule(
     registry_id: int,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bills", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     existing = await sidecar_db.get_worksheet_registry(registry_id)
@@ -1242,6 +1247,7 @@ async def repair_bill_link_rule(
 async def delete_bill_registry(
     registry_id: int,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bills", "write")),
 ):
     existing = await sidecar_db.get_worksheet_registry(registry_id)
     if existing is None:
@@ -1252,7 +1258,10 @@ async def delete_bill_registry(
 
 
 @router.get("/payment-run/bills")
-async def list_registered_bills(_: None = Depends(require_payment_worksheet)):
+async def list_registered_bills(
+    _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bills", "read")),
+):
     rows = await sidecar_db.list_worksheet_registry()
     bills = [
         {
@@ -1274,6 +1283,7 @@ async def list_registered_bills(_: None = Depends(require_payment_worksheet)):
 async def bill_history(
     registry_id: int,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bills", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     existing = await sidecar_db.get_worksheet_registry(registry_id)
@@ -1465,6 +1475,7 @@ async def liability_history(
     start: str | None = Query(None, description="Start date YYYY-MM-DD"),
     end: str | None = Query(None, description="End date YYYY-MM-DD"),
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("liabilities", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     _, worksheet_profile, loan_profile, attrs = await _require_worksheet_liability(
@@ -1585,6 +1596,7 @@ class DiscoverIgnoreCategoryBody(BaseModel):
 @router.get("/payment-run/discover-settings")
 async def get_discover_settings_route(
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bill_discover", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     try:
@@ -1608,6 +1620,7 @@ async def get_discover_settings_route(
 async def put_discover_settings_route(
     body: DiscoverSettingsBody,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bill_discover", "write")),
 ):
     updated = await sidecar_db.update_discover_settings(
         ignored_categories=body.ignored_categories,
@@ -1620,6 +1633,7 @@ async def put_discover_settings_route(
 async def discover_ignore_payee_route(
     body: DiscoverIgnorePayeeBody,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bill_discover", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     if body.lookback_months not in LOOKBACK_CHOICES:
@@ -1656,6 +1670,7 @@ async def discover_ignore_payee_route(
 async def discover_ignore_category_route(
     body: DiscoverIgnoreCategoryBody,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bill_discover", "write")),
 ):
     result = await sidecar_db.add_discover_ignored_category(body.category)
     return result
@@ -1665,6 +1680,7 @@ async def discover_ignore_category_route(
 async def bill_suggestions(
     lookback_months: int = 12,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bill_discover", "refresh")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     if lookback_months not in LOOKBACK_CHOICES:
@@ -1683,6 +1699,7 @@ async def bill_suggestion_transactions(
     suggestion_id: str,
     lookback_months: int = 12,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("bill_discover", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     if lookback_months not in LOOKBACK_CHOICES:
