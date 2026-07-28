@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from decimal import Decimal
 
+from auth.dependencies import require_permission
 from firefly_client import FireflyClient
 import profile_store
 from loan_matcher import amount_outside_tolerance
@@ -94,7 +95,10 @@ def _account_row(account_id: str, attrs: dict[str, Any], profile: dict | None) -
 
 
 @router.get("/loans")
-async def get_loans(client: FireflyClient = Depends(get_firefly_client)):
+async def get_loans(
+    _: int = Depends(require_permission("loans", "read")),
+    client: FireflyClient = Depends(get_firefly_client),
+):
     try:
         accounts = await client.fetch_accounts()
         rows = []
@@ -115,7 +119,10 @@ async def get_loans(client: FireflyClient = Depends(get_firefly_client)):
 
 
 @router.get("/loans/meta")
-async def get_loans_meta(client: FireflyClient = Depends(get_firefly_client)):
+async def get_loans_meta(
+    _: int = Depends(require_permission("loans", "read")),
+    client: FireflyClient = Depends(get_firefly_client),
+):
     try:
         accounts = await client.fetch_accounts()
         categories = await client.fetch_categories()
@@ -156,7 +163,9 @@ async def get_loans_meta(client: FireflyClient = Depends(get_firefly_client)):
 
 @router.get("/loans/{account_id}")
 async def get_loan(
-    account_id: str, client: FireflyClient = Depends(get_firefly_client)
+    account_id: str,
+    _: int = Depends(require_permission("loans", "read")),
+    client: FireflyClient = Depends(get_firefly_client),
 ):
     try:
         acct = await client.fetch_account(account_id)
@@ -203,6 +212,7 @@ async def get_loan(
 @router.get("/loans/{account_id}/inferred-profile")
 async def get_inferred_loan_profile(
     account_id: str,
+    _: int = Depends(require_permission("loans", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     try:
@@ -247,6 +257,7 @@ class LoanProfileBody(BaseModel):
 async def put_loan(
     account_id: str,
     body: LoanProfileBody,
+    _: int = Depends(require_permission("loans", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     try:
@@ -287,6 +298,7 @@ async def put_loan(
 async def get_loan_splits_pending(
     start: str = Query(..., description="Start date YYYY-MM-DD"),
     end: str = Query(..., description="End date YYYY-MM-DD"),
+    _: int = Depends(require_permission("loans", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     _parse_date_range(start, end)
@@ -335,6 +347,7 @@ async def post_loan_split_preview(
     body: LoanSplitAmounts,
     start: str = Query(...),
     end: str = Query(...),
+    _: int = Depends(require_permission("loans", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     _parse_date_range(start, end)
@@ -362,6 +375,7 @@ async def post_loan_split_preview(
 async def post_loan_split_apply(
     group_id: str,
     body: LoanSplitApplyRequest,
+    _: int = Depends(require_permission("loans", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     _parse_date_range(body.start, body.end)

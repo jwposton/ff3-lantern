@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from auth.dependencies import require_permission
 from categorize_queue import build_grouped_pending_queue, build_pending_queue
 from categorization_apply import apply_category, apply_ignore, validate_apply_ids
 from categorization_models import RuleDraft
@@ -55,6 +56,7 @@ async def get_categorize_pending(
     end: str = Query(..., description="End date YYYY-MM-DD"),
     limit: int = Query(50, ge=1, le=100),
     group_by_fingerprint: bool = Query(False),
+    _: int = Depends(require_permission("categorize", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     _parse_date_range(start, end)
@@ -91,6 +93,7 @@ async def get_categorize_pending(
 
 @router.get("/categorize/meta")
 async def get_categorize_meta(
+    _: int = Depends(require_permission("categorize", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     try:
@@ -121,6 +124,7 @@ class SuggestRequest(BaseModel):
 @router.post("/categorize/suggest")
 async def post_categorize_suggest(
     body: SuggestRequest,
+    _: int = Depends(require_permission("categorize", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     if not _is_set("OPENROUTER_API_KEY"):
@@ -168,6 +172,7 @@ class IgnoreRequest(BaseModel):
 async def post_categorize_apply(
     journal_id: str,
     body: ApplyRequest,
+    _: int = Depends(require_permission("categorize", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     try:
@@ -197,6 +202,7 @@ async def post_categorize_apply(
 async def post_categorize_ignore(
     journal_id: str,
     body: IgnoreRequest,
+    _: int = Depends(require_permission("categorize", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     try:
@@ -233,6 +239,7 @@ class RuleTriggerRequest(BaseModel):
 @router.post("/categorize/rules/preview")
 async def post_categorize_rules_preview(
     body: RulePreviewRequest,
+    _: int = Depends(require_permission("categorize", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     _parse_date_range(body.start, body.end)
@@ -253,6 +260,7 @@ async def post_categorize_rules_preview(
 @router.post("/categorize/rules")
 async def post_categorize_rules_create(
     body: RuleCreateRequest,
+    _: int = Depends(require_permission("categorize", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     _parse_date_range(body.start, body.end)
@@ -282,6 +290,7 @@ async def post_categorize_rules_create(
 async def post_categorize_rules_trigger(
     rule_id: str,
     body: RuleTriggerRequest,
+    _: int = Depends(require_permission("categorize", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     _parse_date_range(body.start, body.end)
