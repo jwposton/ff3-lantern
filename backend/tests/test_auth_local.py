@@ -17,6 +17,8 @@ from auth.resources import (
     VIEWER_READ_RESOURCES,
 )
 from auth.cookies import ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME
+from auth.sessions import create_session_pair
+from auth.passwords import hash_password
 from sidecar_db import (
     count_users,
     get_role_by_slug,
@@ -247,8 +249,11 @@ def test_insert_access_log_persists_event(monkeypatch, tmp_path):
 
 
 def _local_client(monkeypatch, tmp_path, bootstrap_env):
+    from auth.rate_limit import LOGIN_RATE_LIMITER
+
     monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
     monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    LOGIN_RATE_LIMITER.clear("bootstrapadmin")
     import main
 
     importlib.reload(main)
@@ -340,3 +345,120 @@ def test_change_password(monkeypatch, tmp_path, bootstrap_env):
         user = asyncio.run(get_user_by_username("bootstrapadmin"))
     assert user is not None
     assert user["must_change_password"] is False
+
+
+def test_login_rate_limit_429(monkeypatch, tmp_path, bootstrap_env):
+    from auth.rate_limit import LOGIN_RATE_LIMITER
+
+    client = _local_client(monkeypatch, tmp_path, bootstrap_env)
+    username = "bootstrapadmin"
+    LOGIN_RATE_LIMITER.clear(username)
+    with client:
+        for _ in range(5):
+            bad = client.post(
+                "/api/auth/login",
+                json={"username": username, "password": "wrongpassword1"},
+            )
+            assert bad.status_code == 401
+        locked = client.post(
+            "/api/auth/login",
+            json={"username": username, "password": "wrongpassword1"},
+        )
+    assert locked.status_code == 429
+
+
+def test_must_change_gate_blocks_api(monkeypatch, tmp_path, bootstrap_env):
+    client = _local_client(monkeypatch, tmp_path, bootstrap_env)
+    with client:
+        login = client.post(
+            "/api/auth/login",
+            json={"username": "bootstrapadmin", "password": "bootstrappass12"},
+        )
+        assert login.status_code == 200
+        blocked = client.post("/api/cache/clear")
+        assert blocked.status_code == 403
+        assert blocked.json()["detail"] == "Password change required"
+        config = client.get("/api/auth/config")
+        assert config.status_code == 200
+        changed = client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "bootstrappass12",
+                "new_password": "newpassword1234",
+            },
+        )
+        assert changed.status_code == 200
+        after = client.post("/api/cache/clear")
+    assert after.status_code != 403
+    assert after.json().get("detail") != "Password change required"
+
+
+async def _create_disabled_user_session() -> dict[str, str | dict[str, str]]:
+    await init_db()
+    now = datetime.now(timezone.utc).isoformat()
+    user_id = 99
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO lantern_roles (id, name, slug, is_system, created_at)
+            VALUES (1, 'Test', 'test', 0, ?)
+            """,
+            (now,),
+        )
+        await db.execute(
+            """
+            INSERT OR REPLACE INTO lantern_users (
+              id, username, password_hash, role_id, enabled, created_at
+            )
+            VALUES (?, 'disableduser', ?, 1, 0, ?)
+            """,
+            (user_id, hash_password("disabledpass12"), now),
+        )
+        await db.commit()
+    pair = await create_session_pair(user_id=user_id)
+    return {
+        "access": pair.access,
+        "refresh": pair.refresh,
+        "cookies": {
+            ACCESS_COOKIE_NAME: pair.access,
+            REFRESH_COOKIE_NAME: pair.refresh,
+        },
+    }
+
+
+def test_disabled_user_session_forbidden(monkeypatch, tmp_path, bootstrap_env):
+    client = _local_client(monkeypatch, tmp_path, bootstrap_env)
+    session = asyncio.run(_create_disabled_user_session())
+    with client:
+        response = client.post(
+            "/api/cache/clear",
+            cookies=session["cookies"],
+        )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Forbidden"
+
+
+async def _count_access_log_by_type(event_type: str) -> int:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM lantern_access_log WHERE event_type = ?",
+            (event_type,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+
+def test_logout_writes_access_log(monkeypatch, tmp_path, bootstrap_env):
+    client = _local_client(monkeypatch, tmp_path, bootstrap_env)
+    with client:
+        login = client.post(
+            "/api/auth/login",
+            json={"username": "bootstrapadmin", "password": "bootstrappass12"},
+        )
+        assert login.status_code == 200
+        before = asyncio.run(_count_access_log_by_type("logout"))
+        logout = client.post("/api/auth/logout")
+        assert logout.status_code == 200
+        after = asyncio.run(_count_access_log_by_type("logout"))
+    assert after == before + 1
