@@ -144,6 +144,10 @@ __all__ = [
     "list_role_permissions",
     "replace_role_permissions",
     "allocate_next_id",
+    "insert_access_log",
+    "update_user_password",
+    "clear_must_change_password",
+    "get_user_flags",
 ]
 
 _SCHEMA = """
@@ -2720,6 +2724,93 @@ async def update_user_last_login(user_id: int) -> None:
             (_utc_now(), user_id),
         )
         await db.commit()
+
+
+async def insert_access_log(
+    event_type: str,
+    *,
+    user_id: int | None = None,
+    actor_user_id: int | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+    detail_json: str | None = None,
+) -> None:
+    await init_db()
+    log_id = await allocate_next_id("lantern_access_log")
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT INTO lantern_access_log (
+              id, occurred_at, event_type, user_id, actor_user_id,
+              ip_address, user_agent, detail_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                log_id,
+                _utc_now(),
+                event_type,
+                user_id,
+                actor_user_id,
+                ip_address,
+                user_agent,
+                detail_json,
+            ),
+        )
+        await db.commit()
+
+
+async def update_user_password(
+    user_id: int,
+    password_hash: str,
+    must_change_password: int,
+) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            UPDATE lantern_users
+            SET password_hash = ?, must_change_password = ?
+            WHERE id = ?
+            """,
+            (password_hash, must_change_password, user_id),
+        )
+        await db.commit()
+
+
+async def clear_must_change_password(user_id: int) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            UPDATE lantern_users
+            SET must_change_password = 0
+            WHERE id = ?
+            """,
+            (user_id,),
+        )
+        await db.commit()
+
+
+async def get_user_flags(user_id: int) -> dict[str, int] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute(
+            """
+            SELECT enabled, must_change_password
+            FROM lantern_users
+            WHERE id = ?
+            """,
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        must_change = row[1]
+        return {
+            "enabled": int(row[0]),
+            "must_change_password": int(must_change) if must_change is not None else 0,
+        }
 
 
 async def list_roles() -> list[dict[str, Any]]:

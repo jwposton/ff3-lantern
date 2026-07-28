@@ -184,3 +184,61 @@ def test_bootstrap_skipped_when_users_exist(monkeypatch, tmp_path, bootstrap_env
     assert asyncio.run(count_users()) == 1
     assert asyncio.run(get_user_by_username("bootstrapadmin")) is None
     assert asyncio.run(get_user_by_username("existinguser")) is not None
+
+
+def test_rate_limit_lockout_after_five_failures():
+    from auth.rate_limit import LOGIN_RATE_LIMITER
+
+    username = "rate_limit_user"
+    LOGIN_RATE_LIMITER.clear(username)
+    assert LOGIN_RATE_LIMITER.is_locked(username) is False
+    for _ in range(5):
+        LOGIN_RATE_LIMITER.record_failure(username)
+    assert LOGIN_RATE_LIMITER.is_locked(username) is True
+
+
+def test_rate_limit_clear_resets():
+    from auth.rate_limit import LOGIN_RATE_LIMITER
+
+    username = "rate_limit_clear_user"
+    for _ in range(5):
+        LOGIN_RATE_LIMITER.record_failure(username)
+    assert LOGIN_RATE_LIMITER.is_locked(username) is True
+    LOGIN_RATE_LIMITER.clear(username)
+    assert LOGIN_RATE_LIMITER.is_locked(username) is False
+
+
+async def _count_access_log_rows() -> int:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM lantern_access_log")
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+
+def test_insert_access_log_persists_event(monkeypatch, tmp_path):
+    from sidecar_db import insert_access_log
+
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+
+    async def _run() -> tuple[str, str]:
+        before = await _count_access_log_rows()
+        await insert_access_log(
+            "login_failed",
+            detail_json='{"username": "testuser"}',
+            ip_address="127.0.0.1",
+        )
+        after = await _count_access_log_rows()
+        assert after == before + 1
+        async with aiosqlite.connect(get_db_path()) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT event_type, detail_json FROM lantern_access_log ORDER BY id DESC LIMIT 1"
+            )
+            row = await cursor.fetchone()
+        assert row is not None
+        return row["event_type"], row["detail_json"]
+
+    event_type, detail_json = asyncio.run(_run())
+    assert event_type == "login_failed"
+    assert detail_json == '{"username": "testuser"}'
