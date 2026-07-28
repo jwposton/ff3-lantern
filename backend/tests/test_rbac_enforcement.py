@@ -421,8 +421,36 @@ def test_fixtures_load(viewer_client, payment_worksheet_enabled):
 
 
 def test_viewer_worksheet_refresh_allowed(viewer_client, payment_worksheet_enabled):
-    response = viewer_client.post("/api/payment-run/refresh", params={"month": "2026-07"})
-    assert response.status_code != 403
+    import httpx
+    from firefly_client import FireflyClient
+    from main import app
+    from routes.payment_run import get_firefly_client
+
+    empty_page = {
+        "data": [],
+        "meta": {"pagination": {"current_page": 1, "total_pages": 1}},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/accounts"):
+            return httpx.Response(200, json=empty_page)
+        if path.endswith("/transactions"):
+            return httpx.Response(200, json=empty_page)
+        if path.endswith("/bills"):
+            return httpx.Response(200, json=empty_page)
+        return httpx.Response(404)
+
+    app.dependency_overrides[get_firefly_client] = lambda: FireflyClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://firefly.example",
+        api_token="test-token",
+    )
+    try:
+        response = viewer_client.post("/api/payment-run/refresh", params={"month": "2026-07"})
+        assert response.status_code != 403
+    finally:
+        app.dependency_overrides.pop(get_firefly_client, None)
 
 
 def test_viewer_worksheet_row_put_denied(viewer_client, payment_worksheet_enabled):

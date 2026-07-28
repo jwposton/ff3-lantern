@@ -219,8 +219,8 @@ def payment_worksheet_enabled(monkeypatch):
 
 
 @pytest.fixture
-def rbac_local_client(monkeypatch, data_dir, bootstrap_env):
-    """TestClient with local auth mode and isolated data dir (RBAC matrix tests)."""
+def rbac_local_env(monkeypatch, data_dir, bootstrap_env):
+    """Single local-auth reload for RBAC matrix tests (shared app instance)."""
     from auth.rate_limit import LOGIN_RATE_LIMITER
 
     monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
@@ -231,6 +231,13 @@ def rbac_local_client(monkeypatch, data_dir, bootstrap_env):
     importlib.reload(main)
     with TestClient(main.app):
         pass
+
+
+@pytest.fixture
+def rbac_local_client(rbac_local_env):
+    """TestClient with local auth mode and isolated data dir (RBAC matrix tests)."""
+    import main
+
     return TestClient(main.app)
 
 
@@ -251,23 +258,10 @@ async def _rbac_user_session(
     username: str,
     role_id: int,
     password: str,
-    monkeypatch,
-    data_dir,
-    bootstrap_env,
 ) -> dict[str, str]:
     from auth.passwords import hash_password
-    from auth.rate_limit import LOGIN_RATE_LIMITER
     from auth.sessions import create_session_pair
     from sidecar_db import insert_user
-
-    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
-    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(data_dir))
-    LOGIN_RATE_LIMITER.clear("bootstrapadmin")
-    import main
-
-    importlib.reload(main)
-    with TestClient(main.app):
-        pass
 
     await insert_user(
         {
@@ -285,28 +279,22 @@ async def _rbac_user_session(
 
 
 @pytest.fixture
-async def viewer_session(monkeypatch, data_dir, bootstrap_env):
+async def viewer_session(rbac_local_env):
     """Access cookie for seeded Viewer role (role_id=2)."""
     return await _rbac_user_session(
         username="vieweruser",
         role_id=2,
         password="viewerpass1234",
-        monkeypatch=monkeypatch,
-        data_dir=data_dir,
-        bootstrap_env=bootstrap_env,
     )
 
 
 @pytest.fixture
-async def member_session(monkeypatch, data_dir, bootstrap_env):
+async def member_session(rbac_local_env):
     """Access cookie for seeded Member role (role_id=3)."""
     return await _rbac_user_session(
         username="memberuser",
         role_id=3,
         password="memberpass1234",
-        monkeypatch=monkeypatch,
-        data_dir=data_dir,
-        bootstrap_env=bootstrap_env,
     )
 
 
