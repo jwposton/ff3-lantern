@@ -633,7 +633,10 @@ async def refresh_payment_worksheet(
 
 
 @router.get("/payment-run/buckets")
-async def list_buckets(_: None = Depends(require_payment_worksheet)):
+async def list_buckets(
+    _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "read")),
+):
     rows = await sidecar_db.list_funding_buckets()
     link_ids = [
         row["external_link_id"]
@@ -652,6 +655,7 @@ async def list_buckets(_: None = Depends(require_payment_worksheet)):
 async def create_bucket(
     body: FundingBucketBody,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     bucket_id = (body.id or "").strip() or uuid.uuid4().hex
@@ -686,6 +690,7 @@ async def update_bucket(
     bucket_id: str,
     body: FundingBucketBody,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     existing = await sidecar_db.get_funding_bucket(bucket_id)
@@ -725,6 +730,7 @@ async def update_bucket(
 async def delete_bucket(
     bucket_id: str,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "write")),
 ):
     existing = await sidecar_db.get_funding_bucket(bucket_id)
     if existing is None:
@@ -734,7 +740,10 @@ async def delete_bucket(
 
 
 @router.get("/payment-run/bill-groups")
-async def list_bill_groups_route(_: None = Depends(require_payment_worksheet)):
+async def list_bill_groups_route(
+    _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "read")),
+):
     rows = await sidecar_db.list_bill_groups()
     enriched = [await _enrich_bill_group(row) for row in rows]
     return {"data": [row.model_dump() for row in enriched]}
@@ -744,6 +753,7 @@ async def list_bill_groups_route(_: None = Depends(require_payment_worksheet)):
 async def create_bill_group(
     body: BillGroupCreateBody,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "write")),
 ):
     group_id = await _allocate_bill_group_id(body.label, body.sort_order)
     row = await sidecar_db.get_bill_group(group_id)
@@ -757,6 +767,7 @@ async def patch_bill_group(
     group_id: str,
     body: BillGroupPatchBody,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "write")),
 ):
     existing = await sidecar_db.get_bill_group(group_id)
     if existing is None:
@@ -789,6 +800,7 @@ async def patch_bill_group(
 async def delete_bill_group_route(
     group_id: str,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "write")),
 ):
     existing = await sidecar_db.get_bill_group(group_id)
     if existing is None:
@@ -798,7 +810,10 @@ async def delete_bill_group_route(
 
 
 @router.get("/payment-run/external-links")
-async def list_external_links_route(_: None = Depends(require_payment_worksheet)):
+async def list_external_links_route(
+    _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "read")),
+):
     rows = await sidecar_db.list_external_links()
     enriched = [await _enrich_external_link(row) for row in rows]
     return {"data": [row.model_dump() for row in enriched]}
@@ -808,6 +823,7 @@ async def list_external_links_route(_: None = Depends(require_payment_worksheet)
 async def get_external_link_route(
     link_id: str,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "read")),
 ):
     row = await sidecar_db.get_external_link(link_id)
     if row is None:
@@ -819,6 +835,7 @@ async def get_external_link_route(
 async def create_external_link(
     body: ExternalLinkCreateBody,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "write")),
 ):
     link_id = await _allocate_external_link_id(body.label, body.url)
     row = await sidecar_db.get_external_link(link_id)
@@ -832,6 +849,7 @@ async def patch_external_link_route(
     link_id: str,
     body: ExternalLinkPatchBody,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "write")),
 ):
     existing = await sidecar_db.get_external_link(link_id)
     if existing is None:
@@ -853,6 +871,7 @@ async def patch_external_link_route(
 async def delete_external_link_route(
     link_id: str,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "write")),
 ):
     existing = await sidecar_db.get_external_link(link_id)
     if existing is None:
@@ -879,6 +898,7 @@ async def update_account_worksheet(
     body: PaymentWorksheetBody,
     month: str | None = None,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_setup", "write")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     target_month = _validate_month(month or current_month_key())
