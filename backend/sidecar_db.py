@@ -131,6 +131,19 @@ __all__ = [
     "get_refresh_by_hash_conn",
     "get_session_by_access_hash_conn",
     "delete_session_by_id_conn",
+    "count_users",
+    "count_roles",
+    "get_user",
+    "get_user_by_username",
+    "insert_user",
+    "update_user_last_login",
+    "list_roles",
+    "get_role",
+    "get_role_by_slug",
+    "insert_role",
+    "list_role_permissions",
+    "replace_role_permissions",
+    "allocate_next_id",
 ]
 
 _SCHEMA = """
@@ -2554,3 +2567,268 @@ async def rotate_refresh_conn(
     )
     session_id = int(new_session_cursor.lastrowid)
     return SessionPairIds(refresh_id=new_refresh_id, session_id=session_id)
+
+
+def _row_to_user(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "email": row["email"],
+        "password_hash": row["password_hash"],
+        "oidc_sub": row["oidc_sub"],
+        "display_name": row["display_name"],
+        "role_id": row["role_id"],
+        "enabled": bool(row["enabled"]),
+        "must_change_password": (
+            bool(row["must_change_password"])
+            if row["must_change_password"] is not None
+            else None
+        ),
+        "created_at": row["created_at"],
+        "last_login_at": row["last_login_at"],
+    }
+
+
+def _row_to_role(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "slug": row["slug"],
+        "is_system": bool(row["is_system"]),
+        "created_at": row["created_at"],
+    }
+
+
+def _row_to_role_permission(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "role_id": row["role_id"],
+        "resource": row["resource"],
+        "level": row["level"],
+        "actions_json": row["actions_json"],
+    }
+
+
+async def allocate_next_id(table: str) -> int:
+    await init_db()
+    if table not in {
+        "lantern_users",
+        "lantern_roles",
+        "lantern_refresh_tokens",
+        "lantern_access_log",
+    }:
+        raise ValueError(f"allocate_next_id not supported for table: {table}")
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute(
+            f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table}"
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 1
+
+
+async def count_users() -> int:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM lantern_users")
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+
+async def count_roles() -> int:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM lantern_roles")
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+
+async def get_user(user_id: int) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, username, email, password_hash, oidc_sub, display_name,
+                   role_id, enabled, must_change_password, created_at, last_login_at
+            FROM lantern_users
+            WHERE id = ?
+            """,
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_user(row) if row else None
+
+
+async def get_user_by_username(username: str) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, username, email, password_hash, oidc_sub, display_name,
+                   role_id, enabled, must_change_password, created_at, last_login_at
+            FROM lantern_users
+            WHERE username = ?
+            """,
+            (username,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_user(row) if row else None
+
+
+async def insert_user(data: dict[str, Any]) -> int:
+    await init_db()
+    user_id = data.get("id")
+    if user_id is None:
+        user_id = await allocate_next_id("lantern_users")
+    created_at = data.get("created_at") or _utc_now()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT INTO lantern_users (
+              id, username, email, password_hash, oidc_sub, display_name,
+              role_id, enabled, must_change_password, created_at, last_login_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                data.get("username"),
+                data.get("email"),
+                data.get("password_hash"),
+                data.get("oidc_sub"),
+                data.get("display_name"),
+                data["role_id"],
+                data.get("enabled", 1),
+                data.get("must_change_password"),
+                created_at,
+                data.get("last_login_at"),
+            ),
+        )
+        await db.commit()
+    return int(user_id)
+
+
+async def update_user_last_login(user_id: int) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            UPDATE lantern_users
+            SET last_login_at = ?
+            WHERE id = ?
+            """,
+            (_utc_now(), user_id),
+        )
+        await db.commit()
+
+
+async def list_roles() -> list[dict[str, Any]]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, name, slug, is_system, created_at
+            FROM lantern_roles
+            ORDER BY id ASC
+            """
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_role(row) for row in rows]
+
+
+async def get_role(role_id: int) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, name, slug, is_system, created_at
+            FROM lantern_roles
+            WHERE id = ?
+            """,
+            (role_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_role(row) if row else None
+
+
+async def get_role_by_slug(slug: str) -> dict[str, Any] | None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, name, slug, is_system, created_at
+            FROM lantern_roles
+            WHERE slug = ?
+            """,
+            (slug,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_role(row) if row else None
+
+
+async def insert_role(
+    *,
+    id: int,
+    name: str,
+    slug: str,
+    is_system: int,
+    created_at: str | None = None,
+) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT INTO lantern_roles (id, name, slug, is_system, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (id, name, slug, is_system, created_at or _utc_now()),
+        )
+        await db.commit()
+
+
+async def list_role_permissions(role_id: int) -> list[dict[str, Any]]:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT role_id, resource, level, actions_json
+            FROM lantern_role_permissions
+            WHERE role_id = ?
+            ORDER BY resource ASC
+            """,
+            (role_id,),
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_role_permission(row) for row in rows]
+
+
+async def replace_role_permissions(
+    role_id: int,
+    rows: list[dict[str, str]],
+) -> None:
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            "DELETE FROM lantern_role_permissions WHERE role_id = ?",
+            (role_id,),
+        )
+        for row in rows:
+            await db.execute(
+                """
+                INSERT INTO lantern_role_permissions (
+                  role_id, resource, level, actions_json
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    role_id,
+                    row["resource"],
+                    row["level"],
+                    row.get("actions_json"),
+                ),
+            )
+        await db.commit()

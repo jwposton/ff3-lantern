@@ -15,10 +15,17 @@ _VALID_MODES = frozenset({"none", "local", "oidc"})
 class AuthSettings:
     auth_mode: str
     cookie_secure: bool
+    bootstrap_username: str | None = None
+    bootstrap_password: str | None = None
 
     @property
     def secured(self) -> bool:
         return self.auth_mode != "none"
+
+
+def _optional_stripped_env(name: str) -> str | None:
+    raw = os.environ.get(name, "").strip()
+    return raw or None
 
 
 def _parse_bool_env(name: str, *, default: bool = False) -> bool:
@@ -41,4 +48,6 @@ def load_auth_settings() -> AuthSettings:
     return AuthSettings(
         auth_mode=raw_mode,
         cookie_secure=_parse_bool_env("FF3LANTERN_COOKIE_SECURE"),
+        bootstrap_username=_optional_stripped_env("FF3LANTERN_BOOTSTRAP_ADMIN_USERNAME"),
+        bootstrap_password=_optional_stripped_env("FF3LANTERN_BOOTSTRAP_ADMIN_PASSWORD"),
     )
