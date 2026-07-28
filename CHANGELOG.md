@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Local authentication and admin user management** — enable `FF3LANTERN_AUTH_MODE=local` for bcrypt login with bootstrap admin, role seeding (admin/Viewer/Member), and admin APIs to manage roles and users; config export/import now requires system admin when auth is enabled (#99, #131, #132, #133)
 - **Admin system gate and roles API** — `require_system_admin` protects `/api/admin/config/*` and `/api/admin/roles/*`; roles CRUD with duplicate endpoint and system-role delete guards (#99, #131)
 - **Local login and password change** — `POST /api/auth/login` with bcrypt verification, failed-login rate limiting, must-change-password gate on protected API routes, and access log entries for login/logout events when `auth_mode=local` (#99, #131)
 - **Auth foundation and sessions** — `FF3LANTERN_AUTH_MODE` (`none` | `local` | `oidc`, default `none`); `GET /api/auth/config`; session cookies with refresh rotation and theft detection when auth is enabled; default `none` preserves today's open API (#129, #130)
