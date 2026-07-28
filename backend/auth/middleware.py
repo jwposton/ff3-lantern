@@ -26,7 +26,17 @@ def _get_cookie(scope: dict, name: str) -> str | None:
 
 
 def _is_public_path(path: str) -> bool:
-    return path == "/health" or path.startswith("/api/auth/")
+    return path == "/health" or path in _PUBLIC_AUTH_PATHS
+
+
+_PUBLIC_AUTH_PATHS = frozenset(
+    {
+        "/api/auth/config",
+        "/api/auth/login",
+        "/api/auth/refresh",
+        "/api/auth/logout",
+    }
+)
 
 
 class SessionAuthMiddleware:

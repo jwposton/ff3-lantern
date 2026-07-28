@@ -16,9 +16,11 @@ from auth.resources import (
     VIEWER_NONE_RESOURCES,
     VIEWER_READ_RESOURCES,
 )
+from auth.cookies import ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME
 from sidecar_db import (
     count_users,
     get_role_by_slug,
+    get_user,
     get_user_by_username,
     init_db,
     list_role_permissions,
@@ -242,3 +244,99 @@ def test_insert_access_log_persists_event(monkeypatch, tmp_path):
     event_type, detail_json = asyncio.run(_run())
     assert event_type == "login_failed"
     assert detail_json == '{"username": "testuser"}'
+
+
+def _local_client(monkeypatch, tmp_path, bootstrap_env):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    import main
+
+    importlib.reload(main)
+    return TestClient(main.app)
+
+
+def test_login_success(monkeypatch, tmp_path, bootstrap_env):
+    client = _local_client(monkeypatch, tmp_path, bootstrap_env)
+    with client:
+        response = client.post(
+            "/api/auth/login",
+            json={"username": "bootstrapadmin", "password": "bootstrappass12"},
+        )
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert ACCESS_COOKIE_NAME in response.cookies
+    assert REFRESH_COOKIE_NAME in response.cookies
+
+
+def test_login_failed(monkeypatch, tmp_path, bootstrap_env):
+    client = _local_client(monkeypatch, tmp_path, bootstrap_env)
+    with client:
+        response = client.post(
+            "/api/auth/login",
+            json={"username": "bootstrapadmin", "password": "wrongpassword1"},
+        )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid credentials"
+
+
+def test_login_disabled_user(monkeypatch, tmp_path, bootstrap_env):
+    client = _local_client(monkeypatch, tmp_path, bootstrap_env)
+
+    async def _disable_bootstrap_admin() -> None:
+        user = await get_user_by_username("bootstrapadmin")
+        assert user is not None
+        async with aiosqlite.connect(get_db_path()) as db:
+            await db.execute(
+                "UPDATE lantern_users SET enabled = 0 WHERE id = ?",
+                (user["id"],),
+            )
+            await db.commit()
+
+    with client:
+        client.post(
+            "/api/auth/login",
+            json={"username": "bootstrapadmin", "password": "bootstrappass12"},
+        )
+        asyncio.run(_disable_bootstrap_admin())
+        response = client.post(
+            "/api/auth/login",
+            json={"username": "bootstrapadmin", "password": "bootstrappass12"},
+        )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid credentials"
+
+
+def test_login_not_available_in_none_mode(monkeypatch, tmp_path):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "none")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    import main
+
+    importlib.reload(main)
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/auth/login",
+            json={"username": "anyone", "password": "anypassword12"},
+        )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Local login not available"
+
+
+def test_change_password(monkeypatch, tmp_path, bootstrap_env):
+    client = _local_client(monkeypatch, tmp_path, bootstrap_env)
+    with client:
+        login = client.post(
+            "/api/auth/login",
+            json={"username": "bootstrapadmin", "password": "bootstrappass12"},
+        )
+        assert login.status_code == 200
+        response = client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "bootstrappass12",
+                "new_password": "newpassword1234",
+            },
+        )
+        assert response.status_code == 200
+        user = asyncio.run(get_user_by_username("bootstrapadmin"))
+    assert user is not None
+    assert user["must_change_password"] is False
