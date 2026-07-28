@@ -462,3 +462,37 @@ def test_logout_writes_access_log(monkeypatch, tmp_path, bootstrap_env):
         assert logout.status_code == 200
         after = asyncio.run(_count_access_log_by_type("logout"))
     assert after == before + 1
+
+
+def test_login_full_matrix(monkeypatch, tmp_path, bootstrap_env):
+    """Bootstrap login → change password → protected route → logout."""
+    client = _local_client(monkeypatch, tmp_path, bootstrap_env)
+    with client:
+        login = client.post(
+            "/api/auth/login",
+            json={"username": "bootstrapadmin", "password": "bootstrappass12"},
+        )
+        assert login.status_code == 200
+
+        blocked = client.post("/api/cache/clear")
+        assert blocked.status_code == 403
+        assert blocked.json()["detail"] == "Password change required"
+
+        changed = client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "bootstrappass12",
+                "new_password": "matrixpass1234",
+            },
+        )
+        assert changed.status_code == 200
+
+        protected = client.post("/api/cache/clear")
+        assert protected.status_code != 403
+        assert protected.json().get("detail") != "Password change required"
+
+        logout = client.post("/api/auth/logout")
+        assert logout.status_code == 200
+
+        after_logout = client.post("/api/cache/clear")
+    assert after_logout.status_code == 401

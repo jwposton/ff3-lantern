@@ -192,3 +192,19 @@ async def admin_session(monkeypatch, data_dir, bootstrap_env):
         ACCESS_COOKIE_NAME: pair.access,
         REFRESH_COOKIE_NAME: pair.refresh,
     }
+
+
+@pytest.fixture
+def admin_client(monkeypatch, data_dir, bootstrap_env, admin_session):
+    """TestClient with authenticated system-admin session cookies."""
+    from auth.rate_limit import LOGIN_RATE_LIMITER
+
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(data_dir))
+    LOGIN_RATE_LIMITER.clear("bootstrapadmin")
+    import main
+
+    importlib.reload(main)
+    client = TestClient(main.app)
+    client.cookies.update(admin_session)
+    return client
