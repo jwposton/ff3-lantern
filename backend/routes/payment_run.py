@@ -15,6 +15,7 @@ import firefly_reference_cache
 import profile_store
 from firefly_client import firefly_public_base_url
 import sidecar_db
+from auth.dependencies import require_bill_register_permission, require_permission
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
@@ -506,6 +507,7 @@ async def _validate_bill_group_member_ids(
 async def get_payment_worksheet(
     month: str | None = None,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_worksheet", "read")),
 ):
     target_month = _validate_month(month or current_month_key())
     envelope = await build_worksheet_envelope(target_month)
@@ -521,6 +523,7 @@ async def update_bucket_balance(
     body: BucketBalanceBody,
     month: str | None = None,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_worksheet", "write")),
 ):
     target_month = _validate_month(month or current_month_key())
     existing_bucket = await sidecar_db.get_funding_bucket(bucket_id)
@@ -564,6 +567,7 @@ async def update_row_state(
     body: RowStateBody,
     month: str | None = None,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_worksheet", "write")),
 ):
     target_month = _validate_month(month or current_month_key())
     existing_rows = await sidecar_db.get_worksheet_state_for_month(target_month)
@@ -620,6 +624,7 @@ async def update_row_state(
 async def refresh_payment_worksheet(
     month: str | None = None,
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_worksheet", "refresh")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     target_month = month or current_month_key()
@@ -1378,6 +1383,7 @@ async def credit_card_history(
     start: str | None = Query(None, description="Start date YYYY-MM-DD"),
     end: str | None = Query(None, description="End date YYYY-MM-DD"),
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_worksheet", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     _, profile, attrs = await _require_worksheet_credit_card(client, account_id)
@@ -1525,6 +1531,7 @@ async def liability_history(
 @router.get("/payment-run/available")
 async def available_bills(
     _: None = Depends(require_payment_worksheet),
+    __: int = Depends(require_permission("payment_worksheet", "read")),
     client: FireflyClient = Depends(get_firefly_client),
 ):
     try:
