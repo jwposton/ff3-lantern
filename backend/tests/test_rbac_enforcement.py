@@ -153,3 +153,260 @@ async def test_append_permission_denied_helper(monkeypatch, tmp_path):
         "required_level": "read",
         "path": "/api/categorize/suggest",
     }
+
+
+def _rbac_test_app():
+    from fastapi import Depends, FastAPI
+
+    from auth.config import load_auth_settings
+    from auth.dependencies import (
+        require_any_permission,
+        require_bill_register_permission,
+        require_permission,
+    )
+    from auth.middleware import SessionAuthMiddleware
+
+    app = FastAPI()
+    if load_auth_settings().auth_mode != "none":
+        app.add_middleware(SessionAuthMiddleware)
+
+    @app.get("/api/rbac/categorize-read")
+    async def categorize_read(
+        user_id: int = Depends(require_permission("categorize", "read")),
+    ):
+        return {"user_id": user_id}
+
+    @app.get("/api/rbac/any-dashboard-or-reports")
+    async def any_dashboard_or_reports(
+        user_id: int = Depends(
+            require_any_permission(("dashboard", "read"), ("reports", "read"))
+        ),
+    ):
+        return {"user_id": user_id}
+
+    @app.post("/api/rbac/bills/register")
+    async def bills_register(
+        user_id: int = Depends(require_bill_register_permission),
+    ):
+        return {"user_id": user_id}
+
+    return app
+
+
+async def _permission_denied_count() -> int:
+    async with aiosqlite.connect(get_db_path()) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM lantern_access_log WHERE event_type = ?",
+            ("permission_denied",),
+        )
+        row = await cursor.fetchone()
+        return int(row[0])
+
+
+def test_require_permission_none_mode_skips(monkeypatch, tmp_path):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "none")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    import auth.config
+
+    importlib.reload(auth.config)
+    app = _rbac_test_app()
+    with TestClient(app) as client:
+        response = client.get("/api/rbac/categorize-read")
+    assert response.status_code == 200
+    assert response.json() == {"user_id": 0}
+
+
+@pytest.mark.asyncio
+async def test_system_admin_bypasses_permission(monkeypatch, tmp_path, bootstrap_env):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    LOGIN_RATE_LIMITER.clear("bootstrapadmin")
+    import auth.config
+    import main
+
+    importlib.reload(auth.config)
+    importlib.reload(main)
+    with TestClient(main.app):
+        pass
+
+    from auth.cookies import ACCESS_COOKIE_NAME
+    from auth.sessions import create_session_pair
+    from sidecar_db import clear_must_change_password
+
+    admin = await get_user_by_username("bootstrapadmin")
+    assert admin is not None
+    await clear_must_change_password(int(admin["id"]))
+    pair = await create_session_pair(user_id=int(admin["id"]))
+
+    app = _rbac_test_app()
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/rbac/categorize-read",
+            cookies={ACCESS_COOKIE_NAME: pair.access},
+        )
+    assert response.status_code == 200
+    assert response.json()["user_id"] == int(admin["id"])
+
+
+@pytest.mark.asyncio
+async def test_access_log_permission_denied(monkeypatch, tmp_path, bootstrap_env):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    LOGIN_RATE_LIMITER.clear("bootstrapadmin")
+    import auth.config
+    import main
+
+    importlib.reload(auth.config)
+    importlib.reload(main)
+    with TestClient(main.app):
+        pass
+
+    from auth.cookies import ACCESS_COOKIE_NAME
+    from auth.passwords import hash_password
+    from auth.sessions import create_session_pair
+    from sidecar_db import clear_must_change_password, insert_user
+
+    await insert_user(
+        {
+            "username": "vieweruser",
+            "role_id": 2,
+            "enabled": 1,
+            "must_change_password": 0,
+            "password_hash": hash_password("viewerpass1234"),
+        }
+    )
+    viewer = await get_user_by_username("vieweruser")
+    assert viewer is not None
+    pair = await create_session_pair(user_id=int(viewer["id"]))
+
+    before = await _permission_denied_count()
+    app = _rbac_test_app()
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/rbac/categorize-read",
+            cookies={ACCESS_COOKIE_NAME: pair.access},
+        )
+    assert response.status_code == 403
+    assert await _permission_denied_count() == before + 1
+
+
+def test_none_mode_does_not_append_access_log(monkeypatch, tmp_path):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "none")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    import auth.config
+
+    importlib.reload(auth.config)
+    asyncio.run(init_db())
+    before = asyncio.run(_permission_denied_count())
+    app = _rbac_test_app()
+    with TestClient(app) as client:
+        response = client.get("/api/rbac/categorize-read")
+    assert response.status_code == 200
+    assert asyncio.run(_permission_denied_count()) == before
+
+
+@pytest.mark.asyncio
+async def test_require_any_permission_partial_match(monkeypatch, tmp_path, bootstrap_env):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    LOGIN_RATE_LIMITER.clear("bootstrapadmin")
+    import auth.config
+    import main
+
+    importlib.reload(auth.config)
+    importlib.reload(main)
+    with TestClient(main.app):
+        pass
+
+    from auth.cookies import ACCESS_COOKIE_NAME
+    from auth.passwords import hash_password
+    from auth.sessions import create_session_pair
+    from sidecar_db import insert_role, insert_user, replace_role_permissions
+
+    await insert_role(id=4, name="ReportsOnly", slug="reports-only", is_system=0)
+    await replace_role_permissions(
+        4,
+        [{"resource": "reports", "level": "read"}],
+    )
+    await insert_user(
+        {
+            "username": "reportsonly",
+            "role_id": 4,
+            "enabled": 1,
+            "must_change_password": 0,
+            "password_hash": hash_password("reportsonly12"),
+        }
+    )
+    user = await get_user_by_username("reportsonly")
+    assert user is not None
+    pair = await create_session_pair(user_id=int(user["id"]))
+
+    app = _rbac_test_app()
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/rbac/any-dashboard-or-reports",
+            cookies={ACCESS_COOKIE_NAME: pair.access},
+        )
+    assert response.status_code == 200
+    assert response.json()["user_id"] == int(user["id"])
+
+
+@pytest.mark.asyncio
+async def test_require_bill_register_permission_source_routing(
+    monkeypatch, tmp_path, bootstrap_env
+):
+    monkeypatch.setenv("FF3LANTERN_AUTH_MODE", "local")
+    monkeypatch.setenv("FF3LANTERN_DATA_DIR", str(tmp_path))
+    LOGIN_RATE_LIMITER.clear("bootstrapadmin")
+    import auth.config
+    import main
+
+    importlib.reload(auth.config)
+    importlib.reload(main)
+    with TestClient(main.app):
+        pass
+
+    from auth.cookies import ACCESS_COOKIE_NAME
+    from auth.passwords import hash_password
+    from auth.sessions import create_session_pair
+    from sidecar_db import insert_role, insert_user, replace_role_permissions
+
+    await insert_role(id=5, name="BillsWriter", slug="bills-writer", is_system=0)
+    await replace_role_permissions(
+        5,
+        [
+            {"resource": "bills", "level": "write"},
+            {"resource": "bill_discover", "level": "none"},
+        ],
+    )
+    await insert_user(
+        {
+            "username": "billswriter",
+            "role_id": 5,
+            "enabled": 1,
+            "must_change_password": 0,
+            "password_hash": hash_password("billswriter12"),
+        }
+    )
+    user = await get_user_by_username("billswriter")
+    assert user is not None
+    pair = await create_session_pair(user_id=int(user["id"]))
+    cookies = {ACCESS_COOKIE_NAME: pair.access}
+
+    app = _rbac_test_app()
+    with TestClient(app) as client:
+        hub = client.post("/api/rbac/bills/register", cookies=cookies)
+        discover_query = client.post(
+            "/api/rbac/bills/register?source=discover",
+            cookies=cookies,
+        )
+        discover_header = client.post(
+            "/api/rbac/bills/register",
+            cookies=cookies,
+            headers={"X-Lantern-Source": "discover"},
+        )
+
+    assert hub.status_code == 200
+    assert discover_query.status_code == 403
+    assert discover_header.status_code == 403
+
