@@ -1,4 +1,4 @@
-"""Public auth configuration endpoints (AUTH-01, D-01, D-03)."""
+"""Public auth configuration endpoints (AUTH-01, D-01, D-03, AUTH-10)."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from auth.cookies import (
 )
 from auth.passwords import hash_password, validate_password_length, verify_password
 from auth.rate_limit import LOGIN_RATE_LIMITER
+from auth.resources import RESOURCES
 from auth.sessions import (
     InvalidRefreshToken,
     ReuseDetected,
@@ -27,8 +28,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sidecar_db import (
     clear_must_change_password,
+    get_role,
     get_user,
     get_user_by_username,
+    get_user_flags,
+    list_role_permissions,
     update_user_last_login,
     update_user_password,
 )
@@ -55,12 +59,67 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class AuthMeUser(BaseModel):
+    id: int
+    username: str
+    display_name: str | None
+    role_id: int
+
+
+class AuthMeResponse(BaseModel):
+    user: AuthMeUser
+    must_change_password: bool
+    permissions: dict[str, str]
+
+
 @router.get("/auth/config", response_model=AuthConfigResponse)
 async def get_auth_config() -> AuthConfigResponse:
     settings = load_auth_settings()
     return AuthConfigResponse(
         auth_mode=settings.auth_mode,  # type: ignore[arg-type]
         secured=settings.secured,
+    )
+
+
+@router.get("/auth/me", response_model=AuthMeResponse)
+async def get_auth_me(request: Request) -> AuthMeResponse:
+    settings = load_auth_settings()
+    if settings.auth_mode == "none":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    user_id = getattr(request.state, "auth_user_id", None)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    user = await get_user(int(user_id))
+    if user is None or not user["enabled"]:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    flags = await get_user_flags(int(user_id))
+    must_change = bool(flags and flags["must_change_password"] == 1)
+
+    role = await get_role(user["role_id"])
+    if role is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    if role["is_system"]:
+        permissions = {resource: "write" for resource in RESOURCES}
+    else:
+        rows = await list_role_permissions(role["id"])
+        matrix = {row["resource"]: row["level"] for row in rows}
+        permissions = {
+            resource: matrix.get(resource, "none") for resource in RESOURCES
+        }
+
+    return AuthMeResponse(
+        user=AuthMeUser(
+            id=int(user["id"]),
+            username=user["username"],
+            display_name=user.get("display_name"),
+            role_id=int(user["role_id"]),
+        ),
+        must_change_password=must_change,
+        permissions=permissions,
     )
 
 

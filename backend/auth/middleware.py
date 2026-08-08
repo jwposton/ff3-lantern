@@ -22,6 +22,7 @@ _MUST_CHANGE_ALLOWLIST = frozenset(
         "/api/auth/config",
         "/api/auth/logout",
         "/api/auth/change-password",
+        "/api/auth/me",
     }
 )
 
