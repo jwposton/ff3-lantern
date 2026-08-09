@@ -16,6 +16,8 @@ import { LoansPage } from "@/pages/LoansPage"
 import { LoanProfilePage } from "@/pages/LoanProfilePage"
 import { LoanSplitsQueuePage } from "@/pages/LoanSplitsQueuePage"
 import { AboutPage } from "@/pages/AboutPage"
+import { ChangePasswordPage } from "@/pages/ChangePasswordPage"
+import { LoginPage } from "@/pages/LoginPage"
 import { PaymentWorksheetPage } from "@/pages/PaymentWorksheetPage"
 import { PaymentSetupPage } from "@/pages/PaymentSetupPage"
 import { BillGroupsPage } from "@/pages/BillGroupsPage"
@@ -29,6 +31,14 @@ import { BillsDetailPage } from "@/pages/BillsDetailPage"
 import { ExternalLinksPage } from "@/pages/ExternalLinksPage"
 
 export const router = createBrowserRouter([
+  {
+    path: "/login",
+    element: <LoginPage />,
+  },
+  {
+    path: "/change-password",
+    element: <ChangePasswordPage />,
+  },
   {
     path: "/",
     element: <AppShell />,
