@@ -1,5 +1,6 @@
 import { createBrowserRouter } from "react-router-dom"
 
+import { RequireAuth, RequirePermission } from "@/components/RequireAuth"
 import { AppShell } from "@/layouts/AppShell"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { SpendingBarPage } from "@/pages/SpendingBarPage"
@@ -29,6 +30,11 @@ import { LiabilityDetailPage } from "@/pages/LiabilityDetailPage"
 import { BillDiscoverPage } from "@/pages/BillDiscoverPage"
 import { BillsDetailPage } from "@/pages/BillsDetailPage"
 import { ExternalLinksPage } from "@/pages/ExternalLinksPage"
+import type { ReactElement } from "react"
+
+function guard(resource: string, element: ReactElement) {
+  return <RequirePermission resource={resource}>{element}</RequirePermission>
+}
 
 export const router = createBrowserRouter([
   {
@@ -41,108 +47,112 @@ export const router = createBrowserRouter([
   },
   {
     path: "/",
-    element: <AppShell />,
+    element: (
+      <RequireAuth>
+        <AppShell />
+      </RequireAuth>
+    ),
     children: [
       { index: true, element: <DashboardPage /> },
       {
         path: "reports/transactions",
-        element: <TransactionExplorerPage />,
+        element: guard("transactions", <TransactionExplorerPage />),
       },
       {
         path: "manage/categorize",
-        element: <CategorizePage />,
+        element: guard("categorize", <CategorizePage />),
       },
       {
         path: "manage/loans",
-        element: <LoansPage />,
+        element: guard("loans", <LoansPage />),
       },
       {
         path: "manage/loans/queue",
-        element: <LoanSplitsQueuePage />,
+        element: guard("loans", <LoanSplitsQueuePage />),
       },
       {
         path: "manage/loans/:accountId",
-        element: <LoanProfilePage />,
+        element: guard("loans", <LoanProfilePage />),
       },
       {
         path: "manage/payment-run",
-        element: <PaymentWorksheetPage />,
+        element: guard("payment_worksheet", <PaymentWorksheetPage />),
       },
       {
         path: "manage/payment-run/setup",
-        element: <PaymentSetupPage />,
+        element: guard("payment_setup", <PaymentSetupPage />),
       },
       {
         path: "manage/payment-run/buckets",
-        element: <PaymentBucketsPage />,
+        element: guard("payment_setup", <PaymentBucketsPage />),
       },
       {
         path: "manage/payment-run/external-links",
-        element: <ExternalLinksPage />,
+        element: guard("payment_setup", <ExternalLinksPage />),
       },
       {
         path: "manage/payment-run/bill-groups",
-        element: <BillGroupsPage />,
+        element: guard("payment_setup", <BillGroupsPage />),
       },
       {
         path: "manage/payment-run/cards",
-        element: <PaymentCardsPage />,
+        element: guard("payment_setup", <PaymentCardsPage />),
       },
       {
         path: "manage/payment-run/cards/:accountId",
-        element: <CreditCardDetailPage />,
+        element: guard("payment_setup", <CreditCardDetailPage />),
       },
       {
         path: "manage/payment-run/discover",
-        element: <BillDiscoverPage />,
+        element: guard("bill_discover", <BillDiscoverPage />),
       },
       {
         path: "manage/liabilities",
-        element: <LiabilitiesHubPage />,
+        element: guard("liabilities", <LiabilitiesHubPage />),
       },
       {
         path: "manage/liabilities/:accountId",
-        element: <LiabilityDetailPage />,
+        element: guard("liabilities", <LiabilityDetailPage />),
       },
       {
         path: "manage/bills",
-        element: <BillsDetailPage />,
+        element: guard("bills", <BillsDetailPage />),
       },
       {
         path: "manage/bills/:registryId",
-        element: <BillsDetailPage />,
+        element: guard("bills", <BillsDetailPage />),
       },
       {
         path: "reports/spending",
-        element: <SpendingBarPage />,
+        element: guard("reports", <SpendingBarPage />),
       },
       {
         path: "reports/spending/trends",
-        element: <SpendingLinePage />,
+        element: guard("reports", <SpendingLinePage />),
       },
       {
         path: "reports/spending/sankey",
-        element: <SpendingSankeyPage />,
+        element: guard("reports", <SpendingSankeyPage />),
       },
       {
         path: "reports/spending/mom",
-        element: <SpendingMomPage />,
+        element: guard("reports", <SpendingMomPage />),
       },
       {
         path: "reports/cash-flow",
-        element: <CashFlowBarPage />,
+        element: guard("reports", <CashFlowBarPage />),
       },
       {
         path: "reports/cash-flow/trends",
-        element: <CashFlowLinePage />,
+        element: guard("reports", <CashFlowLinePage />),
       },
       {
         path: "reports/cash-flow/sankey",
-        element: <CashFlowSankeyPage />,
+        element: guard("reports", <CashFlowSankeyPage />),
       },
       {
         path: "reports/cash-flow/mom",
-        element: <CashFlowMomPage />,
+        element: guard("reports", <CashFlowMomPage />),
       },
       {
         path: "about",

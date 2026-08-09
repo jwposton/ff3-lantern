@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Route guards and access denied** — protected routes redirect unauthenticated users to `/login` with `returnTo`; forbidden routes show an in-shell Access denied page; nav RBAC filtering follows backend resource permissions when auth is enabled (#99, #135)
 - **Auth shell (login and session bootstrap)** — standalone `/login` and `/change-password` pages, `AuthProvider` with silent session refresh, and `apiFetch` with cookie credentials and 401 refresh retry when auth is enabled (#99, #135)
 - **Auth me endpoint** — `GET /api/auth/me` returns session user identity, `must_change_password`, and a full RBAC permissions map for frontend nav and route guards when auth is enabled; returns 404 in `auth_mode=none` (#99, #135)
 - **RBAC permission dependencies** — `require_permission`, `require_any_permission`, and `require_bill_register_permission` FastAPI factories with level resolver, system-admin bypass, `auth_mode=none` skip, and `permission_denied` access log on 403 (#99, #134) — enable `FF3LANTERN_AUTH_MODE=local` for bcrypt login with bootstrap admin, role seeding (admin/Viewer/Member), and admin APIs to manage roles and users; config export/import now requires system admin when auth is enabled (#99, #131, #132, #133)
