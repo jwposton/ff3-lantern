@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
 import type { ReactNode } from "react"
 
+import { AuthProvider } from "@/context/AuthContext"
 import { DateRangeProvider } from "@/context/DateRangeContext"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { useManageQueueCounts } from "@/hooks/useManageQueueCounts"
+import type { AuthMe, PermissionLevel } from "@/lib/authApi"
 
 import { AppSidebar } from "./AppSidebar"
 
@@ -27,17 +29,83 @@ function TestProviders({
   return (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={initialEntries}>
-        <DateRangeProvider>
-          <SidebarProvider defaultOpen={defaultOpen}>{children}</SidebarProvider>
-        </DateRangeProvider>
+        <AuthProvider>
+          <DateRangeProvider>
+            <SidebarProvider defaultOpen={defaultOpen}>{children}</SidebarProvider>
+          </DateRangeProvider>
+        </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>
   )
 }
 
-function mockPendingFetch(categorizeCount: number, loanSplitCount: number, paymentEnabled = false) {
+function buildViewerPermissions(): Record<string, PermissionLevel> {
+  return {
+    dashboard: "read",
+    reports: "read",
+    transactions: "read",
+    payment_worksheet: "read",
+    bill_discover: "read",
+    bills: "read",
+    liabilities: "read",
+    categorize: "none",
+    loans: "none",
+    payment_setup: "none",
+    admin: "none",
+    ops_cache: "none",
+  }
+}
+
+function buildViewerMe(): AuthMe {
+  return {
+    user: { id: 2, username: "viewer", display_name: "Viewer", role_id: 2 },
+    must_change_password: false,
+    permissions: buildViewerPermissions(),
+  }
+}
+
+type MockSidebarFetchOptions = {
+  secured?: boolean
+  me?: AuthMe | null
+  categorizeCount?: number
+  loanSplitCount?: number
+  paymentEnabled?: boolean
+}
+
+function mockSidebarFetch({
+  secured = false,
+  me = null,
+  categorizeCount = 0,
+  loanSplitCount = 0,
+  paymentEnabled = false,
+}: MockSidebarFetchOptions = {}) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input)
+    if (url.includes("/api/auth/config")) {
+      return new Response(
+        JSON.stringify({
+          auth_mode: secured ? "local" : "none",
+          secured,
+        }),
+        { status: 200 },
+      )
+    }
+    if (url.includes("/api/auth/refresh")) {
+      if (me) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ detail: "Not authenticated" }), {
+        status: 401,
+      })
+    }
+    if (url.includes("/api/auth/me")) {
+      if (me) {
+        return new Response(JSON.stringify(me), { status: 200 })
+      }
+      return new Response(JSON.stringify({ detail: "Not authenticated" }), {
+        status: 401,
+      })
+    }
     if (url.includes("/health")) {
       return new Response(
         JSON.stringify({
@@ -71,6 +139,15 @@ function mockPendingFetch(categorizeCount: number, loanSplitCount: number, payme
     }
     return new Response("not found", { status: 404 })
   })
+}
+
+/** @deprecated use mockSidebarFetch */
+function mockPendingFetch(
+  categorizeCount: number,
+  loanSplitCount: number,
+  paymentEnabled = false,
+) {
+  return mockSidebarFetch({ categorizeCount, loanSplitCount, paymentEnabled })
 }
 
 beforeEach(() => {
@@ -513,6 +590,75 @@ describe("AppSidebar Charts section", () => {
     renderSidebar("/")
     expect(document.querySelector('a[href="/reports/spending"]')).toBeTruthy()
     expect(document.querySelector('a[href="/reports/cash-flow"]')).toBeNull()
+  })
+})
+
+describe("AppSidebar auth", () => {
+  it("shows Auth disabled when config is unsecured", async () => {
+    mockSidebarFetch({ secured: false })
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText(/Auth disabled/)).toBeTruthy()
+    })
+  })
+
+  it("hides Categorize for secured viewer role", async () => {
+    mockSidebarFetch({ secured: true, me: buildViewerMe() })
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Dashboard")).toBeTruthy()
+    })
+    expect(document.querySelector('a[href="/manage/categorize"]')).toBeNull()
+  })
+
+  it("hides Bill Pay when user lacks bill pay permissions", async () => {
+    const noBillPayMe: AuthMe = {
+      user: { id: 4, username: "restricted", display_name: null, role_id: 4 },
+      must_change_password: false,
+      permissions: {
+        dashboard: "read",
+        reports: "read",
+        transactions: "read",
+        payment_worksheet: "none",
+        bill_discover: "none",
+        bills: "none",
+        liabilities: "none",
+        payment_setup: "none",
+        categorize: "read",
+        loans: "read",
+        admin: "none",
+        ops_cache: "none",
+      },
+    }
+    mockSidebarFetch({
+      secured: true,
+      me: noBillPayMe,
+      paymentEnabled: true,
+    })
+
+    render(
+      <TestProviders>
+        <AppSidebar />
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Dashboard")).toBeTruthy()
+    })
+    expect(screen.queryByText("Bill Pay")).toBeNull()
+    expect(document.querySelector('a[href="/manage/payment-run"]')).toBeNull()
   })
 })
 
