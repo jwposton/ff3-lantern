@@ -5,23 +5,31 @@ import {
   Landmark,
   LayoutDashboard,
   Link as LinkIcon,
+  LogOut,
   PiggyBank,
   Receipt,
   ScanSearch,
+  ShieldAlert,
   Table,
   Tags,
   TrendingUp,
   Wallet,
   type LucideIcon,
 } from "lucide-react"
-import { useMemo } from "react"
-import { NavLink, useLocation, useMatch } from "react-router-dom"
+import { useCallback, useMemo, useState } from "react"
+import { Link, NavLink, useLocation, useMatch } from "react-router-dom"
 
 import { AppLogo } from "@/components/AppLogo"
 import { AppVersionBadge } from "@/components/AppVersionBadge"
 import { ReferenceCacheMenuItem } from "@/components/ReferenceCacheButton"
 import { ComparisonGraphIcon } from "@/components/icons/ComparisonGraphIcon"
 import { SankeyChartIcon } from "@/components/icons/SankeyChartIcon"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { useAuth } from "@/context/AuthContext"
 import { PRODUCT_NAME } from "@/lib/product"
 import { formatDemoAnchorLabel } from "@/lib/appClock"
 import { useHealth } from "@/hooks/useHealth"
@@ -51,15 +59,24 @@ import {
 } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 
-const generalNavItems = [
+type NavItem = {
+  to: string
+  label: string
+  icon: LucideIcon
+  end: boolean
+  resource?: string
+}
+
+const generalNavItems: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   {
     to: "/reports/transactions",
     label: "Transaction Explorer",
     icon: Table,
     end: false,
+    resource: "transactions",
   },
-] as const
+]
 
 const chartNavMeta: Record<
   ChartNavSuffix,
@@ -71,80 +88,95 @@ const chartNavMeta: Record<
   "/mom": { label: "Variance", icon: ComparisonGraphIcon },
 }
 
-const baseManageNavItems = [
+const baseManageNavItems: NavItem[] = [
   {
     to: "/manage/categorize",
     label: "Categorize",
     icon: Tags,
     end: true,
+    resource: "categorize",
   },
   {
     to: "/manage/loans/queue",
     label: "Loans",
     icon: Landmark,
     end: true,
+    resource: "loans",
   },
-] as const
+]
 
-const billPayNavItems = [
+const billPayNavItems: NavItem[] = [
   {
     to: "/manage/payment-run",
     label: "Worksheet",
     icon: Wallet,
     end: true,
+    resource: "payment_worksheet",
   },
   {
     to: "/manage/bills",
     label: "Bills",
     icon: Receipt,
     end: false,
+    resource: "bills",
   },
   {
     to: "/manage/payment-run/discover",
     label: "Bill Discovery",
     icon: ScanSearch,
     end: true,
+    resource: "bill_discover",
   },
   {
     to: "/manage/payment-run/cards",
     label: "Credit cards",
     icon: CreditCard,
     end: false,
+    resource: "payment_setup",
   },
   {
     to: "/manage/liabilities",
     label: "Liabilities",
     icon: Landmark,
     end: false,
+    resource: "liabilities",
   },
   {
     to: "/manage/payment-run/buckets",
     label: "Cash accounts",
     icon: PiggyBank,
     end: true,
+    resource: "payment_setup",
   },
   {
     to: "/manage/payment-run/external-links",
     label: "External links",
     icon: LinkIcon,
     end: true,
+    resource: "payment_setup",
   },
+]
+
+const BILL_PAY_RESOURCES = [
+  "payment_worksheet",
+  "bills",
+  "bill_discover",
+  "payment_setup",
+  "liabilities",
 ] as const
 
 function formatBadgeCount(count: number): string {
   return count > 99 ? "99+" : String(count)
 }
 
-function NavItems({
-  items,
-}: {
-  items: readonly {
-    to: string
-    label: string
-    icon: LucideIcon
-    end: boolean
-  }[]
-}) {
+function filterNavItems(
+  items: readonly NavItem[],
+  canSee: (resource: string) => boolean,
+): NavItem[] {
+  return items.filter((item) => !item.resource || canSee(item.resource))
+}
+
+function NavItems({ items }: { items: readonly NavItem[] }) {
   return (
     <>
       {items.map(({ to, label, icon: Icon, end }) => (
@@ -163,7 +195,7 @@ function NavItems({
   )
 }
 
-function ChartsNavGroup() {
+function ChartsNavGroup({ canSee }: { canSee: (resource: string) => boolean }) {
   const { pathname } = useLocation()
   const lens = detectReportLens(pathname)
   const chartNavItems = useMemo(
@@ -179,6 +211,10 @@ function ChartsNavGroup() {
       }),
     [lens],
   )
+
+  if (!canSee("reports")) {
+    return null
+  }
 
   return (
     <SidebarGroup>
@@ -245,13 +281,17 @@ function SidebarLogoToggle() {
   )
 }
 
-function BillPayNavGroup() {
+function BillPayNavGroup({ items }: { items: readonly NavItem[] }) {
+  if (items.length === 0) {
+    return null
+  }
+
   return (
     <SidebarGroup>
       <SidebarGroupLabel>Bill Pay</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
-          <NavItems items={billPayNavItems} />
+          <NavItems items={items} />
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
@@ -259,9 +299,11 @@ function BillPayNavGroup() {
 }
 
 function ManageNavItems({
+  items,
   categorizeCount,
   loanSplitCount,
 }: {
+  items: readonly NavItem[]
   categorizeCount: number
   loanSplitCount: number
 }) {
@@ -272,7 +314,7 @@ function ManageNavItems({
 
   return (
     <>
-      {baseManageNavItems.map((item) => (
+      {items.map((item) => (
         <ManageNavItem
           key={item.to}
           {...item}
@@ -283,11 +325,114 @@ function ManageNavItems({
   )
 }
 
+function InsecureBadge() {
+  return (
+    <>
+      <div
+        className="border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center text-xs text-amber-950 dark:text-amber-100 group-data-[collapsible=icon]:hidden"
+        role="status"
+      >
+        Auth disabled —{" "}
+        <Link
+          to="/about#authentication"
+          className="underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-50"
+        >
+          Enable authentication
+        </Link>
+      </div>
+      <div className="hidden border-b border-amber-500/30 bg-amber-500/10 px-2 py-2 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex size-8 items-center justify-center rounded-md text-amber-950 dark:text-amber-100"
+              aria-label="Auth disabled"
+            >
+              <ShieldAlert className="size-4" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            Auth disabled — see About to enable authentication
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    </>
+  )
+}
+
+function SidebarUserFooter() {
+  const { user, logout } = useAuth()
+  const [signingOut, setSigningOut] = useState(false)
+
+  if (!user) {
+    return null
+  }
+
+  const displayName = user.display_name?.trim() || user.username
+
+  return (
+    <>
+      <SidebarMenuItem>
+        <SidebarMenuButton className="pointer-events-none" tooltip={displayName}>
+          <span className="truncate text-sm">{displayName}</span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          type="button"
+          tooltip="Log out"
+          disabled={signingOut}
+          onClick={async () => {
+            setSigningOut(true)
+            try {
+              await logout()
+            } finally {
+              setSigningOut(false)
+            }
+          }}
+        >
+          <LogOut aria-hidden />
+          <span>{signingOut ? "Signing out…" : "Log out"}</span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </>
+  )
+}
+
 export function AppSidebar() {
   const { categorizeCount, loanSplitCount } = useManageQueueCounts()
   const { data: health } = useHealth()
+  const { secured, authMode, hasPermission } = useAuth()
   const paymentWorksheetEnabled = health?.payment_worksheet_enabled ?? false
   const demoAnchorDate = health?.demo_anchor_date?.trim() || null
+
+  const canSee = useCallback(
+    (resource: string) => !secured || hasPermission(resource),
+    [secured, hasPermission],
+  )
+
+  const visibleGeneralNav = useMemo(
+    () => filterNavItems(generalNavItems, canSee),
+    [canSee],
+  )
+
+  const visibleManageNav = useMemo(
+    () => filterNavItems(baseManageNavItems, canSee),
+    [canSee],
+  )
+
+  const visibleBillPayNav = useMemo(
+    () => filterNavItems(billPayNavItems, canSee),
+    [canSee],
+  )
+
+  const showBillPayGroup =
+    paymentWorksheetEnabled &&
+    (!secured ||
+      BILL_PAY_RESOURCES.some((resource) => hasPermission(resource)))
+
+  const showManageGroup = visibleManageNav.length > 0
+  const showOpsCache = canSee("ops_cache")
 
   return (
     <Sidebar collapsible="icon">
@@ -300,6 +445,7 @@ export function AppSidebar() {
           Demo — data as of {formatDemoAnchorLabel(demoAnchorDate)}
         </div>
       ) : null}
+      {!secured ? <InsecureBadge /> : null}
       <SidebarHeader className="border-b border-sidebar-border group-data-[collapsible=icon]:px-0">
         <div className="flex h-12 w-full items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0">
           <SidebarTrigger
@@ -316,30 +462,35 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              <NavItems items={generalNavItems} />
+              <NavItems items={visibleGeneralNav} />
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <ChartsNavGroup />
-        <SidebarGroup>
-          <SidebarGroupLabel>Manage</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <ManageNavItems
-                categorizeCount={categorizeCount}
-                loanSplitCount={loanSplitCount}
-              />
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-        {paymentWorksheetEnabled ? <BillPayNavGroup /> : null}
+        <ChartsNavGroup canSee={canSee} />
+        {showManageGroup ? (
+          <SidebarGroup>
+            <SidebarGroupLabel>Manage</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <ManageNavItems
+                  items={visibleManageNav}
+                  categorizeCount={categorizeCount}
+                  loanSplitCount={loanSplitCount}
+                />
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
+        {showBillPayGroup ? (
+          <BillPayNavGroup items={visibleBillPayNav} />
+        ) : null}
       </SidebarContent>
       <SidebarFooter>
         <div className="flex items-center justify-center px-2 py-1 group-data-[collapsible=icon]:hidden">
           <AppVersionBadge className="text-[10px]" />
         </div>
         <SidebarMenu>
-          <ReferenceCacheMenuItem />
+          {showOpsCache ? <ReferenceCacheMenuItem /> : null}
           <SidebarMenuItem>
             <NavLink to="/about" className="contents">
               {({ isActive }) => (
@@ -350,6 +501,7 @@ export function AppSidebar() {
               )}
             </NavLink>
           </SidebarMenuItem>
+          {authMode !== "none" ? <SidebarUserFooter /> : null}
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
