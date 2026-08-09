@@ -5,6 +5,7 @@ import { RouterProvider } from "react-router-dom"
 
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { AuthProvider } from "@/context/AuthContext"
 import { setDemoAnchorDate } from "@/lib/appClock"
 import { fetchHealth } from "@/lib/healthApi"
 import { router } from "@/routes"
@@ -30,10 +31,12 @@ async function bootstrap() {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <RouterProvider router={router} />
-          <Toaster />
-        </TooltipProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <RouterProvider router={router} />
+            <Toaster />
+          </TooltipProvider>
+        </AuthProvider>
       </QueryClientProvider>
     </StrictMode>,
   )
