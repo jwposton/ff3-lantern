@@ -61,6 +61,22 @@ export function AboutPage() {
         </p>
       </div>
 
+      <section id="authentication" className="space-y-2">
+        <h2 className="text-2xl font-semibold tracking-tight">Authentication</h2>
+        <p className="max-w-prose text-muted-foreground">
+          Lantern is running without sign-in. To require authentication, set{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-sm">
+            FF3LANTERN_AUTH_MODE=local
+          </code>{" "}
+          or <code className="rounded bg-muted px-1 py-0.5 text-sm">oidc</code>{" "}
+          in your environment file and restart the server.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          See <code className="rounded bg-muted px-1 py-0.5 text-sm">.env.example</code>{" "}
+          for variable names.
+        </p>
+      </section>
+
       <Card>
         <CardHeader>
           <CardTitle>Icon attributions</CardTitle>
