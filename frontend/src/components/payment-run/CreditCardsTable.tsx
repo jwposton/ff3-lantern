@@ -112,6 +112,7 @@ function SortableHead({
   direction,
   onSort,
   className,
+  align = "left",
 }: {
   label: string
   columnKey: CcSortKey
@@ -119,12 +120,23 @@ function SortableHead({
   direction: SortDirection
   onSort: (key: CcSortKey) => void
   className?: string
+  align?: "left" | "right" | "center"
 }) {
   return (
-    <TableHead className={className}>
+    <TableHead
+      className={cn(
+        align === "right" && "text-right",
+        align === "center" && "text-center",
+        className,
+      )}
+    >
       <button
         type="button"
-        className="inline-flex w-full items-center gap-0.5 hover:text-foreground"
+        className={cn(
+          "inline-flex w-full items-center gap-0.5 hover:text-foreground",
+          align === "right" && "justify-end",
+          align === "center" && "justify-center",
+        )}
         onClick={() => onSort(columnKey)}
       >
         <span>{label}</span>
@@ -139,36 +151,85 @@ function SortableHead({
   )
 }
 
-type ActivitySortKey =
-  | "date"
-  | "description"
-  | "payee"
-  | "category"
-  | "budget"
-  | "amount"
+const UNASSIGNED_GROUP_LABEL = "Unassigned"
 
-function defaultActivityCompare(
-  a: CreditCardActivityTransaction,
-  b: CreditCardActivityTransaction,
+function activityGroupLabel(value: string | null | undefined): string {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : UNASSIGNED_GROUP_LABEL
+}
+
+function sumActivityAmounts(
+  transactions: CreditCardActivityTransaction[],
 ): number {
-  const budgetCmp = (a.budget ?? "").localeCompare(b.budget ?? "")
-  if (budgetCmp !== 0) return budgetCmp
-  return (a.category ?? "").localeCompare(b.category ?? "")
+  return transactions.reduce((sum, txn) => sum + parseAmount(txn.amount), 0)
 }
 
-function activitySortIndicator(
-  sortKey: ActivitySortKey | null,
-  columnKey: ActivitySortKey,
-  direction: SortDirection,
-): string {
-  if (sortKey === null) {
-    if (columnKey === "budget" || columnKey === "category") return "↑"
-    return "↕"
+type ActivityCategoryGroup = {
+  key: string
+  label: string
+  transactions: CreditCardActivityTransaction[]
+  total: number
+}
+
+type ActivityBudgetGroup = {
+  key: string
+  label: string
+  categories: ActivityCategoryGroup[]
+  total: number
+}
+
+/** Group New activity as Budget → Category → transactions (sorted by label). */
+export function groupActivityByBudgetThenCategory(
+  transactions: CreditCardActivityTransaction[],
+): ActivityBudgetGroup[] {
+  const budgetMap = new Map<string, Map<string, CreditCardActivityTransaction[]>>()
+
+  for (const txn of transactions) {
+    const budgetKey = activityGroupLabel(txn.budget)
+    const categoryKey = activityGroupLabel(txn.category)
+    let categories = budgetMap.get(budgetKey)
+    if (!categories) {
+      categories = new Map()
+      budgetMap.set(budgetKey, categories)
+    }
+    const existing = categories.get(categoryKey)
+    if (existing) {
+      existing.push(txn)
+    } else {
+      categories.set(categoryKey, [txn])
+    }
   }
-  return sortDirectionIndicator(sortKey, columnKey, direction)
+
+  const budgets: ActivityBudgetGroup[] = [...budgetMap.entries()].map(
+    ([budgetLabel, categoryMap]) => {
+      const categories: ActivityCategoryGroup[] = [...categoryMap.entries()]
+        .map(([categoryLabel, txns]) => {
+          const sortedTxns = [...txns].sort((a, b) => a.date.localeCompare(b.date))
+          return {
+            key: categoryLabel,
+            label: categoryLabel,
+            transactions: sortedTxns,
+            total: sumActivityAmounts(sortedTxns),
+          }
+        })
+        .sort((a, b) => a.label.localeCompare(b.label))
+
+      return {
+        key: budgetLabel,
+        label: budgetLabel,
+        categories,
+        total: categories.reduce((sum, cat) => sum + cat.total, 0),
+      }
+    },
+  )
+
+  budgets.sort((a, b) => a.label.localeCompare(b.label))
+  return budgets
 }
 
-function ActivitySortableHead({
+type LeafTxnSortKey = "date" | "description" | "payee" | "amount"
+
+function ActivityLeafSortableHead({
   label,
   columnKey,
   sortKey,
@@ -177,10 +238,10 @@ function ActivitySortableHead({
   align = "left",
 }: {
   label: string
-  columnKey: ActivitySortKey
-  sortKey: ActivitySortKey | null
+  columnKey: LeafTxnSortKey
+  sortKey: LeafTxnSortKey
   direction: SortDirection
-  onSort: (key: ActivitySortKey) => void
+  onSort: (key: LeafTxnSortKey) => void
   align?: "left" | "right"
 }) {
   return (
@@ -201,10 +262,180 @@ function ActivitySortableHead({
       >
         <span>{label}</span>
         <span className="text-muted-foreground text-[10px]" aria-hidden>
-          {activitySortIndicator(sortKey, columnKey, direction)}
+          {sortDirectionIndicator(sortKey, columnKey, direction)}
         </span>
       </button>
     </th>
+  )
+}
+
+function ActivityGroupToggle({
+  label,
+  amount,
+  expanded,
+  onToggle,
+  depth,
+  level,
+}: {
+  label: string
+  amount: number
+  expanded: boolean
+  onToggle: () => void
+  depth: 0 | 1
+  level: "budget" | "category"
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "hover:bg-muted/50 flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-xs",
+        depth === 0 ? "font-medium" : "text-muted-foreground pl-4",
+      )}
+      aria-expanded={expanded}
+      aria-label={`${expanded ? "Collapse" : "Expand"} ${level} ${label}`}
+      onClick={onToggle}
+    >
+      {expanded ? (
+        <ChevronDown className="size-3.5 shrink-0" aria-hidden />
+      ) : (
+        <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+      )}
+      <span className="min-w-0 flex-1 truncate" aria-hidden>
+        {label}
+      </span>
+      <span className="tabular-nums whitespace-nowrap" aria-hidden>
+        {formatDisplayAmount(amount)}
+      </span>
+    </button>
+  )
+}
+
+function CategoryTransactionTable({
+  transactions,
+  fireflyBaseUrl,
+}: {
+  transactions: CreditCardActivityTransaction[]
+  fireflyBaseUrl?: string
+}) {
+  const [sortKey, setSortKey] = useState<LeafTxnSortKey>("date")
+  const [sortDir, setSortDir] = useState<SortDirection>("asc")
+
+  const sortedTransactions = useMemo(() => {
+    const copy = [...transactions]
+    const compare = (
+      a: CreditCardActivityTransaction,
+      b: CreditCardActivityTransaction,
+    ): number => {
+      switch (sortKey) {
+        case "description":
+          return a.description.localeCompare(b.description)
+        case "payee":
+          return (a.payee ?? "").localeCompare(b.payee ?? "")
+        case "amount":
+          return parseAmount(a.amount) - parseAmount(b.amount)
+        case "date":
+        default:
+          return a.date.localeCompare(b.date)
+      }
+    }
+    copy.sort((a, b) => {
+      const result = compare(a, b)
+      return sortDir === "asc" ? result : -result
+    })
+    return copy
+  }, [transactions, sortKey, sortDir])
+
+  function toggleSort(key: LeafTxnSortKey) {
+    setSortDir((currentDir) => nextSortDirection(sortKey, key, currentDir))
+    setSortKey(key)
+  }
+
+  return (
+    <div className="ml-auto w-fit max-w-full overflow-x-auto pl-8">
+      <table className="w-max max-w-full table-fixed text-xs [&_th]:font-medium [&_th]:text-muted-foreground [&_td]:py-1 [&_th]:py-1">
+        <colgroup>
+          <col style={{ width: "5.5rem" }} />
+          <col style={{ width: "8rem" }} />
+          <col style={{ width: "8rem" }} />
+          <col style={{ width: "5.5rem" }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <ActivityLeafSortableHead
+              label="Date"
+              columnKey="date"
+              sortKey={sortKey}
+              direction={sortDir}
+              onSort={toggleSort}
+            />
+            <ActivityLeafSortableHead
+              label="Description"
+              columnKey="description"
+              sortKey={sortKey}
+              direction={sortDir}
+              onSort={toggleSort}
+            />
+            <ActivityLeafSortableHead
+              label="Payee"
+              columnKey="payee"
+              sortKey={sortKey}
+              direction={sortDir}
+              onSort={toggleSort}
+            />
+            <ActivityLeafSortableHead
+              label="Amount"
+              columnKey="amount"
+              sortKey={sortKey}
+              direction={sortDir}
+              onSort={toggleSort}
+              align="right"
+            />
+          </tr>
+        </thead>
+        <tbody>
+          {sortedTransactions.map((txn, index) => {
+            const fireflyUrl = buildFireflyTransactionUrl(
+              fireflyBaseUrl,
+              txn.journal_id,
+            )
+            const rowKey = `${txn.date}-${txn.journal_id ?? index}`
+            return (
+              <tr key={rowKey} className="border-t border-border/40">
+                <td className="pr-3 tabular-nums whitespace-nowrap">
+                  {formatDisplayDate(txn.date)}
+                </td>
+                <td className="pr-3 truncate">
+                  {fireflyUrl ? (
+                    <a
+                      href={fireflyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary block truncate underline-offset-2 hover:underline"
+                      title={txn.description}
+                    >
+                      {txn.description}
+                    </a>
+                  ) : (
+                    <span className="block truncate" title={txn.description}>
+                      {txn.description}
+                    </span>
+                  )}
+                </td>
+                <td
+                  className="text-muted-foreground pr-3 truncate"
+                  title={txn.payee ?? undefined}
+                >
+                  {txn.payee ?? "—"}
+                </td>
+                <td className="text-right tabular-nums whitespace-nowrap">
+                  {formatDisplayAmount(txn.amount)}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -215,157 +446,81 @@ function NewActivitySubTable({
   transactions: CreditCardActivityTransaction[]
   fireflyBaseUrl?: string
 }) {
-  const [sortKey, setSortKey] = useState<ActivitySortKey | null>(null)
-  const [sortDir, setSortDir] = useState<SortDirection>("asc")
-
-  const comparators = useMemo(
-    (): Record<
-      ActivitySortKey,
-      (a: CreditCardActivityTransaction, b: CreditCardActivityTransaction) => number
-    > => ({
-      date: (a, b) => a.date.localeCompare(b.date),
-      description: (a, b) => a.description.localeCompare(b.description),
-      payee: (a, b) => (a.payee ?? "").localeCompare(b.payee ?? ""),
-      category: (a, b) => (a.category ?? "").localeCompare(b.category ?? ""),
-      budget: (a, b) => (a.budget ?? "").localeCompare(b.budget ?? ""),
-      amount: (a, b) => parseAmount(a.amount) - parseAmount(b.amount),
-    }),
-    [],
+  const [expandedBudgets, setExpandedBudgets] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
+    () => new Set(),
   )
 
-  const sortedTransactions = useMemo(() => {
-    const copy = [...transactions]
-    if (sortKey === null) {
-      copy.sort(defaultActivityCompare)
-      return copy
-    }
-    const compare = comparators[sortKey]
-    copy.sort((a, b) => {
-      const result = compare(a, b)
-      return sortDir === "asc" ? result : -result
-    })
-    return copy
-  }, [transactions, sortKey, sortDir, comparators])
+  const budgetGroups = useMemo(
+    () => groupActivityByBudgetThenCategory(transactions),
+    [transactions],
+  )
 
-  function toggleActivitySort(key: ActivitySortKey) {
-    setSortDir((currentDir) => nextSortDirection(sortKey, key, currentDir))
-    setSortKey(key)
+  function toggleBudget(key: string) {
+    setExpandedBudgets((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function toggleCategory(budgetKey: string, categoryKey: string) {
+    const compound = `${budgetKey}::${categoryKey}`
+    setExpandedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(compound)) next.delete(compound)
+      else next.add(compound)
+      return next
+    })
   }
 
   return (
     <div className="bg-muted/30 border-t px-4 py-2.5">
-      <div className="ml-auto w-fit max-w-full overflow-x-auto">
-        <table className="w-max max-w-full table-fixed text-xs [&_th]:font-medium [&_th]:text-muted-foreground [&_td]:py-1 [&_th]:py-1">
-          <colgroup>
-            <col style={{ width: "5.5rem" }} />
-            <col style={{ width: "6.5rem" }} />
-            <col style={{ width: "8rem" }} />
-            <col style={{ width: "8rem" }} />
-            <col style={{ width: "7rem" }} />
-            <col style={{ width: "5.5rem" }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <ActivitySortableHead
-                label="Date"
-                columnKey="date"
-                sortKey={sortKey}
-                direction={sortDir}
-                onSort={toggleActivitySort}
+      <div className="ml-auto w-full max-w-xl space-y-0.5">
+        {budgetGroups.map((budget) => {
+          const budgetExpanded = expandedBudgets.has(budget.key)
+          return (
+            <div key={budget.key}>
+              <ActivityGroupToggle
+                label={budget.label}
+                amount={budget.total}
+                expanded={budgetExpanded}
+                onToggle={() => toggleBudget(budget.key)}
+                depth={0}
+                level="budget"
               />
-              <ActivitySortableHead
-                label="Description"
-                columnKey="description"
-                sortKey={sortKey}
-                direction={sortDir}
-                onSort={toggleActivitySort}
-              />
-              <ActivitySortableHead
-                label="Payee"
-                columnKey="payee"
-                sortKey={sortKey}
-                direction={sortDir}
-                onSort={toggleActivitySort}
-              />
-              <ActivitySortableHead
-                label="Category"
-                columnKey="category"
-                sortKey={sortKey}
-                direction={sortDir}
-                onSort={toggleActivitySort}
-              />
-              <ActivitySortableHead
-                label="Budget"
-                columnKey="budget"
-                sortKey={sortKey}
-                direction={sortDir}
-                onSort={toggleActivitySort}
-              />
-              <ActivitySortableHead
-                label="Amount"
-                columnKey="amount"
-                sortKey={sortKey}
-                direction={sortDir}
-                onSort={toggleActivitySort}
-                align="right"
-              />
-            </tr>
-          </thead>
-          <tbody>
-            {sortedTransactions.map((txn, index) => {
-              const fireflyUrl = buildFireflyTransactionUrl(
-                fireflyBaseUrl,
-                txn.journal_id,
-              )
-              const rowKey = `${txn.date}-${txn.journal_id ?? index}`
-              return (
-                <tr key={rowKey} className="border-t border-border/40">
-                  <td className="pr-3 tabular-nums whitespace-nowrap">
-                    {formatDisplayDate(txn.date)}
-                  </td>
-                  <td className="pr-3 truncate">
-                    {fireflyUrl ? (
-                      <a
-                        href={fireflyUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary block truncate underline-offset-2 hover:underline"
-                        title={txn.description}
-                      >
-                        {txn.description}
-                      </a>
-                    ) : (
-                      <span className="block truncate" title={txn.description}>
-                        {txn.description}
-                      </span>
-                    )}
-                  </td>
-                  <td
-                    className="text-muted-foreground pr-3 truncate"
-                    title={txn.payee ?? undefined}
-                  >
-                    {txn.payee ?? "—"}
-                  </td>
-                  <td
-                    className="text-muted-foreground pr-3 truncate"
-                    title={txn.category ?? undefined}
-                  >
-                    {txn.category ?? "—"}
-                  </td>
-                  <td
-                    className="text-muted-foreground pr-3 truncate"
-                    title={txn.budget ?? undefined}
-                  >
-                    {txn.budget ?? "—"}
-                  </td>
-                  <td className="text-right tabular-nums whitespace-nowrap">
-                    {formatDisplayAmount(txn.amount)}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+              {budgetExpanded
+                ? budget.categories.map((category) => {
+                    const compound = `${budget.key}::${category.key}`
+                    const categoryExpanded = expandedCategories.has(compound)
+                    return (
+                      <div key={compound}>
+                        <ActivityGroupToggle
+                          label={category.label}
+                          amount={category.total}
+                          expanded={categoryExpanded}
+                          onToggle={() =>
+                            toggleCategory(budget.key, category.key)
+                          }
+                          depth={1}
+                          level="category"
+                        />
+                        {categoryExpanded ? (
+                          <CategoryTransactionTable
+                            transactions={category.transactions}
+                            fireflyBaseUrl={fireflyBaseUrl}
+                          />
+                        ) : null}
+                      </div>
+                    )
+                  })
+                : null}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -473,7 +628,8 @@ export function CreditCardsTable({
                 activeKey={sortKey}
                 direction={sortDir}
                 onSort={toggleSort}
-                className={cn("text-right", XL_COL)}
+                align="right"
+                className={XL_COL}
               />
               <SortableHead
                 label="Due"
@@ -481,7 +637,8 @@ export function CreditCardsTable({
                 activeKey={sortKey}
                 direction={sortDir}
                 onSort={toggleSort}
-                className={cn("text-right", XL_COL)}
+                align="right"
+                className={XL_COL}
               />
               <SortableHead
                 label="APR"
@@ -489,7 +646,8 @@ export function CreditCardsTable({
                 activeKey={sortKey}
                 direction={sortDir}
                 onSort={toggleSort}
-                className={cn("text-right", XL_COL)}
+                align="right"
+                className={XL_COL}
               />
               <SortableHead
                 label="Util"
@@ -497,7 +655,8 @@ export function CreditCardsTable({
                 activeKey={sortKey}
                 direction={sortDir}
                 onSort={toggleSort}
-                className={cn("text-right", XL_COL)}
+                align="right"
+                className={XL_COL}
               />
               <SortableHead
                 label="Owed"
@@ -505,7 +664,7 @@ export function CreditCardsTable({
                 activeKey={sortKey}
                 direction={sortDir}
                 onSort={toggleSort}
-                className="text-right"
+                align="right"
               />
               <SortableHead
                 label="Last pmt"
@@ -513,7 +672,7 @@ export function CreditCardsTable({
                 activeKey={sortKey}
                 direction={sortDir}
                 onSort={toggleSort}
-                className="text-right"
+                align="right"
               />
               <SortableHead
                 label="New"
@@ -521,7 +680,7 @@ export function CreditCardsTable({
                 activeKey={sortKey}
                 direction={sortDir}
                 onSort={toggleSort}
-                className="text-right"
+                align="right"
               />
               <SortableHead
                 label="Int."
@@ -529,7 +688,7 @@ export function CreditCardsTable({
                 activeKey={sortKey}
                 direction={sortDir}
                 onSort={toggleSort}
-                className="text-right"
+                align="right"
               />
               <SortableHead
                 label="Fees"
@@ -537,7 +696,7 @@ export function CreditCardsTable({
                 activeKey={sortKey}
                 direction={sortDir}
                 onSort={toggleSort}
-                className="text-right"
+                align="right"
               />
               <SortableHead
                 label="Planned"
@@ -545,7 +704,7 @@ export function CreditCardsTable({
                 activeKey={sortKey}
                 direction={sortDir}
                 onSort={toggleSort}
-                className="text-right"
+                align="right"
               />
               <SortableHead
                 label="Paid"
@@ -553,7 +712,8 @@ export function CreditCardsTable({
                 activeKey={sortKey}
                 direction={sortDir}
                 onSort={toggleSort}
-                className="w-[4.5rem] text-center"
+                align="center"
+                className="w-[4.5rem]"
               />
               <TableHead className={ACTIONS_HEAD_CLASS}>Actions</TableHead>
             </TableRow>

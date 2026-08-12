@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Credit card New activity drill-down** — expanding **New** now nests Budget → Category → Transactions (each level collapsed by default); missing budget/category values group under Unassigned (#155)
+
+### Fixed
+
+- **Credit cards table headers** — sortable numeric and Paid column headers align with their cell content (right / center) (#155)
+
 ## [2.6.1] - 2026-07-07
 
 ### Added
