@@ -77,7 +77,7 @@ New charges       = X − interest_accrued − fees   (purchases + net refunds)
 
 A transaction counts in at most one breakout bucket (interest **or** fees **or** purchases). Unclassified lines roll into **new charges**.
 
-**Activity drill-down (shipped):** On refresh, each card snapshot also stores `new_transactions[]` — line items (date, description, payee, category, budget, amount) that sum to **New**. The worksheet expands the **New** column to show this inline table (frozen at refresh; expand again after new Firefly imports).
+**Activity drill-down (shipped):** On refresh, each card snapshot also stores `new_transactions[]` — line items (date, description, payee, category, budget, amount) that sum to **New**. Expanding **New** on the worksheet shows a nested tree (default collapsed at each level): **Budget → Category → Transactions**. Null budget/category values group under **Unassigned**. Data is frozen at refresh; expand again after new Firefly imports.
 
 **Paid** (mark-paid flag) is worksheet progress tracking only — it does **not** change outflow tallies, **user balance**, or **New**. Actual CC payments for **New** are discovered from Firefly transfers, not mark-paid state.
 
