@@ -3,7 +3,10 @@ import type { ReactElement } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter } from "react-router-dom"
 
-import { CreditCardsTable } from "./CreditCardsTable"
+import {
+  CreditCardsTable,
+  groupActivityByBudgetThenCategory,
+} from "./CreditCardsTable"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import type { CreditCardRow } from "@/lib/paymentRunApi"
 
@@ -68,6 +71,20 @@ const portalLink = {
   label: "Card Portal",
   url: "https://cards.example.com/login",
 }
+
+describe("groupActivityByBudgetThenCategory", () => {
+  it("nests budget → category and labels nulls as Unassigned", () => {
+    const groups = groupActivityByBudgetThenCategory(BASE_ROW.new_transactions)
+    expect(groups.map((g) => g.label)).toEqual(["Groceries", "Unassigned"])
+    expect(groups[0]?.categories.map((c) => c.label)).toEqual(["Groceries"])
+    expect(groups[0]?.total).toBe(75)
+    expect(groups[1]?.categories.map((c) => c.label)).toEqual([
+      "Credit Card Interest",
+      "Late Fee(s)",
+    ])
+    expect(groups[1]?.total).toBe(25)
+  })
+})
 
 describe("CreditCardsTable", () => {
   afterEach(() => {
@@ -149,7 +166,7 @@ describe("CreditCardsTable", () => {
     ).toBeNull()
   })
 
-  it("expands inline activity table for New transactions", () => {
+  it("expands New activity as Budget → Category → transactions", () => {
     renderTable(
       <CreditCardsTable
         rows={[BASE_ROW]}
@@ -170,17 +187,43 @@ describe("CreditCardsTable", () => {
       }),
     )
 
-    expect(screen.getByRole("columnheader", { name: "Payee" })).toBeTruthy()
-    expect(screen.getByRole("columnheader", { name: "Budget" })).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Grocery Store" })).toBeTruthy()
-    expect(screen.getAllByText("Groceries").length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByRole("link", { name: "Interest" })).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Grocery Store" }).getAttribute("href")).toBe(
-      "https://ff.example/transactions/show/301",
+    // Budgets only — categories and transactions stay collapsed
+    expect(
+      screen.getByRole("button", { name: "Expand budget Groceries" }),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Expand budget Unassigned" }),
+    ).toBeTruthy()
+    expect(screen.queryByText("Grocery Store")).toBeNull()
+    expect(screen.queryByRole("columnheader", { name: "Payee" })).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand budget Groceries" }))
+    expect(
+      screen.getByRole("button", { name: "Expand category Groceries" }),
+    ).toBeTruthy()
+    expect(screen.queryByText("Grocery Store")).toBeNull()
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand category Groceries" }),
     )
+    expect(screen.getByRole("columnheader", { name: "Payee" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Grocery Store" })).toBeTruthy()
+    expect(
+      screen.getByRole("link", { name: "Grocery Store" }).getAttribute("href"),
+    ).toBe("https://ff.example/transactions/show/301")
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand budget Unassigned" }),
+    )
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Expand category Credit Card Interest",
+      }),
+    )
+    expect(screen.getByRole("link", { name: "Interest" })).toBeTruthy()
   })
 
-  it("sorts new transactions by budget then category by default", () => {
+  it("orders budget and category groups alphabetically", () => {
     renderTable(
       <CreditCardsTable
         rows={[
@@ -234,19 +277,62 @@ describe("CreditCardsTable", () => {
       }),
     )
 
-    const activityTable = screen.getAllByRole("table")[1]
-    const dataRows = within(activityTable).getAllByRole("row").slice(1)
-    const descriptions = dataRows.map(
-      (row) => within(row).getAllByRole("cell")[1]?.textContent,
-    )
+    const budgetNames = screen
+      .getAllByRole("button", { name: /Expand budget / })
+      .map((btn) => btn.getAttribute("aria-label") ?? "")
+    expect(budgetNames[0]).toBe("Expand budget Groceries")
+    expect(budgetNames[1]).toBe("Expand budget Utilities")
 
-    expect(descriptions).toEqual(["A charge", "B charge", "Z charge"])
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand budget Groceries" }),
+    )
+    const categoryNames = screen
+      .getAllByRole("button", { name: /Expand category / })
+      .map((btn) => btn.getAttribute("aria-label") ?? "")
+    expect(categoryNames[0]).toBe("Expand category Alpha")
+    expect(categoryNames[1]).toBe("Expand category Beta")
   })
 
-  it("sorts new transactions by amount when Amount header is clicked", () => {
+  it("sorts leaf transactions by amount when Amount header is clicked", () => {
     renderTable(
       <CreditCardsTable
-        rows={[BASE_ROW]}
+        rows={[
+          {
+            ...BASE_ROW,
+            new_transactions: [
+              {
+                journal_id: "301",
+                date: "2026-07-10",
+                description: "Grocery Store",
+                payee: "Grocery Store",
+                category: "Groceries",
+                budget: "Groceries",
+                kind: "charge",
+                amount: "75.00",
+              },
+              {
+                journal_id: "304",
+                date: "2026-07-11",
+                description: "Market",
+                payee: "Market",
+                category: "Groceries",
+                budget: "Groceries",
+                kind: "charge",
+                amount: "5.00",
+              },
+              {
+                journal_id: "305",
+                date: "2026-07-12",
+                description: "Bakery",
+                payee: "Bakery",
+                category: "Groceries",
+                budget: "Groceries",
+                kind: "charge",
+                amount: "20.00",
+              },
+            ],
+          },
+        ]}
         buckets={[]}
         month="2026-07"
         fireflyBaseUrl="https://ff.example"
@@ -261,6 +347,12 @@ describe("CreditCardsTable", () => {
         name: "Show new transactions for Chase VISA",
       }),
     )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand budget Groceries" }),
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand category Groceries" }),
+    )
     fireEvent.click(screen.getByRole("button", { name: "Amount" }))
 
     const activityTable = screen.getAllByRole("table")[1]
@@ -269,7 +361,7 @@ describe("CreditCardsTable", () => {
       (row) => within(row).getAllByRole("cell")[1]?.textContent,
     )
 
-    expect(descriptions).toEqual(["Late Fee", "Interest", "Grocery Store"])
+    expect(descriptions).toEqual(["Market", "Bakery", "Grocery Store"])
   })
 
   it("links per-row Manage to card detail deep link, not cards hub", () => {
@@ -277,12 +369,12 @@ describe("CreditCardsTable", () => {
       <TooltipProvider>
         <MemoryRouter>
           <CreditCardsTable
-          rows={[BASE_ROW]}
-          buckets={[]}
-          month="2026-07"
-          onPlannedBlur={async () => {}}
-          onPaidChange={async () => {}}
-        />
+            rows={[BASE_ROW]}
+            buckets={[]}
+            month="2026-07"
+            onPlannedBlur={async () => {}}
+            onPaidChange={async () => {}}
+          />
         </MemoryRouter>
       </TooltipProvider>,
     )

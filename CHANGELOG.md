@@ -53,6 +53,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Credit card settings sheet scroll** — the card edit sheet scrolls when the special-rate section is expanded so Save and Cancel stay reachable (#107)
 - **External link picker (empty catalog)** — select is disabled when no portal links exist, with a link to create one in the hub (#126)
 
+## [2.6.2] - 2026-08-12
+
+### Changed
+
+- **Credit card New activity drill-down** — expanding **New** now nests Budget → Category → Transactions (each level collapsed by default); missing budget/category values group under Unassigned (#155)
+
+### Fixed
+
+- **Credit cards table headers** — sortable numeric and Paid column headers align with their cell content (right / center) (#155)
+
 ## [2.6.1] - 2026-07-07
 
 ### Added
@@ -524,7 +534,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.6.1...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.6.2...HEAD
+[2.6.2]: https://github.com/jwposton/ff3-lantern/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/jwposton/ff3-lantern/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/jwposton/ff3-lantern/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/jwposton/ff3-lantern/compare/v2.5.0...v2.5.1
