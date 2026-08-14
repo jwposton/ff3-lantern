@@ -28,9 +28,7 @@ def _classification_token(value: Any) -> str:
 
 
 def is_real_estate_liability(row: dict[str, Any]) -> bool:
-    """Classify liability account owed as real estate (mortgage/escrow), not display names."""
-    if row.get("has_escrow"):
-        return True
+    """Classify liability owed as real estate from mortgage markers only (not escrow)."""
     for field in ("account_role", "liability_type", "account_type"):
         token = _classification_token(row.get(field))
         if not token:

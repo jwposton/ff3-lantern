@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Worksheet Balances owed Real estate** — Real estate roll-up includes mortgage liabilities only; other debts stay under Loans even when a loan profile has a zero escrow split line (#157)
+
 ## [2.6.2] - 2026-08-12
 
 ### Changed
