@@ -374,10 +374,7 @@ async def run_refresh(
         loan_profile = parse_loan_profile_from_notes(notes)
         split = (loan_profile or {}).get("split") or {}
         escrow_amount = _decimal_amount(split.get("escrow_amount"))
-        has_escrow = escrow_amount > 0 or any(
-            (component.get("role") == "escrow")
-            for component in (split.get("components") or [])
-        )
+        has_escrow = escrow_amount > 0
         payment_amount = _decimal_amount(
             draft_planned_amount(loan_profile, worksheet_profile)
         )

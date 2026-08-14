@@ -49,9 +49,10 @@ def test_is_real_estate_liability_classification():
     assert is_real_estate_liability({"account_role": "mortgage"})
     assert is_real_estate_liability({"account_type": "mortgage"})
     assert is_real_estate_liability({"liability_type": "Mortgage"})
-    assert is_real_estate_liability({"has_escrow": True})
+    assert is_real_estate_liability({"liability_type": "realestate"})
+    assert not is_real_estate_liability({"has_escrow": True})
     assert not is_real_estate_liability(
-        {"account_role": "debt", "account_type": "liabilities"}
+        {"account_role": "debt", "account_type": "liabilities", "has_escrow": True}
     )
 
 
