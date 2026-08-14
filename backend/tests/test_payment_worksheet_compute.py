@@ -627,6 +627,28 @@ def test_grand_totals_hides_zero_re_split_when_all_loans():
     assert "real_estate" not in owed_breakdown
 
 
+def test_grand_totals_debt_with_escrow_flag_stays_in_loans():
+    liabilities = [
+        {
+            "account_id": "mortgage-1",
+            "owed": "250000.00",
+            "amount_due": "1800.00",
+            "liability_type": "mortgage",
+            "has_escrow": True,
+        },
+        {
+            "account_id": "lending-club-1",
+            "owed": "9000.00",
+            "amount_due": "300.00",
+            "liability_type": "debt",
+            "has_escrow": True,
+        },
+    ]
+    result = compute_grand_totals([], liabilities, [])
+    assert result["breakdown"]["owed"]["real_estate"] == "250000.00"
+    assert result["breakdown"]["owed"]["loans"] == "9000.00"
+
+
 @pytest.mark.asyncio
 async def test_build_worksheet_envelope_with_bills(data_dir):
     await sidecar_db.upsert_funding_bucket(
