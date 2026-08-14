@@ -44,7 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Worksheet Balances owed Real estate** — Real estate roll-up includes mortgage liabilities only; other debts stay under Loans even when a loan profile has a zero escrow split line (#157)
 - **Bucket portal link validation** — creating a funding bucket with a non-existent `external_link_id` now returns 422 instead of persisting an orphan FK (#125)
 - **Bimonthly intermittent forecast** — every-other-month bills like Propane now show forecast Due with sky ring instead of silent owed; payment gap history drives cadence instead of Firefly repeat_freq; recent payment intervals take precedence over older long gaps (#95)
 - **Intermittent forecast cadence** — uneven gaps (e.g. car insurance) no longer misclassify as quarterly; forecasts suppress until enough time has passed since the last payment (#95)
@@ -53,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Promo APR resilience** — malformed stored promo dates no longer crash the worksheet API; partial promo clears via API are rejected per all-or-nothing rules (#107)
 - **Credit card settings sheet scroll** — the card edit sheet scrolls when the special-rate section is expanded so Save and Cancel stay reachable (#107)
 - **External link picker (empty catalog)** — select is disabled when no portal links exist, with a link to create one in the hub (#126)
+
+## [2.6.3] - 2026-08-14
+
+### Fixed
+
+- **Worksheet Balances owed Real estate** — Real estate roll-up includes mortgage liabilities only; other debts stay under Loans even when a loan profile has a zero escrow split line (#157)
 
 ## [2.6.2] - 2026-08-12
 
@@ -535,7 +540,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.6.2...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.6.3...HEAD
+[2.6.3]: https://github.com/jwposton/ff3-lantern/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/jwposton/ff3-lantern/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/jwposton/ff3-lantern/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/jwposton/ff3-lantern/compare/v2.5.1...v2.6.0
