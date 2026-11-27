@@ -327,6 +327,8 @@ describe("LoansPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Mortgage Liability" })).toBeTruthy()
     })
+    expect(screen.queryByText(/transfer \(checking/i)).toBeNull()
+    expect(screen.getByText(/Loan payments are withdrawals/i)).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText(/Description contains/i), {
       target: { value: "Loan Provider" },

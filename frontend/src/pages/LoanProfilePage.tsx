@@ -25,7 +25,7 @@ function selectClassName(): string {
 
 function defaultComponent(
   role: SplitRole,
-  matchType: "transfer" | "withdrawal" = "transfer",
+  matchType: "withdrawal" = "withdrawal",
 ): LoanProfile["split"]["components"][number] {
   return {
     role,
@@ -42,7 +42,7 @@ function emptyProfile(): LoanProfile {
     version: 1,
     enabled: true,
     match: {
-      type: "transfer",
+      type: "withdrawal",
       description_contains: "",
       expected_amount: "0.00",
       amount_tolerance: "0.50",
@@ -65,7 +65,7 @@ function normalizeProfile(
   accountId: string,
   accountName: string,
 ): LoanProfile {
-  const matchType = profile.match.type ?? "transfer"
+  const matchType = "withdrawal" as const
   const roles: SplitRole[] = ["principal", "interest", "escrow"]
   const byRole = new Map(profile.split.components.map((c) => [c.role, c]))
   const components = roles.map((role) => {
@@ -85,6 +85,10 @@ function normalizeProfile(
   }
   return {
     ...profile,
+    match: {
+      ...profile.match,
+      type: matchType,
+    },
     split: {
       ...profile.split,
       budget: profile.split.budget ?? null,
@@ -256,37 +260,13 @@ export function LoanProfilePage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground text-xs">
-            Match the imported lump payment <strong>before</strong> splitting. Check
-            Transaction Explorer for the payment&apos;s Firefly type and description
-            text.
+            Match the imported lump payment <strong>before</strong> splitting. Use the
+            description text from Transaction Explorer.
           </p>
-          <label className="block space-y-1 text-sm">
-            <span>Transaction type</span>
-            <select
-              className={selectClassName()}
-              value={profile.match.type ?? "transfer"}
-              onChange={(e) => {
-                const type = e.target.value as "transfer" | "withdrawal"
-                setProfile({
-                  ...profile,
-                  match: {
-                    ...profile.match,
-                    type,
-                  },
-                  split: {
-                    ...profile.split,
-                    components: profile.split.components.map((comp) => ({
-                      ...comp,
-                      type,
-                    })),
-                  },
-                })
-              }}
-            >
-              <option value="transfer">transfer (checking → liability)</option>
-              <option value="withdrawal">withdrawal (checking → expense payee)</option>
-            </select>
-          </label>
+          <p className="text-sm">
+            Loan payments are withdrawals. Principal goes to this loan. Interest and
+            escrow go to expense accounts.
+          </p>
           <label className="block space-y-1 text-sm">
             <span>Description contains (required)</span>
             <input

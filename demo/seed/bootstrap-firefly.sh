@@ -37,12 +37,21 @@ firefly_exec php artisan passport:client --personal --no-interaction --name="$TO
 
 echo "==> Creating integration user and personal access token"
 compose cp "$ROOT/demo/seed/bootstrap-firefly.php" "$FIREFLY_SERVICE:/tmp/bootstrap-firefly.php"
+bootstrap_log="$(mktemp)"
+if ! firefly_exec php /tmp/bootstrap-firefly.php "$FIREFLY_EMAIL" "$FIREFLY_PASSWORD" "$TOKEN_NAME" >"$bootstrap_log" 2>&1; then
+  echo "ERROR: Firefly bootstrap failed" >&2
+  cat "$bootstrap_log" >&2
+  rm -f "$bootstrap_log"
+  exit 1
+fi
+# 6.6 tokens are JWTs. Later Firefly releases may print a UUID personal access token.
 TOKEN="$(
-  firefly_exec php /tmp/bootstrap-firefly.php "$FIREFLY_EMAIL" "$FIREFLY_PASSWORD" "$TOKEN_NAME" 2>/dev/null \
-    | grep -Eo 'eyJ[A-Za-z0-9._-]+' \
+  grep -Eo 'eyJ[A-Za-z0-9._=-]+|[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}' "$bootstrap_log" \
     | tail -1 \
-    | tr -d '\r\n'
+    | tr -d '\r\n' \
+    || true
 )"
+rm -f "$bootstrap_log"
 
 if [[ -z "$TOKEN" ]]; then
   echo "ERROR: failed to create Firefly personal access token" >&2

@@ -214,6 +214,15 @@ def prepare_account_update_payload(
             merged.get("interest_period") or "monthly",
         )
 
+    # Firefly 6.7 rejects virtual_balance when it is zero. Omit the default.
+    raw_balance = payload.get("virtual_balance")
+    if raw_balance is not None:
+        try:
+            if float(raw_balance) <= 0:
+                payload.pop("virtual_balance", None)
+        except (TypeError, ValueError):
+            payload.pop("virtual_balance", None)
+
     return payload
 
 

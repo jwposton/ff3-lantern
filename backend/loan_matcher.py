@@ -38,7 +38,8 @@ def match_split_to_profile(
     if split_count > 1:
         return False
     match_cfg = profile.get("match") or {}
-    expected_type = match_cfg.get("type") or "transfer"
+    raw_type = str(match_cfg.get("type") or "withdrawal").lower()
+    expected_type = "withdrawal" if raw_type == "transfer" else raw_type
     if (flat_split.get("type") or "").lower() != expected_type.lower():
         return False
     needle = (match_cfg.get("description_contains") or "").lower()

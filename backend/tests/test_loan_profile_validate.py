@@ -47,6 +47,8 @@ def test_valid_profile_passes():
     result = validate_profile(_valid_profile(), ACCOUNTS)
     assert result["enabled"] is True
     assert result["match"]["expected_amount"] == "427.18"
+    assert result["match"]["type"] == "withdrawal"
+    assert all(comp["type"] == "withdrawal" for comp in result["split"]["components"])
 
 
 def test_missing_description_contains_raises():
@@ -149,8 +151,9 @@ def test_withdrawal_match_allows_principal_withdrawal_to_liability():
     assert result["match"]["type"] == "withdrawal"
 
 
-def test_component_type_must_match_match_type():
+def test_transfer_match_is_stored_as_withdrawal():
     profile = _valid_profile()
-    profile["split"]["components"][1]["type"] = "withdrawal"
-    with pytest.raises(ValueError, match="must match match.type"):
-        validate_profile(profile, ACCOUNTS)
+    profile["match"]["type"] = "transfer"
+    result = validate_profile(profile, ACCOUNTS)
+    assert result["match"]["type"] == "withdrawal"
+    assert all(comp["type"] == "withdrawal" for comp in result["split"]["components"])

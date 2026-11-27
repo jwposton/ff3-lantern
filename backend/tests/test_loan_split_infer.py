@@ -65,6 +65,7 @@ def test_infer_loan_profile_from_split_history():
     )
     assert profile is not None
     assert profile["match"]["description_contains"] == "Loan Provider"
+    assert profile["match"]["type"] == "withdrawal"
     assert profile["match"]["source_account_id"] == "7"
     components = {comp["role"]: comp for comp in profile["split"]["components"]}
     assert components["principal"]["destination_account_id"] == "42"

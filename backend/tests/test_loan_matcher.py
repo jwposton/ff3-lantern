@@ -24,7 +24,7 @@ def _split(**kwargs):
     base = {
         "description": "Loan Provider payment",
         "amount": "-427.18",
-        "type": "transfer",
+        "type": "withdrawal",
         "date": "2026-07-15",
         "split_count": 1,
     }

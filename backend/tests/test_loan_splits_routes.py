@@ -75,7 +75,7 @@ def _handler_factory(monkeypatch):
                     "transactions": [
                         {
                             "transaction_journal_id": "1001",
-                            "type": "transfer",
+                            "type": "withdrawal",
                             "amount": "-427.18",
                             "date": "2026-07-10",
                             "description": "Loan Provider July",
@@ -94,7 +94,7 @@ def _handler_factory(monkeypatch):
                     "transactions": [
                         {
                             "transaction_journal_id": "1002",
-                            "type": "transfer",
+                            "type": "withdrawal",
                             "amount": "-427.18",
                             "date": "2026-06-01",
                             "description": "Loan Provider June",

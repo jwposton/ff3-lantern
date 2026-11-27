@@ -36,13 +36,9 @@ def _component_amounts(profile: dict[str, Any], amounts: dict[str, Decimal]) -> 
     return rows
 
 
-def _split_transaction_type(profile: dict[str, Any], flat_split: dict[str, Any]) -> str:
-    """Firefly requires every split in a group to share the same transaction type."""
-    return (
-        (profile.get("match") or {}).get("type")
-        or flat_split.get("type")
-        or "transfer"
-    )
+def _split_transaction_type(_profile: dict[str, Any], _flat_split: dict[str, Any]) -> str:
+    """Loan splits are withdrawals. Firefly 6.7 rejects asset-to-liability transfers."""
+    return "withdrawal"
 
 
 def build_split_transactions(

@@ -229,7 +229,7 @@ Local `uvicorn` (outside Docker) also uses `./data` unless you set `FF3LANTERN_D
 
 ## Supported Firefly versions
 
-Lantern is tested against real Firefly III API responses in CI (not mocked fixtures). Supported versions are those that pass the [integration workflow](.github/workflows/integration.yml):
+Lantern is tested against real Firefly III API responses in CI (not mocked fixtures). The integration smoke walks the Firefly calls Lantern makes on its success paths: accounts, transactions, categories, budgets, rules, bills, and loan-profile writes. `DELETE` for a bill or rule runs only when registration rolls back, so the smoke does not force that failure. Supported versions are those that pass the [integration workflow](.github/workflows/integration.yml):
 
 | Context | Firefly image tag |
 |---------|-------------------|

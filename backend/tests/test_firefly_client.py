@@ -216,6 +216,31 @@ def test_prepare_account_update_payload_ccasset_strips_liability_fields():
     assert "interest" not in payload
 
 
+def test_prepare_account_update_payload_omits_zero_virtual_balance():
+    from firefly_client import prepare_account_update_payload
+
+    payload = prepare_account_update_payload(
+        {
+            "name": "Chase",
+            "type": "asset",
+            "account_role": "ccAsset",
+            "virtual_balance": "0.000000000000",
+        },
+        notes="profile",
+    )
+    assert "virtual_balance" not in payload
+
+    kept = prepare_account_update_payload(
+        {
+            "name": "Chase",
+            "type": "asset",
+            "account_role": "ccAsset",
+            "virtual_balance": "25.00",
+        }
+    )
+    assert kept["virtual_balance"] == "25.00"
+
+
 def test_normalize_monthly_payment_date_formats():
     from firefly_client import _normalize_monthly_payment_date
 

@@ -20,10 +20,6 @@ def _account_name(accounts: dict[str, dict[str, Any]], account_id: str) -> str:
     return str((accounts.get(str(account_id)) or {}).get("name") or account_id)
 
 
-def _split_type(split: dict[str, Any]) -> str:
-    return str(split.get("type") or "transfer").lower()
-
-
 def _stable_description_contains(descriptions: list[str]) -> str:
     cleaned = [desc.strip() for desc in descriptions if desc.strip()]
     if not cleaned:
@@ -210,7 +206,7 @@ def infer_match_fingerprint(
     expected = median(totals)
     description_contains = _stable_description_contains(descriptions)
     return {
-        "type": _split_type(latest),
+        "type": "withdrawal",
         "description_contains": description_contains,
         "expected_amount": f"{expected.quantize(Decimal('0.01'))}",
         "amount_tolerance": "0.50",
@@ -244,7 +240,9 @@ def infer_loan_profile(
     if not sibling_dests and match is None:
         return None
 
-    match_type = (match or {}).get("type") or "transfer"
+    match_type = "withdrawal"
+    if match is not None:
+        match = {**match, "type": "withdrawal"}
     principal_meta = metadata_by_role.get("principal") or {}
     principal_budget = (
         budget_overrides["principal"]
@@ -274,7 +272,7 @@ def infer_loan_profile(
         components.append(
             {
                 "role": role,
-                "type": "withdrawal" if match_type == "withdrawal" else match_type,
+                "type": match_type,
                 "destination_account_id": dest_id,
                 "destination_account": _account_name(accounts or {}, dest_id),
                 "category": role_meta.get("category"),
@@ -294,7 +292,7 @@ def infer_loan_profile(
         "enabled": True,
         "match": match
         or {
-            "type": "transfer",
+            "type": "withdrawal",
             "description_contains": "",
             "expected_amount": "0.00",
             "amount_tolerance": "0.50",

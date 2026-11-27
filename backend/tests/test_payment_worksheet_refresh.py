@@ -162,7 +162,8 @@ async def test_refresh_balances(data_dir, payment_worksheet_env):
 async def test_cc_activity(data_dir, payment_worksheet_env):
     fixture = _fixture()
     client = _build_client(fixture)
-    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    # August still looks back into July, where the fixture payment and charges live.
+    month = "2026-08"
 
     await run_refresh(client, month)
 

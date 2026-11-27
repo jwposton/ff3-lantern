@@ -60,7 +60,7 @@ class SplitComponent(BaseModel):
 
 
 class MatchConfig(BaseModel):
-    type: Literal["transfer", "withdrawal"] = "transfer"
+    type: Literal["transfer", "withdrawal"] = "withdrawal"
     description_contains: str = Field(min_length=1)
     expected_amount: str
     amount_tolerance: str = "0.50"
@@ -148,6 +148,20 @@ def _validate_component_accounts(
         raise ValueError("split.components: at least one interest component required")
 
 
+def _as_withdrawal(profile: dict[str, Any]) -> dict[str, Any]:
+    """Loan splits are withdrawals. Firefly 6.7 rejects asset-to-liability transfers."""
+    data = dict(profile)
+    match = dict(data.get("match") or {})
+    match["type"] = "withdrawal"
+    data["match"] = match
+    split = dict(data.get("split") or {})
+    split["components"] = [
+        {**comp, "type": "withdrawal"} for comp in (split.get("components") or [])
+    ]
+    data["split"] = split
+    return data
+
+
 def validate_profile(
     profile: dict[str, Any], accounts_by_id: dict[str, dict[str, Any]]
 ) -> dict[str, Any]:
@@ -155,6 +169,7 @@ def validate_profile(
     raw_size = len(json.dumps(profile).encode("utf-8"))
     if raw_size > MAX_PROFILE_BYTES:
         raise ValueError(f"profile exceeds 16KB limit ({raw_size} bytes)")
+    profile = _as_withdrawal(profile)
     try:
         parsed = LoanProfile.model_validate(profile)
     except Exception as exc:

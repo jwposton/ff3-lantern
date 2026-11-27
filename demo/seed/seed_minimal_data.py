@@ -73,6 +73,14 @@ def _ensure_category(name: str) -> None:
     _request("POST", "/api/v1/categories", json={"name": name})
 
 
+def _ensure_budget(name: str) -> None:
+    payload = _request("GET", "/api/v1/budgets", params={"limit": 1000})
+    for entry in payload.get("data", []):
+        if entry.get("attributes", {}).get("name") == name:
+            return
+    _request("POST", "/api/v1/budgets", json={"name": name, "active": True})
+
+
 def _transactions_exist() -> bool:
     start = _month_date(2, 1)
     end = date.today().isoformat()
@@ -105,6 +113,21 @@ def main() -> None:
     )
     _ensure_account("Streaming Service", {"name": "Streaming Service", "type": "expense"})
     _ensure_account("Interest", {"name": "Interest", "type": "expense"})
+    mortgage_id = _ensure_account(
+        "Integration Mortgage",
+        {
+            "name": "Integration Mortgage",
+            "type": "liability",
+            "liability_type": "loan",
+            "liability_direction": "credit",
+            "interest": "6",
+            "interest_period": "yearly",
+            "opening_balance": "100000.00",
+            "opening_balance_date": "2020-01-01",
+            "include_net_worth": True,
+        },
+    )
+    _ensure_budget("Household")
 
     for category in (
         "Groceries",
@@ -182,6 +205,22 @@ def main() -> None:
                     "source_id": cc_id,
                     "destination_name": "Streaming Service",
                     "category_name": "Late Fee(s)",
+                }
+            ]
+        },
+    )
+    _request(
+        "POST",
+        "/api/v1/transactions",
+        json={
+            "transactions": [
+                {
+                    "type": "withdrawal",
+                    "date": date.today().isoformat(),
+                    "amount": "1000.00",
+                    "description": "MORTGAGE PAYMENT",
+                    "source_id": checking_id,
+                    "destination_id": mortgage_id,
                 }
             ]
         },

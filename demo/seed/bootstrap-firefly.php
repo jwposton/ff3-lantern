@@ -51,7 +51,26 @@ if ($user === null) {
     exit(1);
 }
 
-CreatesGroupMemberships::createGroupMembership($user);
+$attached = false;
+if (method_exists(CreatesGroupMemberships::class, 'createGroupMembership')) {
+    $method = new ReflectionMethod(CreatesGroupMemberships::class, 'createGroupMembership');
+    if ($method->isPublic() && $method->isStatic()) {
+        CreatesGroupMemberships::createGroupMembership($user);
+        $attached = true;
+    }
+}
+if (!$attached && trait_exists(\FireflyIII\Support\Authentication\HandlesUserRegistrationTrait::class)) {
+    // Firefly 6.7 moved group membership onto this trait and emptied the command.
+    $registrar = new class {
+        use \FireflyIII\Support\Authentication\HandlesUserRegistrationTrait;
+
+        public function attach(\FireflyIII\User $user): void
+        {
+            $this->createGroupMembership($user, false);
+        }
+    };
+    $registrar->attach($user);
+}
 $user->refresh();
 
 if (!method_exists($user, 'createToken')) {

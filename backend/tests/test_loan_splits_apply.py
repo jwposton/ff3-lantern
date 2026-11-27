@@ -66,9 +66,9 @@ def test_build_split_transactions_count():
     txns = build_split_transactions(PROFILE, FLAT, amounts)
     assert len(txns) == 2
     assert txns[0]["transaction_journal_id"] == "5001"
-    assert txns[0]["type"] == "transfer"
+    assert txns[0]["type"] == "withdrawal"
     assert txns[0]["amount"] == "156.35"
-    assert txns[1]["type"] == "transfer"
+    assert txns[1]["type"] == "withdrawal"
     assert txns[1]["amount"] == "270.83"
 
 
