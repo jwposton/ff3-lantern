@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.4] - 2026-11-27
+
+### Fixed
+
+- **Firefly 6.7 account saves** — account updates omit a zero or blank virtual balance, which Firefly 6.7 rejects
+- **Loan splits** — loan payments are withdrawals. The checking-to-liability transfer option is removed because Firefly 6.7 rejects that destination, and saving a profile rewrites a stored transfer match to withdrawal
+
+### Changed
+
+- **Firefly integration smoke** — the disposable stack covers Lantern's success-path Firefly calls and boots Firefly 6.7 (APP_KEY check, UUID API tokens, and withdrawal loan payments)
+
 ## [2.6.3] - 2026-08-14
 
 ### Fixed
@@ -494,7 +505,8 @@ First stable release: self-hosted Firefly III analytics with production Docker d
 
 - Firefly API token stays server-side only; CORS restricted to configured origins
 
-[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.6.3...HEAD
+[Unreleased]: https://github.com/jwposton/ff3-lantern/compare/v2.6.4...HEAD
+[2.6.4]: https://github.com/jwposton/ff3-lantern/compare/v2.6.3...v2.6.4
 [2.6.3]: https://github.com/jwposton/ff3-lantern/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/jwposton/ff3-lantern/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/jwposton/ff3-lantern/compare/v2.6.0...v2.6.1
